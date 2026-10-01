@@ -48,7 +48,7 @@ const U = (() => {
 // Apex GP — fictional driver name pool (data) + the name helpers below. Race combines random first + last names per car (seeded).
 const NAMES = {
   first: [
-    'Aarav', 'Abel', 'Adrian', 'Aiden', 'Akira', 'Alban', 'Aleksander', 'Alessio', 'Alexei', 'Alvaro', 'Amadou',
+    'Adrian', 'Aiden', 'Akira', 'Alban', 'Aleksander', 'Alessio', 'Alexei', 'Alvaro', 'Amadou',
     'Amir', 'Anders', 'Andrei', 'Anselm', 'Anton', 'Arjun', 'Armand', 'Arne', 'Arturo', 'Aurelio', 'Axel', 'Bastian',
     'Benedikt', 'Bento', 'Bjorn', 'Bruno', 'Caio', 'Callum', 'Casimir', 'Cedric', 'Cesar', 'Cian', 'Cillian',
     'Cosmin', 'Dante', 'Darius', 'Dario', 'Declan', 'Dmitri', 'Duncan', 'Eamon', 'Edoardo', 'Elias', 'Emil', 'Emilio',
@@ -87,8 +87,7 @@ const NAMES = {
 
 // A typed driver name -> { first, last } (race.js, the multiplayer server, the menus): the last word that has a letter or
 // digit is the surname (shown bold), the words before it are the first name(s); marks after it stay with it. One word =
-// just a surname, never an invented first name. "Cameron" -> '' + 'Cameron', "Anna Maria Rossi" -> 'Anna Maria' +
-// 'Rossi', "Luc :)" -> '' + 'Luc :)', "Luc Sciammetta :)" -> 'Luc' + 'Sciammetta :)'.
+// just a surname, never an invented first name.
 NAMES.split = full => {
   const w = String(full == null ? '' : full).trim().split(/\s+/).filter(Boolean), has = x => /[\p{L}\p{N}]/u.test(x);
   let k = w.length - 1;
@@ -96,9 +95,7 @@ NAMES.split = full => {
   const first = w.slice(0, Math.max(0, k)).join(' ');
   return has(first) ? { first, last: w.slice(k).join(' ') } : { first: '', last: w.join(' ') };
 };
-// stored first / last -> the parts to show (the whole name split again: first 'Luc' + last ':)' -> '' + 'Luc :)')
 NAMES.parts = (first, last) => NAMES.split((first ? first + ' ' : '') + (last == null ? '' : last));
-// 3-letter timing-tower code: the surname's letters, then the first name's, digits, X ("Luc :)" -> LUC, "Anna Maria Rossi" -> ROS)
 NAMES.code = (last, first) => {
   const L = x => String(x || '').replace(/[^\p{L}]/gu, '').toUpperCase(), D = x => String(x || '').replace(/[^\p{N}]/gu, '');
   return (L(last) + L(first) + D(last) + D(first) + 'XXX').slice(0, 3);
