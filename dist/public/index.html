@@ -203,17 +203,12 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .agp-bcue-core { display: flex; align-items: center; gap: .6em; height: 2.15em; box-sizing: border-box; padding: 0 .45em 0 .8em; border-radius: .3em;
   background: rgba(11, 12, 16, .78); border: .12em solid var(--c); }
 .agp-bcue-core b { font: italic 900 1.3em/1 var(--agp-ft); letter-spacing: .12em; color: var(--c); }
-.agp-bcue-tg { display: flex; align-items: baseline; gap: .28em; font: 800 1em/1 var(--agp-fd); color: #eef1f6; font-variant-numeric: tabular-nums; }
-.agp-bcue-tg em { font-style: normal; min-width: 1.15em; padding: .16em .3em .12em; border-radius: .2em; background: var(--c); color: #101116; text-align: center; font-weight: 900; }
-.agp-bcue-tg small { font: 700 .62em/1 var(--agp-fd); letter-spacing: .12em; color: #9aa3b1; }
 .agp-bcue[data-s="brake"] .agp-bcue-core, .agp-bcue[data-s="late"] .agp-bcue-core { background: #ff2e26; }
-.agp-bcue[data-s="brake"] .agp-bcue-core b, .agp-bcue[data-s="late"] .agp-bcue-core b, .agp-bcue[data-s="brake"] .agp-bcue-tg, .agp-bcue[data-s="late"] .agp-bcue-tg { color: #fff; }
-.agp-bcue[data-s="brake"] .agp-bcue-tg em, .agp-bcue[data-s="late"] .agp-bcue-tg em { background: #fff; color: #c8120c; }
-.agp-bcue[data-s="brake"] .agp-bcue-tg small, .agp-bcue[data-s="late"] .agp-bcue-tg small { color: rgba(255, 255, 255, .8); }
+.agp-bcue[data-s="brake"] .agp-bcue-core b, .agp-bcue[data-s="late"] .agp-bcue-core b { color: #fff; }
 .agp-bcue.is-pop[data-s="brake"] .agp-bcue-core { animation: agp-bcue-pop .22s ease-out; }
 .agp-bcue[data-s="late"] { animation: agp-blink .24s linear infinite; }
 /* lift: a small yellow chip, no bars, no target */
-.agp-bcue[data-s="lift"] .agp-bcue-side, .agp-bcue[data-s="lift"] .agp-bcue-tg { display: none; }
+.agp-bcue[data-s="lift"] .agp-bcue-side { display: none; }
 .agp-bcue[data-s="lift"] .agp-bcue-core { height: 1.7em; padding: 0 .75em; background: rgba(11, 12, 16, .6); }
 .agp-bcue[data-s="lift"] .agp-bcue-core b { font-size: 1.02em; }
 @keyframes agp-bcue-pop { 0% { transform: scale(1.18); } 100% { transform: scale(1); } }
@@ -54336,7 +54331,7 @@ const U = (() => {
 // Apex GP — fictional driver name pool (data) + the name helpers below. Race combines random first + last names per car (seeded).
 const NAMES = {
   first: [
-    'Aarav', 'Abel', 'Adrian', 'Aiden', 'Akira', 'Alban', 'Aleksander', 'Alessio', 'Alexei', 'Alvaro', 'Amadou',
+    'Aarav', 'Adrian', 'Aiden', 'Akira', 'Alban', 'Aleksander', 'Alessio', 'Alexei', 'Alvaro', 'Amadou',
     'Amir', 'Anders', 'Andrei', 'Anselm', 'Anton', 'Arjun', 'Armand', 'Arne', 'Arturo', 'Aurelio', 'Axel', 'Bastian',
     'Benedikt', 'Bento', 'Bjorn', 'Bruno', 'Caio', 'Callum', 'Casimir', 'Cedric', 'Cesar', 'Cian', 'Cillian',
     'Cosmin', 'Dante', 'Darius', 'Dario', 'Declan', 'Dmitri', 'Duncan', 'Eamon', 'Edoardo', 'Elias', 'Emil', 'Emilio',
@@ -54344,7 +54339,7 @@ const NAMES = {
     'Gael', 'Gaspard', 'Gideon', 'Giorgio', 'Gustavo', 'Hamish', 'Hannes', 'Haruto', 'Hector', 'Henrik', 'Hiro',
     'Hugo', 'Ibrahim', 'Idris', 'Ignacio', 'Ilya', 'Imran', 'Ivo', 'Jacopo', 'Jakub', 'Jarno', 'Jasper', 'Javier',
     'Joaquin', 'Jonah', 'Jorge', 'Julian', 'Kaito', 'Kalani', 'Kamil', 'Kasper', 'Kenji', 'Kian', 'Kofi', 'Lars',
-    'Lazlo', 'Leandro', 'Lennart', 'Leon', 'Lorenzo', 'Luca', 'Lucas', 'Luka', 'Malik', 'Marek', 'Marius', 'Mateo',
+    'Lazlo', 'Leandro', 'Lennart', 'Leon', 'Lorenzo', 'Luka', 'Malik', 'Marek', 'Marius', 'Mateo',
     'Mathis', 'Mikael', 'Milan', 'Milo', 'Mireille', 'Nadia', 'Naoki', 'Nikolai', 'Noah', 'Nuno', 'Oisin', 'Olek',
     'Omar', 'Orlando', 'Oskar', 'Otto', 'Pablo', 'Paolo', 'Pascal', 'Pavel', 'Pedro', 'Quentin', 'Rafa', 'Ramon',
     'Rasmus', 'Ravi', 'Remy', 'Renzo', 'Riku', 'Rodrigo', 'Ronan', 'Rory', 'Ruben', 'Rui', 'Sacha', 'Santiago',
@@ -54362,7 +54357,7 @@ const NAMES = {
     'Gerhardt', 'Giordano', 'Gomes', 'Gruber', 'Guerin', 'Haddad', 'Halvorsen', 'Hartmann', 'Hayashi', 'Heikkinen',
     'Herrera', 'Holloway', 'Horvath', 'Ibarra', 'Ionescu', 'Iwata', 'Jansen', 'Jaramillo', 'Jovanovic', 'Kaczmarek',
     'Kagawa', 'Kallio', 'Karimi', 'Keane', 'Kessler', 'Kowalczyk', 'Kurtz', 'Laine', 'Lambrecht', 'Larsen', 'Lemaire',
-    'Lindqvist', 'Lombardi', 'Lucero', 'Maalouf', 'Madsen', 'Makinen', 'Marchetti', 'Marquez', 'Mbeki', 'Medina',
+    'Lindqvist', 'Lombardi', 'Maalouf', 'Madsen', 'Makinen', 'Marchetti', 'Marquez', 'Mbeki', 'Medina',
     'Mendez', 'Mikkelsen', 'Molnar', 'Montague', 'Moreau', 'Morita', 'Mustafa', 'Nakagawa', 'Navarro', 'Nieminen',
     'Novak', 'Nyberg', 'Okonkwo', 'Olivares', 'Oyelaran', 'Pacheco', 'Pallister', 'Pereira', 'Petrov', 'Pinto',
     'Quiroga', 'Radu', 'Ramaswamy', 'Rautio', 'Ravasi', 'Reyes', 'Rinaldi', 'Rocha', 'Rosales', 'Rousseau',
@@ -54375,8 +54370,8 @@ const NAMES = {
 
 // A typed driver name -> { first, last } (race.js, the multiplayer server, the menus): the last word that has a letter or
 // digit is the surname (shown bold), the words before it are the first name(s); marks after it stay with it. One word =
-// just a surname, never an invented first name. "Cameron" -> '' + 'Cameron', "Anna Maria Rossi" -> 'Anna Maria' +
-// 'Rossi', "Luc :)" -> '' + 'Luc :)', "Luc Sciammetta :)" -> 'Luc' + 'Sciammetta :)'.
+// just a surname, never an invented first name ("One" -> '' + 'One', "One Two Three" -> 'One Two' + 'Three',
+// "One :)" -> '' + 'One :)', "One Two :)" -> 'One' + 'Two :)').
 NAMES.split = full => {
   const w = String(full == null ? '' : full).trim().split(/\s+/).filter(Boolean), has = x => /[\p{L}\p{N}]/u.test(x);
   let k = w.length - 1;
@@ -54384,9 +54379,9 @@ NAMES.split = full => {
   const first = w.slice(0, Math.max(0, k)).join(' ');
   return has(first) ? { first, last: w.slice(k).join(' ') } : { first: '', last: w.join(' ') };
 };
-// stored first / last -> the parts to show (the whole name split again: first 'Luc' + last ':)' -> '' + 'Luc :)')
+// stored first / last -> the parts to show (the whole name split again: first 'One' + last ':)' -> '' + 'One :)')
 NAMES.parts = (first, last) => NAMES.split((first ? first + ' ' : '') + (last == null ? '' : last));
-// 3-letter timing-tower code: the surname's letters, then the first name's, digits, X ("Luc :)" -> LUC, "Anna Maria Rossi" -> ROS)
+// 3-letter timing-tower code: the surname's letters, then the first name's, digits, X ("One :)" -> ONE, "One Two Three" -> THR)
 NAMES.code = (last, first) => {
   const L = x => String(x || '').replace(/[^\p{L}]/gu, '').toUpperCase(), D = x => String(x || '').replace(/[^\p{N}]/gu, '');
   return (L(last) + L(first) + D(last) + D(first) + 'XXX').slice(0, 3);
@@ -60165,7 +60160,7 @@ const Race = (() => {
     // cars: one per team in the field (race.field, fieldTeams: the player's team + the others; time trial: the player
     // only). G.cars is in team order (id = index in G.cars).
     const cars = [];
-    race.field = fieldTeams(opts, playerTeam, tt);
+    race.field = fieldTeams(opts, playerTeam, tt, U.rng(seed ^ 0x6a09e667));   // (its own draw: the other seeded picks stay as they were)
     for (const ti of race.field) {
       const isPlayer = ti === playerTeam;
       let compound = isPlayer ? playerCompound : aiStartCompound(race, rnd), bias = 0;
@@ -60338,19 +60333,22 @@ const Race = (() => {
 
   // ---------- field (entry list) ----------
   // Team indices in the race, ascending: opts.field (a championship keeps its entry list; the player's team is always in
-  // it) or the player's team + the next fieldSize - 1 teams in TEAMS order (default 10 = the original ten teams).
+  // it) or the player's team + fieldSize - 1 others drawn at random from every team (rnd: Race.create's own seeded draw,
+  // so all 20 liveries turn up; without rnd: the next teams in TEAMS order, for old saves = the original ten teams).
   const FIELD_DEF = () => CFG.field || { min: 2, max: TEAMS.length, def: 10 };
   function fieldSize(n) { const F = FIELD_DEF(); n = Math.round(+n); return U.clamp(isFinite(n) && n > 0 ? n : F.def, F.min, Math.min(F.max, TEAMS.length)); }
-  function pickField(pt, n) {
-    const out = [pt];
+  function pickField(pt, n, rnd) {
+    const out = [pt], rest = [];
     n = fieldSize(n);
-    for (let i = 0; i < TEAMS.length && out.length < n; i++) if (i !== pt) out.push(i);
+    for (let i = 0; i < TEAMS.length; i++) if (i !== pt) rest.push(i);
+    if (typeof rnd === 'function') for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
+    for (let i = 0; i < rest.length && out.length < n; i++) out.push(rest[i]);
     return out.sort((a, b) => a - b);
   }
-  function fieldTeams(opts, pt, tt) {
+  function fieldTeams(opts, pt, tt, rnd) {
     if (tt) return [pt];
     let f = Array.isArray(opts.field) ? opts.field.map(x => x | 0).filter((x, i, a) => x >= 0 && x < TEAMS.length && a.indexOf(x) === i) : null;
-    if (!f || f.length < 2) return pickField(pt, opts.fieldSize);
+    if (!f || f.length < 2) return pickField(pt, opts.fieldSize, rnd);
     if (f.indexOf(pt) < 0) { f.sort((a, b) => a - b); f[f.length - 1] = pt; }   // (player changed team: takes the last entry's place)
     return f.sort((a, b) => a - b);
   }
@@ -61589,9 +61587,9 @@ const Race = (() => {
   function newChampionship(settings) {
     const rounds = settings && Array.isArray(settings.rounds) && settings.rounds.length ? settings.rounds.slice() : ['vortex', 'harbour', 'kotori'];
     // the season's entry list (fixed for every round, with the drivers): settings.field, else the player's team +
-    // settings.fieldSize - 1 others (pickField)
+    // settings.fieldSize - 1 others drawn at random (pickField), kept for the whole season
     const field = settings && Array.isArray(settings.field) && settings.field.length >= 2 ? fieldTeams({ field: settings.field }, U.clamp((settings.teamIndex | 0), 0, TEAMS.length - 1), false)
-      : pickField(U.clamp(((settings && settings.teamIndex) | 0), 0, TEAMS.length - 1), settings && settings.fieldSize);
+      : pickField(U.clamp(((settings && settings.teamIndex) | 0), 0, TEAMS.length - 1), settings && settings.fieldSize, Math.random);
     const standings = {};
     field.forEach(i => { standings[i] = 0; });
     return { rounds, round: 0, standings, history: [], complete: false, field };
@@ -61819,7 +61817,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-09-30 21:48';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-01 17:05';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -63927,7 +63925,7 @@ const NetCore = (() => {
 //   width 1.9 m, wheel radius 0.36 m. The caller positions the group (group.rotation.y = -car.h).
 //   The group holds a THREE.LOD: level 0 (< 38 m, ~14k tris) and level 1 (far, < 3k tris), chosen automatically
 //   by the renderer; setLOD(0|1) forces a level, setLOD(-1) returns to automatic.
-//   opts.ghost    translucent single-colour copy (opts.color, default pale cyan), low detail, no shadows.
+//   opts.ghost    translucent single-colour copy (opts.color, default pale cyan; opts.ghostOpacity, default 0.17), low detail, no shadows.
 //   opts.compound initial tyre compound until update() sees car.tyre.compound.
 //   mirrors: [leftMesh, rightMesh] flat glass quads facing backward (UV 0..1, u flipped = mirror image); each has its
 //   own MeshBasicMaterial placeholder, assign a render-target texture to mesh.material.map.
@@ -64994,11 +64992,11 @@ material.clearcoat = mix(uRM[agpP].z, 1.0, agpVisor);
     return C.tyre[comp];
   }
 
-  function ghostMaterials(color) {
-    const key = color || '#9fe7ff';
+  function ghostMaterials(color, op) {
+    const c0 = color || '#9fe7ff', o = op > 0 && op <= 1 ? op : 0.17, key = c0 + '|' + o;   // (opts.ghostOpacity: multiplayer time trial 0.42)
     if (!C.ghost.has(key)) {
       // (clearly see-through: the track and a car behind it stay readable through the ghost)
-      const col = new T.MeshLambertMaterial({ color: key, emissive: new T.Color(key).multiplyScalar(0.28), transparent: true, opacity: 0.17, depthWrite: false });
+      const col = new T.MeshLambertMaterial({ color: c0, emissive: new T.Color(c0).multiplyScalar(0.28), transparent: true, opacity: o, depthWrite: false });
       const depth = new T.MeshBasicMaterial({ colorWrite: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
       C.ghost.set(key, { col, depth });
     }
@@ -65016,7 +65014,7 @@ material.clearcoat = mix(uRM[agpP].z, 1.0, agpVisor);
     ensure();
     team = team || { id: 'generic', name: 'Generic', primary: '#888888', secondary: '#222222', accent: '#ffffff', driver: { number: 0 } };
     const ghost = !!opts.ghost;
-    const gm = ghost ? ghostMaterials(opts.color) : null;
+    const gm = ghost ? ghostMaterials(opts.color, opts.ghostOpacity) : null;
     const livMat = ghost ? gm.col : liveryMaterial(team), carbMat = ghost ? gm.col : carbonMaterial();
     let comp = opts.compound || 'M';
     const group = new T.Group();
@@ -68394,11 +68392,12 @@ const Render3D = (() => {
     const gh = G.ghost;
     if (!gh || !gh.visible) { if (ghostView) ghostView.model.group.visible = false; return; }
     const team = (G.player && G.player.team) || TEAMS[0];
-    if (!ghostView || ghostView.team !== team) {
+    const mp = typeof Net !== 'undefined' && !!Net.mode && Net.mode() === 'timetrial';   // (multiplayer time trial: the chased ghost is easier to see)
+    if (!ghostView || ghostView.team !== team || ghostView.mp !== mp) {
       if (ghostView) { scene.remove(ghostView.model.group); try { ghostView.model.dispose(); } catch (e) { /* ignore */ } }
-      const model = makeCarModel(team, { ghost: true });
+      const model = makeCarModel(team, mp ? { ghost: true, ghostOpacity: 0.42 } : { ghost: true });
       scene.add(model.group);
-      ghostView = { model, team, car: { speed: 0, wheelRot: 0, steerAngle: 0, aeroT: 0, h: 0, x: 0, z: 0 } };
+      ghostView = { model, team, mp, car: { speed: 0, wheelRot: 0, steerAngle: 0, aeroT: 0, h: 0, x: 0, z: 0 } };
     }
     const g = ghostView.model.group;
     g.visible = true; g.position.set(gh.x, HF ? GH(gh.x, gh.z) : 0, gh.z); g.rotation.y = -gh.h;
@@ -69741,7 +69740,7 @@ const HUD = (() => {
   let root = null, E = {}, shown = true;
   // timing tower: thin, one value column; the tower key (T by default) cycles it through these views and the small header
   // names the current one: [id, header label]. Penalties are always badges beside the rows (with fastest lap / OT / PIT).
-  const TW_VIEWS = [['leader', 'GAP TO LEADER'], ['interval', 'INTERVAL'], ['age', 'TYRE AGE'], ['stops', 'PIT STOPS'], ['battery', 'BATTERY']];
+  const TW_VIEWS = [['leader', 'GAP TO LEADER'], ['interval', 'INTERVAL'], ['stops', 'PIT STOPS'], ['battery', 'BATTERY']];
   let towerView = 'leader', keyRev = -1;
   const TW_SCALE = 1.12;   // tower text / rows 1.12x the base HUD size (20 cars still fit a 16:9 screen)
   let lastG = null, lastRace = undefined, clock = 0;
@@ -69868,7 +69867,7 @@ const HUD = (() => {
 
   <div class="agp-banners" data-r="banners"></div>
 
-  <div class="agp-bcue" data-r="brake"><span class="agp-bcue-side"><i></i><i></i><i></i><i></i></span><div class="agp-bcue-core"><b data-r="bcT">BRAKE</b><span class="agp-bcue-tg"><em data-r="bcG">3</em><span data-r="bcV">131</span><small>KM/H</small></span></div><span class="agp-bcue-side is-r"><i></i><i></i><i></i><i></i></span></div>
+  <div class="agp-bcue" data-r="brake"><span class="agp-bcue-side"><i></i><i></i><i></i><i></i></span><div class="agp-bcue-core"><b data-r="bcT">BRAKE</b></div><span class="agp-bcue-side is-r"><i></i><i></i><i></i><i></i></span></div>
 
   <div class="agp-pit" data-r="pit">
     <div class="agp-pit-head"><b>PIT STOP</b><span data-r="pitState">CHOOSE TYRES</span></div>
@@ -70274,14 +70273,14 @@ const HUD = (() => {
   }
 
   // braking cue: 'near' (yellow, the side bars fill in over the last CUE.lead s), 'brake' (red: the key-press point,
-  // held while braking until the corner's speed), 'late' (past it: blinking), 'lift' (yellow chip, no bars); the corner's
-  // target gear + speed. Colours = the racing line's (green / yellow / red).
+  // held while braking until the corner's speed), 'late' (past it: blinking), 'lift' (yellow chip, no bars). Just the word:
+  // no target gear / speed. Colours = the racing line's (green / yellow / red).
   const cueOut = {}, CUE_N = 4;
   let cueHold = 0, cueLast = '', cueIdle = 0;
   function paintCue(c, car, dt) {
     let s = null, lit = 0;
     if (c && c.state) s = c.state === 3 ? (c.late ? 'late' : 'brake') : c.state === 2 ? 'near' : 'lift';
-    // on the brakes for it (at the cue or a little before): red with the target, held down to the corner's speed
+    // on the brakes for it (at the cue or a little before): red, held down to the corner's speed
     if (c && s === 'near' && (car.brake || 0) > 0.3) s = 'brake';
     if (c && s !== 'brake' && s !== 'late' && cueHold > 0 && (car.brake || 0) > 0.15 && (car.speed || 0) > c.vT + 1.5 && c.vT > 0) s = 'brake';
     if (s === 'brake' || s === 'late') cueHold = 1; else if (!(c && c.state)) { cueIdle += dt; if (cueIdle > 0.3) cueHold = 0; }
@@ -70295,7 +70294,6 @@ const HUD = (() => {
       E.brake.querySelectorAll('.agp-bcue-side').forEach(sd => sd.querySelectorAll('i').forEach((el, k) => setC(el, 'on', (sd.classList.contains('is-r') ? CUE_N - 1 - k : k) < lit)));
     }
     setT(E.bcT, s === 'lift' ? 'LIFT' : 'BRAKE');
-    if (c && c.vT > 0) { setT(E.bcG, String(c.gear || '')); setT(E.bcV, String(Math.round(c.vT * 3.6))); }
     if (s !== cueLast) { cueLast = s; if (s === 'brake') { E.brake.classList.remove('is-pop'); void E.brake.offsetWidth; E.brake.classList.add('is-pop'); } }
   }
 
@@ -70416,11 +70414,10 @@ const HUD = (() => {
   // ---------- timing tower (~10 Hz) ----------
   const TW_W = 14, TW_HEAD = 1.55;   // tower width, view header height (tower em; CSS .agp-tower / .agp-tw-mode)
   // the one value column for the current view: gap to the leader / interval (an interval never shows larger than the gap
-  // to the leader; laps down), tyre age (laps on this set), pit stops, battery (% of the current cap + a thin bar)
+  // to the leader; laps down), pit stops, battery (% of the current cap + a thin bar)
   function towerValue(r, car, i, order, lead, L, pre) {
     let v = '', k = null;
     if (car.dnf) v = 'OUT';
-    else if (towerView === 'age') { const n = car.tyre && isNum(car.tyre.laps) ? car.tyre.laps : 0; v = n + (n === 1 ? ' LAP' : ' LAPS'); }
     else if (towerView === 'stops') { const n = car.pitStops | 0; v = n + (n === 1 ? ' STOP' : ' STOPS'); }
     else if (towerView === 'battery') {   // (Overtake Mode raises the cap)
       const cap = car.batteryCap || CFG.energy.cap, pc = Math.round(clamp((car.battery || 0) / cap, 0, 1) * 100);
@@ -71070,12 +71067,12 @@ html.agp-touch, html.agp-touch body { touch-action: manipulation; -webkit-tap-hi
 .agp-tc-btn b { font: italic 800 11px/1 var(--tcf); letter-spacing: .04em; }
 .agp-tc-btn small { font: 700 8px/1 var(--tcf); letter-spacing: .1em; color: rgba(255, 255, 255, .7); }
 .agp-tc-btn.on { transform: scale(.94); }
-/* tilt layout: STRAIGHT next to the brake (left thumb), BOOST next to the throttle (right thumb) */
+/* tilt layout: STRAIGHT next to the brake and BOOST above it (left thumb; the right thumb stays on the throttle) */
 .agp-tc-aero { left: calc(22px + 84px * var(--tcs)); bottom: 16px; border-color: rgba(25, 224, 106, .45); }
-.agp-tc-boost { right: calc(22px + 84px * var(--tcs)); bottom: 16px; border-color: rgba(39, 215, 245, .55); }
+.agp-tc-boost { left: calc(22px + 84px * var(--tcs)); bottom: calc(28px + 62px * var(--tcs)); border-color: rgba(39, 215, 245, .55); }
 /* thumb-steer layouts: both pedals on the right, the two buttons above them */
 .agp-tc[data-steer="buttons"] .agp-tc-aero, .agp-tc[data-steer="drag"] .agp-tc-aero { left: auto; right: calc(29px + 84px * var(--tcs)); bottom: calc(18px + var(--ph) * var(--tcs)); }
-.agp-tc[data-steer="buttons"] .agp-tc-boost, .agp-tc[data-steer="drag"] .agp-tc-boost { right: calc(21px + 0px); bottom: calc(18px + var(--ph) * var(--tcs)); }
+.agp-tc[data-steer="buttons"] .agp-tc-boost, .agp-tc[data-steer="drag"] .agp-tc-boost { left: auto; right: calc(21px + 0px); bottom: calc(18px + var(--ph) * var(--tcs)); }
 .agp-tc-pedal, .agp-tc-btn { --ph: clamp(96px, 30vh, 132px); }
 .agp-tc-aero.is-zone { border-color: #19e06a; box-shadow: 0 0 14px rgba(25, 224, 106, .55); }
 .agp-tc-aero.is-open { background: rgba(25, 224, 106, .5); }
@@ -72888,7 +72885,7 @@ const Menu = (() => {
     return [[L('throttle'), 'Throttle'], [L('brake'), 'Brake (hold at a standstill: reverse)'], [J(['left', 'right']), 'Steer left · right'],
       [L('aero'), 'Straight mode (in zones)'], [L('boost'), 'Boost (battery)'], [L('camera'), 'Camera'], ['ESC / ' + L('pause'), 'Pause'],
       [J(['tyreS', 'tyreM', 'tyreH', 'tyreI', 'tyreW']), 'Pit tyres: S · M · H · inter · wet'], [J(['fwDown', 'fwUp']) + '  /  ' + J(['rwDown', 'rwUp']), 'Pit stop wings: front − / +, rear − / +'],
-      [L('reset'), 'Reset car to track'], [L('tower'), 'Timing tower: next view (gap to leader, interval, tyre age, pit stops, battery)'], [L('mirror'), 'Rear-view mirror on / off'], [L('fullscreen'), 'Fullscreen on / off']];
+      [L('reset'), 'Reset car to track'], [L('tower'), 'Timing tower: next view (gap to leader, interval, pit stops, battery)'], [L('mirror'), 'Rear-view mirror on / off'], [L('fullscreen'), 'Fullscreen on / off']];
   }
   function openHelp() {
     helpOpen = true;
@@ -75187,7 +75184,9 @@ const Net = (() => {
   const tcol = t => (typeof HUD !== 'undefined' && HUD.teamColor ? HUD.teamColor(t) : t.primary);
   const fmtT = t => (t == null ? '-:--.---' : U.fmtTime(t));
   const nowMs = () => performance.now();
-  const EMOTES = [['gg', 'GG'], ['gl', 'GOOD LUCK'], ['nice', 'NICE ONE'], ['sorry', 'SORRY'], ['wait', 'WAIT'], ['go', "LET'S GO"]];
+  const EMOTES = [['gg', 'GG'], ['gl', 'GOOD LUCK'], ['nice', 'NICE ONE'], ['sorry', 'SORRY'], ['wait', 'WAIT'], ['go', "LET'S GO"],
+    ['ty', 'THANKS'], ['wd', 'WELL DRIVEN'], ['close', 'CLOSE ONE!'], ['oops', 'OOPS'], ['wow', 'WOW'], ['lol', 'HAHA'],
+    ['again', 'REMATCH?'], ['ready', 'READY?'], ['brb', 'BRB'], ['bye', 'GOTTA GO']];   // (keys: server/server.mjs EMOTES)
   const EMO = Object.fromEntries(EMOTES);
 
   let api = null;                 // { G, Game, M } from main
@@ -75573,7 +75572,7 @@ const Net = (() => {
       if (!v || v.team !== g.team) {
         if (v) { scene.remove(v.model.group); try { v.model.dispose(); } catch (e) {} }
         const team = teamOf(g.team);
-        const model = buildCarModel(team, { ghost: true, color: team.primary });
+        const model = buildCarModel(team, { ghost: true, color: team.primary, ghostOpacity: 0.42 });   // (easier to see than the solo ghost)
         scene.add(model.group);
         v = { model, team: g.team };
         ghostViews.set(g.id, v);
@@ -75615,7 +75614,7 @@ const Net = (() => {
     E.lb.addEventListener('click', ev => { const r = ev.target.closest('[data-pid]'); if (r && S) { S.chasing = +r.dataset.pid; send({ t: 'getghost', pid: +r.dataset.pid }); } });
     E.toast = document.createElement('div'); E.toast.className = 'agp-net-toast'; app.appendChild(E.toast);
   }
-  function hidePanels() { if (E.badge) { E.badge.style.display = 'none'; E.lb.style.display = 'none'; } }
+  function hidePanels() { if (E.badge) { E.badge.style.display = 'none'; E.lb.style.display = 'none'; E.lb._on = false; } }
   function badge() {
     ensurePanels();
     const t = nowMs();
@@ -75626,17 +75625,17 @@ const Net = (() => {
     E.badge.className = 'agp-net-badge' + (bad ? ' is-bad' : p > 120 ? ' is-warn' : '');
     E.badge.innerHTML = bad ? '<b>OFFLINE</b><span>RECONNECTING</span>' : `<b>${p}</b><span>MS PING</span>` + (C.room ? `<em>${NC.fmtCode(C.room.code)}</em>` : '');
   }
+  // (time trial only, and only once there is a timed lap to show: never an empty frame on screen)
   function leaderboard() {
     ensurePanels();
-    const rows = S.lb || [];
-    E.lb.style.display = api.G.screen === 'race' && !api.G.paused ? '' : 'none';
+    const rows = S.lb || [], on = S.mode === 'timetrial' && rows.length > 0 && api.G.screen === 'race' && !api.G.paused;
+    if (E.lb._on !== on) { E.lb._on = on; E.lb.style.display = on ? '' : 'none'; }
     const key = JSON.stringify(rows) + '|' + S.chasing;
     if (E.lb._k === key) return;
     E.lb._k = key;
     const best = rows.length ? rows[0].best : null;
-    E.lb.innerHTML = `<div class="agp-net-lbh"><b>BEST LAPS</b><span>G / CLICK: CHASE GHOST</span></div>` + (rows.length ? rows.map((r, i) =>
-      `<div class="agp-net-lbr${r.pid === C.id ? ' is-me' : ''}${r.pid === S.chasing ? ' is-chase' : ''}" data-pid="${r.pid}"><span>${i + 1}</span><i style="background:${tcol(teamOf(r.team))}"></i><b>${esc(String(r.name).toUpperCase())}</b><em>${i ? '+' + (r.best - best).toFixed(3) : fmtT(r.best)}</em></div>`).join('')
-      : '<div class="agp-net-lbe">NO TIMED LAPS YET</div>');
+    E.lb.innerHTML = `<div class="agp-net-lbh"><b>BEST LAPS</b><span>G / CLICK: CHASE GHOST</span></div>` + rows.map((r, i) =>
+      `<div class="agp-net-lbr${r.pid === C.id ? ' is-me' : ''}${r.pid === S.chasing ? ' is-chase' : ''}" data-pid="${r.pid}"><span>${i + 1}</span><i style="background:${tcol(teamOf(r.team))}"></i><b>${esc(String(r.name).toUpperCase())}</b><em>${i ? '+' + (r.best - best).toFixed(3) : fmtT(r.best)}</em></div>`).join('');
   }
   function showEmote(m) {
     ensurePanels();
@@ -76139,13 +76138,13 @@ const Net = (() => {
 .agp-net-lbr>span{color:#8a93a6;font-weight:700;text-align:right}.agp-net-lbr>i{height:13px;border-radius:1px}
 .agp-net-lbr>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800}.agp-net-lbr>em{font-style:normal;font-variant-numeric:tabular-nums;color:#c9d1e0}
 .agp-net-lbr.is-me{background:rgba(225,6,0,.18)}.agp-net-lbr.is-chase>b{color:#27d7f5}
-.agp-net-lbe{padding:8px 10px;color:#7c8598;font-size:11px;letter-spacing:1px}
 .agp-net-toast{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);z-index:6;padding:6px 14px;background:rgba(8,10,16,.7);border-radius:4px;font-size:13px;letter-spacing:1px;opacity:0;pointer-events:none}
 .agp-net-toast>b{color:#27d7f5;font-style:italic}
 .agp-net-toast.on{animation:agpNetFade 2.6s ease forwards}
 .agp-tw-row.is-human .agp-tw-code{box-shadow:inset 0 -2px 0 #27d7f5}
 `;
   return { init, sessionHook, tick, frame, postRender, live, onQuit, onRestart, menuItem, openLobby,
+    mode: () => (S ? S.mode : null),   // the multiplayer session's mode ('race' / 'timetrial'), null outside one
     // tests / console
     connect, host, join, setReady, setMe, setRoomSettings, start, leave, emote, chaseNext, core: NC,
     get state() { return { conn: C.state, url: C.url, id: C.id, ping: C.clock.ping, off: C.clock.off, room: C.room, err: C.err, cerr: C.cerr, bytesIn: C.bytesIn, bytesOut: C.bytesOut, secs: (nowMs() - C.t0) / 1000, cpu: C.cpu }; },
@@ -76688,6 +76687,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-09-30 21:48 -->
+<!-- Apex GP build 2026-10-01 17:05 -->
 </body>
 </html>

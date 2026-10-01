@@ -52,7 +52,7 @@ const getTrack = id => trackCache[id] || (trackCache[id] = buildTrack(TRACK_DATA
 const STEP = 1 / CFG.physicsHz, STEPMS = 1000 / CFG.physicsHz;
 const IDLE = { throttle: 0, brake: 1, steer: 0, boost: false, aeroPress: false, hold: true };
 const MAX_ROOMS = +(process.env.AGP_MAX_ROOMS || 200), MAX_IN_ROOM = 20, RECONNECT_S = 60, LOAD_TIMEOUT = 25000, AFK_MS = 3000;
-const EMOTES = ['gg', 'gl', 'nice', 'sorry', 'wait', 'go'];
+const EMOTES = ['gg', 'gl', 'nice', 'sorry', 'wait', 'go', 'ty', 'wd', 'close', 'oops', 'wow', 'lol', 'again', 'ready', 'brb', 'bye'];   // (labels: src/net.js EMOTES)
 // fast relay: a human car's state goes to the drivers near it the moment it arrives (the 30 Hz snapshot carries the AI
 // and far cars); --batch sends everything with the snapshots only (+0-33 ms)
 const FAST = !ARG.batch;
@@ -157,7 +157,7 @@ function leaveRoom(p, why) {
 }
 
 // ---------------------------------------------------------------- race session (server-authoritative)
-// the typed name -> first name(s) + surname and the 3-letter code (NAMES.split / NAMES.code: "Cameron" is just CAMERON / CAM)
+// the typed name -> first name(s) + surname and the 3-letter code (NAMES.split / NAMES.code: a one-word name is just that word, bold)
 const makeCode = (last, first) => (NAMES && NAMES.code ? NAMES.code(last, first) : (String(last || '').replace(/[^A-Za-z]/g, '').toUpperCase() + String(first || '').replace(/[^A-Za-z]/g, '').toUpperCase() + 'XXX').slice(0, 3));
 function splitName(n) {
   if (NAMES && NAMES.split) { const o = NAMES.split(n); return { first: o.first, last: o.last || 'Player' }; }
@@ -205,8 +205,11 @@ class RaceSim {
     const track = this.track = getTrack(S.trackId);
     const humans = this.humans = room.players.filter(connected);
     const n = Math.min(TEAMS.length, Math.max(humans.length, N.gridSize(S, humans.length)));   // humans + the lobby's AI racers
-    const field = humans.map(p => p.team);
-    for (let i = 0; i < TEAMS.length && field.length < n; i++) if (!field.includes(i)) field.push(i);
+    // the AI fill: random teams (not the next ones in order), so all 20 liveries turn up; every client gets this list
+    const field = humans.map(p => p.team), rest = [];
+    for (let i = 0; i < TEAMS.length; i++) if (!field.includes(i)) rest.push(i);
+    for (let i = rest.length - 1; i > 0; i--) { const j = crypto.randomInt(0, i + 1), t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
+    for (let i = 0; i < rest.length && field.length < n; i++) field.push(rest[i]);
     field.sort((a, b) => a - b);
     const seed = this.seed = crypto.randomInt(1, 2 ** 31 - 1);
     const G = this.G = { track, cars: [], player: null, race: null, world: null, events: [], weather: null, settings: { mode: 'race', penaltyLevel: S.penaltyLevel, penalties: S.penalties }, brains: new Map(), attract: false, time: 0, input: null };

@@ -48,7 +48,7 @@ const U = (() => {
 // Apex GP — fictional driver name pool (data) + the name helpers below. Race combines random first + last names per car (seeded).
 const NAMES = {
   first: [
-    'Adrian', 'Aiden', 'Akira', 'Alban', 'Aleksander', 'Alessio', 'Alexei', 'Alvaro', 'Amadou',
+    'Aarav', 'Adrian', 'Aiden', 'Akira', 'Alban', 'Aleksander', 'Alessio', 'Alexei', 'Alvaro', 'Amadou',
     'Amir', 'Anders', 'Andrei', 'Anselm', 'Anton', 'Arjun', 'Armand', 'Arne', 'Arturo', 'Aurelio', 'Axel', 'Bastian',
     'Benedikt', 'Bento', 'Bjorn', 'Bruno', 'Caio', 'Callum', 'Casimir', 'Cedric', 'Cesar', 'Cian', 'Cillian',
     'Cosmin', 'Dante', 'Darius', 'Dario', 'Declan', 'Dmitri', 'Duncan', 'Eamon', 'Edoardo', 'Elias', 'Emil', 'Emilio',
@@ -56,7 +56,7 @@ const NAMES = {
     'Gael', 'Gaspard', 'Gideon', 'Giorgio', 'Gustavo', 'Hamish', 'Hannes', 'Haruto', 'Hector', 'Henrik', 'Hiro',
     'Hugo', 'Ibrahim', 'Idris', 'Ignacio', 'Ilya', 'Imran', 'Ivo', 'Jacopo', 'Jakub', 'Jarno', 'Jasper', 'Javier',
     'Joaquin', 'Jonah', 'Jorge', 'Julian', 'Kaito', 'Kalani', 'Kamil', 'Kasper', 'Kenji', 'Kian', 'Kofi', 'Lars',
-    'Lazlo', 'Leandro', 'Lennart', 'Leon', 'Lorenzo', 'Luca', 'Lucas', 'Luka', 'Malik', 'Marek', 'Marius', 'Mateo',
+    'Lazlo', 'Leandro', 'Lennart', 'Leon', 'Lorenzo', 'Luka', 'Malik', 'Marek', 'Marius', 'Mateo',
     'Mathis', 'Mikael', 'Milan', 'Milo', 'Mireille', 'Nadia', 'Naoki', 'Nikolai', 'Noah', 'Nuno', 'Oisin', 'Olek',
     'Omar', 'Orlando', 'Oskar', 'Otto', 'Pablo', 'Paolo', 'Pascal', 'Pavel', 'Pedro', 'Quentin', 'Rafa', 'Ramon',
     'Rasmus', 'Ravi', 'Remy', 'Renzo', 'Riku', 'Rodrigo', 'Ronan', 'Rory', 'Ruben', 'Rui', 'Sacha', 'Santiago',
@@ -74,7 +74,7 @@ const NAMES = {
     'Gerhardt', 'Giordano', 'Gomes', 'Gruber', 'Guerin', 'Haddad', 'Halvorsen', 'Hartmann', 'Hayashi', 'Heikkinen',
     'Herrera', 'Holloway', 'Horvath', 'Ibarra', 'Ionescu', 'Iwata', 'Jansen', 'Jaramillo', 'Jovanovic', 'Kaczmarek',
     'Kagawa', 'Kallio', 'Karimi', 'Keane', 'Kessler', 'Kowalczyk', 'Kurtz', 'Laine', 'Lambrecht', 'Larsen', 'Lemaire',
-    'Lindqvist', 'Lombardi', 'Lucero', 'Maalouf', 'Madsen', 'Makinen', 'Marchetti', 'Marquez', 'Mbeki', 'Medina',
+    'Lindqvist', 'Lombardi', 'Maalouf', 'Madsen', 'Makinen', 'Marchetti', 'Marquez', 'Mbeki', 'Medina',
     'Mendez', 'Mikkelsen', 'Molnar', 'Montague', 'Moreau', 'Morita', 'Mustafa', 'Nakagawa', 'Navarro', 'Nieminen',
     'Novak', 'Nyberg', 'Okonkwo', 'Olivares', 'Oyelaran', 'Pacheco', 'Pallister', 'Pereira', 'Petrov', 'Pinto',
     'Quiroga', 'Radu', 'Ramaswamy', 'Rautio', 'Ravasi', 'Reyes', 'Rinaldi', 'Rocha', 'Rosales', 'Rousseau',
@@ -87,7 +87,8 @@ const NAMES = {
 
 // A typed driver name -> { first, last } (race.js, the multiplayer server, the menus): the last word that has a letter or
 // digit is the surname (shown bold), the words before it are the first name(s); marks after it stay with it. One word =
-// just a surname, never an invented first name.
+// just a surname, never an invented first name ("One" -> '' + 'One', "One Two Three" -> 'One Two' + 'Three',
+// "One :)" -> '' + 'One :)', "One Two :)" -> 'One' + 'Two :)').
 NAMES.split = full => {
   const w = String(full == null ? '' : full).trim().split(/\s+/).filter(Boolean), has = x => /[\p{L}\p{N}]/u.test(x);
   let k = w.length - 1;
@@ -95,7 +96,9 @@ NAMES.split = full => {
   const first = w.slice(0, Math.max(0, k)).join(' ');
   return has(first) ? { first, last: w.slice(k).join(' ') } : { first: '', last: w.join(' ') };
 };
+// stored first / last -> the parts to show (the whole name split again: first 'One' + last ':)' -> '' + 'One :)')
 NAMES.parts = (first, last) => NAMES.split((first ? first + ' ' : '') + (last == null ? '' : last));
+// 3-letter timing-tower code: the surname's letters, then the first name's, digits, X ("One :)" -> ONE, "One Two Three" -> THR)
 NAMES.code = (last, first) => {
   const L = x => String(x || '').replace(/[^\p{L}]/gu, '').toUpperCase(), D = x => String(x || '').replace(/[^\p{N}]/gu, '');
   return (L(last) + L(first) + D(last) + D(first) + 'XXX').slice(0, 3);
@@ -5874,7 +5877,7 @@ const Race = (() => {
     // cars: one per team in the field (race.field, fieldTeams: the player's team + the others; time trial: the player
     // only). G.cars is in team order (id = index in G.cars).
     const cars = [];
-    race.field = fieldTeams(opts, playerTeam, tt);
+    race.field = fieldTeams(opts, playerTeam, tt, U.rng(seed ^ 0x6a09e667));   // (its own draw: the other seeded picks stay as they were)
     for (const ti of race.field) {
       const isPlayer = ti === playerTeam;
       let compound = isPlayer ? playerCompound : aiStartCompound(race, rnd), bias = 0;
@@ -6047,19 +6050,22 @@ const Race = (() => {
 
   // ---------- field (entry list) ----------
   // Team indices in the race, ascending: opts.field (a championship keeps its entry list; the player's team is always in
-  // it) or the player's team + the next fieldSize - 1 teams in TEAMS order (default 10 = the original ten teams).
+  // it) or the player's team + fieldSize - 1 others drawn at random from every team (rnd: Race.create's own seeded draw,
+  // so all 20 liveries turn up; without rnd: the next teams in TEAMS order, for old saves = the original ten teams).
   const FIELD_DEF = () => CFG.field || { min: 2, max: TEAMS.length, def: 10 };
   function fieldSize(n) { const F = FIELD_DEF(); n = Math.round(+n); return U.clamp(isFinite(n) && n > 0 ? n : F.def, F.min, Math.min(F.max, TEAMS.length)); }
-  function pickField(pt, n) {
-    const out = [pt];
+  function pickField(pt, n, rnd) {
+    const out = [pt], rest = [];
     n = fieldSize(n);
-    for (let i = 0; i < TEAMS.length && out.length < n; i++) if (i !== pt) out.push(i);
+    for (let i = 0; i < TEAMS.length; i++) if (i !== pt) rest.push(i);
+    if (typeof rnd === 'function') for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
+    for (let i = 0; i < rest.length && out.length < n; i++) out.push(rest[i]);
     return out.sort((a, b) => a - b);
   }
-  function fieldTeams(opts, pt, tt) {
+  function fieldTeams(opts, pt, tt, rnd) {
     if (tt) return [pt];
     let f = Array.isArray(opts.field) ? opts.field.map(x => x | 0).filter((x, i, a) => x >= 0 && x < TEAMS.length && a.indexOf(x) === i) : null;
-    if (!f || f.length < 2) return pickField(pt, opts.fieldSize);
+    if (!f || f.length < 2) return pickField(pt, opts.fieldSize, rnd);
     if (f.indexOf(pt) < 0) { f.sort((a, b) => a - b); f[f.length - 1] = pt; }   // (player changed team: takes the last entry's place)
     return f.sort((a, b) => a - b);
   }
@@ -7298,9 +7304,9 @@ const Race = (() => {
   function newChampionship(settings) {
     const rounds = settings && Array.isArray(settings.rounds) && settings.rounds.length ? settings.rounds.slice() : ['vortex', 'harbour', 'kotori'];
     // the season's entry list (fixed for every round, with the drivers): settings.field, else the player's team +
-    // settings.fieldSize - 1 others (pickField)
+    // settings.fieldSize - 1 others drawn at random (pickField), kept for the whole season
     const field = settings && Array.isArray(settings.field) && settings.field.length >= 2 ? fieldTeams({ field: settings.field }, U.clamp((settings.teamIndex | 0), 0, TEAMS.length - 1), false)
-      : pickField(U.clamp(((settings && settings.teamIndex) | 0), 0, TEAMS.length - 1), settings && settings.fieldSize);
+      : pickField(U.clamp(((settings && settings.teamIndex) | 0), 0, TEAMS.length - 1), settings && settings.fieldSize, Math.random);
     const standings = {};
     field.forEach(i => { standings[i] = 0; });
     return { rounds, round: 0, standings, history: [], complete: false, field };
