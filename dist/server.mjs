@@ -52,7 +52,7 @@ const getTrack = id => trackCache[id] || (trackCache[id] = buildTrack(TRACK_DATA
 const STEP = 1 / CFG.physicsHz, STEPMS = 1000 / CFG.physicsHz;
 const IDLE = { throttle: 0, brake: 1, steer: 0, boost: false, aeroPress: false, hold: true };
 const MAX_ROOMS = +(process.env.AGP_MAX_ROOMS || 200), MAX_IN_ROOM = 20, RECONNECT_S = 60, LOAD_TIMEOUT = 25000, AFK_MS = 3000;
-const EMOTES = ['gg', 'gl', 'nice', 'sorry', 'wait', 'go', 'ty', 'wd', 'close', 'oops', 'wow', 'lol', 'again', 'ready', 'brb', 'bye'];   // (labels: src/net.js EMOTES)
+const EMO_TXT = new Map(N.EMOTES);   // quick emotes: key -> text (NetCore.EMOTES, the same list the page shows)
 // fast relay: a human car's state goes to the drivers near it the moment it arrives (the 30 Hz snapshot carries the AI
 // and far cars); --batch sends everything with the snapshots only (+0-33 ms)
 const FAST = !ARG.batch;
@@ -725,7 +725,7 @@ function onText(p, raw) {
     case 'lap': if (sim && sim.onLap) sim.onLap(p, m); break;
     case 'ghost': if (sim && sim.onGhost) sim.onGhost(p, m); break;
     case 'getghost': if (sim && sim.getGhost) sim.getGhost(p, m); break;
-    case 'emote': if (room && EMOTES.includes(m.k) && t - (p.emoteT || 0) > 800) { p.emoteT = t; sendAll(room, { t: 'emote', pid: p.id, k: m.k }); } break;
+    case 'emote': if (room && EMO_TXT.has(m.k) && t - (p.emoteT || 0) > 800) { p.emoteT = t; sendAll(room, { t: 'emote', pid: p.id, k: m.k, txt: EMO_TXT.get(m.k) }); } break;
     case 'leave': if (room) leaveRoom(p, 'left'); send(p, { t: 'left' }); break;
     default: break;
   }

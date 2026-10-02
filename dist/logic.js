@@ -212,18 +212,22 @@ const CFG = {
 
   // AI tyre strategy (Race: planOptions / choosePlan). Every plan of up to 3 stops (4 only if nothing shorter covers the
   // race) is timed with the tyre model: a lap costs the compound's pace + its wear loss, a stop race.pitLossEst. Each car
-  // then picks one near the best: weight exp(-extra perceived s / tau) among the plans at most `cut` s slower, where
-  // perceived = model time - personality (-1..1, team trait + chance) x aggr s per stop (a car that likes fresh tyres sees
-  // stops cheaper, a track-position one dearer). Stop laps: a random shift of up to `shift` laps costing <= `stag` s.
+  // then picks one near the best, among the plans at most `cut` s slower: first how many stops (each at its best plan),
+  // then the compound mix, both weight exp(-extra perceived s / tau). perceived = model time - personality (-1..1, team
+  // trait + chance) x aggr s per stop (a car that likes fresh tyres sees stops cheaper, a track-position one dearer)
+  // + pitQ s per car already planning a stop on the same lap (the lane jams: 19 cars on one lap cost up to 14 s more).
+  // tau / cut = a fixed part + tauR / cutR x the race time planned (a few seconds weigh less over 25 laps than over 10):
+  // Extreme / Hard stay within ~1-3 s of the quickest plan, Medium / Easy gamble more (two-stops, a soft three-stop).
+  // Stop laps: a shift of up to `shift` laps costing <= `stag` s, onto the laps the fewest cars stop on.
   // Model, measured on solo AI races: the AI gains paceK of a compound's 1/sqrt(grip) step, racing wears wearK x nominal
   // (20 laps at Kotori, Extreme, normal wear: M-H 0, H-H +3.7 s, S-M-M +6.4 s, 3 stops +16.9 s; model +3.2 / +7.6 / +16.4)
   strategy: {
-    paceK: 0.78, wearK: 1.08, shift: 3,
-    easy:     { tau: 4,   cut: 11,  aggr: 4.5, stag: 2.5 },
-    medium:   { tau: 3,   cut: 8,   aggr: 3.5, stag: 2 },
-    adaptive: { tau: 2,   cut: 5,   aggr: 2.5, stag: 1.5 },
-    hard:     { tau: 1.4, cut: 3.5, aggr: 1.5, stag: 1.2 },
-    extreme:  { tau: 1,   cut: 2.5, aggr: 1,   stag: 1 },
+    paceK: 0.78, wearK: 1.08, shift: 3, pitQ: 0.35,
+    easy:     { tau: 2.5, tauR: 0.0045, cut: 9,   cutR: 0.012, aggr: 4.5, stag: 2.5 },
+    medium:   { tau: 2,   tauR: 0.0032, cut: 7,   cutR: 0.009, aggr: 3.5, stag: 2 },
+    adaptive: { tau: 1.6, tauR: 0.0022, cut: 5,   cutR: 0.006, aggr: 2.5, stag: 1.5 },
+    hard:     { tau: 1.2, tauR: 0.0014, cut: 3.5, cutR: 0.004, aggr: 1.5, stag: 1.2 },
+    extreme:  { tau: 0.9, tauR: 0.0007, cut: 2.5, cutR: 0.002, aggr: 1,   stag: 1 },
   },
 
   surface: [
@@ -3901,6 +3905,11 @@ const Physics = (() => {
 // capped by steering lock). Kerbs: DIFFICULTY.x.kerb (hard, extreme, fast adaptive) blends toward a kerb line (inside wheels
 // over the kerbs in the corners where that is faster; the speed plan accounts for the kerb's grip). Adaptive: see the
 // 'adaptive difficulty' section (pace dial k, player timing, skill profile, battle band).
+// Flat-out curves (flatTable): the difficulty's corner-speed scaling applies only where a curve really slows the car — a
+// slower driver still takes a flat-out curve flat. Speed-plan samples sit on a fixed track grid, curvature from the lines'
+// precomputed (smooth) curvature: no flicker, no phantom brakes. Line noise is held while other cars are close; a car
+// alongside / committed to a pass from behind is never squeezed (one defensive move per straight, only while the car
+// behind is still in the tow). After the flag: a cool-down lap at ~60 % of the corner speeds (all difficulties).
 // Strategy: Race plans stops (car.strategy.auto); the AI covers the player's stops, steers to the pit side
 // when car.wantPit and never pits on the final lap. Per-track data is cached in track._ai.
 const AI = (() => {
@@ -3932,6 +3941,14 @@ const AI = (() => {
     lowK: 0.95,      // grip share for slow corners (< 30 m/s) relative to fast ones
     wetK: 0.3,       // extra corner/braking margin per unit of lost grip (wet, worn)
     fcK: 1.0,        // friction-circle weight for braking while cornering
+    ffK: 1,          // steering feed-forward from the lines' precomputed curvature (0: world-space menger of the path)
+    grid: 1,         // speed plan samples on a fixed track grid (0: re-aligned to the car every step)
+    planK: 1,        // speed plan curvature from the line's precomputed curvature + the planner's offset (0: menger of the samples)
+    thrX: 5,         // m: throttle aimed at the planned speed this much further on where it rises (exits)
+    flatW: 2,        // flat-out curves without the difficulty's corner-speed scaling (1: fixed difficulties, 2: also adaptive)
+    noSqueeze: 1,    // never move toward a car alongside / committed to a pass from behind; defensive move only while it is in my tow
+    nzHold: 1,       // line noise held while other cars are close
+    coolK: 0.6, coolEnd: 0.42,   // cool-down lap: share of the corner speeds (x the 96 m/s straight cap); the last quarter eases to coolEnd
     kSmooth: 1, clrNew: 0, consPlan: 1, holdLane: 1,      // smooth the planned path's curvature over 3 samples
     ctlFC: 0.7,      // controller: braking cap while cornering = 1 - ctlFC * (lateral use)^2 (0.9 fell behind the plan into hairpins)
     course: 0.5,     // share of the velocity direction (vs body heading) in the steering heading error
@@ -3948,6 +3965,7 @@ const AI = (() => {
 
   // scratch for the look-ahead (drive() is synchronous)
   const kX = new Float64Array(MAXK), kV = new Float64Array(MAXK), kVc = new Float64Array(MAXK), kA = new Float64Array(MAXK);
+  const kW = new Float64Array(MAXK), kLk = new Float64Array(MAXK), kD = new Float64Array(MAXK);
   const kK = new Float64Array(MAXK), kPX = new Float64Array(MAXK), kPZ = new Float64Array(MAXK), kL = new Float64Array(MAXK), kG = new Float64Array(MAXK), kDv = new Float64Array(MAXK);
 
   // exact inverse of CFG.perf.latAccel (load-sensitive mu): steady-state speed on curvature k (capped at `cap`: the
@@ -4196,12 +4214,19 @@ const AI = (() => {
       th[i] = Math.atan2(track.tz[i], track.tx[i]);
       lx[i] = track.px[i] + track.nx[i] * line[i]; lz[i] = track.pz[i] + track.nz[i] * line[i];
     }
-    let lk = new Float64Array(N);
-    for (let i = 0; i < N; i++) { const a = (i + N - 2) % N, b = (i + 2) % N; lk[i] = menger(lx[a], lz[a], lx[i], lz[i], lx[b], lz[b]); }
-    lk = blur(lk, 2);
-    // noise allowance: 1 on straights, 0 in corners
+    // curvature of a lateral line d[] (menger over +-2 samples, blurred over +-2)
+    const lineCurv = d => {
+      const qx = new Float64Array(N), qz = new Float64Array(N);
+      for (let i = 0; i < N; i++) { qx[i] = track.px[i] + track.nx[i] * d[i]; qz[i] = track.pz[i] + track.nz[i] * d[i]; }
+      const k = new Float64Array(N);
+      for (let i = 0; i < N; i++) { const a = (i + N - 2) % N, b = (i + 2) % N; k[i] = menger(qx[a], qz[a], qx[i], qz[i], qx[b], qz[b]); }
+      return blur(k, 2);
+    };
+    const lk = lineCurv(line);
+    // noise allowance: 0.45 on straights, 0.15 in corners
     const nzf = new Float32Array(N), kw = blur(lk.map(Math.abs), 12);
-    for (let i = 0; i < N; i++) nzf[i] = 0.15 + 0.85 * clamp(1 - kw[i] * 250, 0, 1);
+    // (straights: 0.45 — the full wave read as weaving from side to side on the straights)
+    for (let i = 0; i < N; i++) nzf[i] = 0.15 + 0.3 * clamp(1 - kw[i] * 250, 0, 1);
     // reference speed profile on the line (for braking points)
     const vr = new Float64Array(N);
     for (let i = 0; i < N; i++) vr[i] = vCorner(lk[i], P.lat, 1);
@@ -4267,12 +4292,16 @@ const AI = (() => {
     try { lineX = useX ? kerbLine(track, csK, { xm: P.kxM, ref: lineK || line }) : null; } catch (e) { lineX = null; }
     try { exit = exitRoad(track, pit); } catch (e) { exit = null; }
     const A = {
-      src: track.raceLine, N, step, L, line, lineK: lineK || line, kerbGain: lineK ? lineK.gain : 0, th, lk, nzf, vr, corners: cs, nextC, toBrk,
+      src: track.raceLine, N, step, L, line, lineK: lineK || line,
+      // steering feed-forward: smooth curvature of each line (world-space menger on the interpolated path has a bump at
+      // every track sample: the centreline is a polyline -> chatter)
+      lkK: lineK ? lineCurv(lineK) : lk, lkX: lineX ? lineCurv(lineX) : lineK ? null : lk, kerbGain: lineK ? lineK.gain : 0, th, lk, nzf, vr, corners: cs, nextC, toBrk,
       lineX: lineX || lineK || line, xGain: lineX ? lineX.gain : 0,   // two-wheels-off line (b.kw > 1: Extreme's technique)
       kL: track.kerbL, kR: track.kerbR, roL: track.runoffL, roR: track.runoffR,
       wl: track.wallL, wr: track.wallR, px: track.px, pz: track.pz, nx: track.nx, nz: track.nz, hw: track.halfW, kc: track.curv,
       pit: pit ? { side: pit.side || 1, entryS: pit.entryS, exitS: pit.exitS } : null, exit,
     };
+    if (!A.lkX) A.lkX = lineX ? lineCurv(lineX) : A.lkK;
     track._ai = A;
     return A;
   }
@@ -4285,6 +4314,20 @@ const AI = (() => {
     const k = A.lineK[i] + (A.lineK[j] - A.lineK[i]) * u;
     if (kw <= 1) return a + (k - a) * kw;
     return k + (A.lineX[i] + (A.lineX[j] - A.lineX[i]) * u - k) * (kw - 1);
+  };
+  const lineKi = (A, i, kw) => {
+    const a = A.lk[i];
+    if (!(kw > 0)) return a;
+    if (kw <= 1) return a + (A.lkK[i] - a) * kw;
+    return A.lkK[i] + (A.lkX[i] - A.lkK[i]) * (kw - 1);
+  };
+  const lineK = (A, s, kw) => {
+    const f = s / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N;
+    const j = i + 1 === A.N ? 0 : i + 1, a = A.lk[i] + (A.lk[j] - A.lk[i]) * u;
+    if (!(kw > 0)) return a;
+    const k = A.lkK[i] + (A.lkK[j] - A.lkK[i]) * u;
+    if (kw <= 1) return a + (k - a) * kw;
+    return k + (A.lkX[i] + (A.lkX[j] - A.lkX[i]) * u - k) * (kw - 1);
   };
   const lineAt = (A, s, kw) => {
     const f = s / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N;
@@ -4302,7 +4345,17 @@ const AI = (() => {
     const ln = lnI(A, i, j, u, b.kw);
     const hw = A.hw[i] + (A.hw[j] - A.hw[i]) * u;
     const tt = holdTrans ? 0 : x / (v > 6 ? v : 6);   // speed plan: lateral moves by choice are not corners
-    const base = b.nA > 0 ? ln + b.nA * A.nzf[i] * (0.6 * Math.sin(s * b.nK1 + b.nP1) + 0.4 * Math.sin(s * b.nK2 + b.nP2)) : ln;
+    let base = ln;
+    if (b.nA > 0) {
+      // (b.nzW < 1: held at b.nzH while other cars are close — a line that drifts across with a car alongside or right
+      // behind looks like weaving to break the tow, and squeezes the car alongside)
+      let nz = b.nA * (A.nzf[i] + (A.nzf[j] - A.nzf[i]) * u) * (0.6 * Math.sin(s * b.nK1 + b.nP1) + 0.4 * Math.sin(s * b.nK2 + b.nP2));
+      if (b.nzW < 1) nz = b.nzH + (nz - b.nzH) * b.nzW;
+      // (the wave fades out as the line nears the edge it would push toward: clamped there instead, the path had a kink
+      // where the line crossed the limit -> a phantom curvature spike in the speed plan, a brake on a flat-out curve)
+      const room = nz > 0 ? hw - EDGE - ln : ln + hw - EDGE, rr = room > 0 ? (room < 1.2 ? room / 1.2 : 1) : 0;
+      base += nz * rr * rr * (3 - 2 * rr);
+    }
     let w = approach(b.w, b.wT, b.wRate * tt);
     let abs = b.absSide ? b.absSide * (hw - b.absM) : approach(b.absD, b.absDT, b.absRate * tt), pa = null;
     if (b.pitIn) {
@@ -4323,7 +4376,7 @@ const AI = (() => {
     const d = base + (abs - base) * w + approach(b.off, b.offT, b.offRate * tt);
     let lo = -(hw - EDGE), hi = hw - EDGE;
     if (ln < lo) lo = ln; if (ln > hi) hi = ln;
-    const wlo = A.wl[i] + P.wallM, whi = A.wr[i] - P.wallM;        // street circuits: keep off barriers hugging the kerbs
+    const wlo = A.wl[i] + (A.wl[j] - A.wl[i]) * u + P.wallM, whi = A.wr[i] + (A.wr[j] - A.wr[i]) * u - P.wallM;        // street circuits: keep off barriers hugging the kerbs
     if (lo < wlo) lo = wlo; if (hi > whi) hi = whi;
     if (b.free) { const a = abs; if (a < lo) lo = a; if (a > hi) hi = a; }
     if (pa != null) { if (pa < lo) lo = pa; if (pa > hi) hi = pa; }   // pit exit: the lane may still be beyond the track edge
@@ -4336,7 +4389,10 @@ const AI = (() => {
         if (x > k.xMax && !(holdTrans && P.consPlan)) continue;
         let dO = ln + k.rel;
         if (dO > hw - 1) dO = hw - 1; else if (dO < 1 - hw) dO = 1 - hw;
-        if (k.side > 0) { if (dO - SEP < hi) hi = dO - SEP; } else if (dO + SEP > lo) lo = dO + SEP;
+        // (a push away from a car closer than SEP eases in at ~2.5 m/s sideways: an instant jump of the path was a swerve)
+        const push = P.noSqueeze ? 0.3 + x * 2.5 / (v > 10 ? v : 10) : 99;
+        if (k.side > 0) { const tg = Math.max(dO - SEP, b.dNow - push); if (!k.comm && tg < hi) hi = tg; if (P.noSqueeze && k.dHold < hi) hi = k.dHold; }
+        else { const tg = Math.min(dO + SEP, b.dNow + push); if (!k.comm && tg > lo) lo = tg; if (P.noSqueeze && k.dHold > lo) lo = k.dHold; }
       }
       if (lo > hi) {
         // no room: split the difference as with the normal line's envelope (the kerb line must not push a car further
@@ -4353,11 +4409,21 @@ const AI = (() => {
     if (lo > hi) return (lo + hi) * 0.5;
     return d < lo ? lo : d > hi ? hi : d;
   }
+  // the line noise at s as pathD adds it (before the edge fade)
+  function noiseAt(b, A, s) {
+    if (!(b.nA > 0)) return 0;
+    const f = s / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N;
+    const j = i + 1 === A.N ? 0 : i + 1;
+    let nz = b.nA * (A.nzf[i] + (A.nzf[j] - A.nzf[i]) * u) * (0.6 * Math.sin(s * b.nK1 + b.nP1) + 0.4 * Math.sin(s * b.nK2 + b.nP2));
+    if (b.nzW < 1) nz = b.nzH + (nz - b.nzH) * b.nzW;
+    return nz;
+  }
   function worldX(A, s, d, out) {
     const f = s / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N;
     const j = i + 1 === A.N ? 0 : i + 1;
-    out.x = A.px[i] + (A.px[j] - A.px[i]) * u + d * (A.nx[i] + (A.nx[j] - A.nx[i]) * u);
-    out.z = A.pz[i] + (A.pz[j] - A.pz[i]) * u + d * (A.nz[i] + (A.nz[j] - A.nz[i]) * u);
+    const nx = A.nx[i] + (A.nx[j] - A.nx[i]) * u, nz = A.nz[i] + (A.nz[j] - A.nz[i]) * u, m = Math.sqrt(nx * nx + nz * nz) || 1;
+    out.x = A.px[i] + (A.px[j] - A.px[i]) * u + d * nx / m;
+    out.z = A.pz[i] + (A.pz[j] - A.pz[i]) * u + d * nz / m;
   }
   let holdTrans = false;
   const _p0 = { x: 0, z: 0 }, _p1 = { x: 0, z: 0 }, _p2 = { x: 0, z: 0 };
@@ -4367,13 +4433,43 @@ const AI = (() => {
     worldX(A, s + h, pathD(b, A, s + h, x + h, v), _p2);
     return menger(_p0.x, _p0.z, _p1.x, _p1.z, _p2.x, _p2.z);
   }
+  // steering feed-forward: curvature of the planned path at s, from the line's own smooth curvature (offset curve:
+  // k / (1 - k D)) + the second derivative of the planner's offset D = path - line (noise waves, passing offsets, lane
+  // holds); no world-space polyline bumps
+  function pathKap(b, A, s, x, v, h) {
+    const k0 = lineK(A, s, b.kw);
+    const D0 = pathD(b, A, s, x, v) - lineAt(A, s, b.kw);
+    const Dm = pathD(b, A, s - h, Math.max(0, x - h), v) - lineAt(A, s - h, b.kw);
+    const Dp = pathD(b, A, s + h, x + h, v) - lineAt(A, s + h, b.kw);
+    const q = 1 - k0 * D0;
+    return k0 / (q > 0.3 ? q : 0.3) + (Dp - 2 * D0 + Dm) / (h * h);
+  }
 
+  // ---------- calibration (profile v3: smooth steering, a consistent speed plan, flat-out curves taken flat) ----------
+  // TUNE[difficulty]: overrides on top of config.js DIFFICULTY — the steering integral (Extreme's technique) for every
+  // difficulty, Extreme's corner grip share closer to the limit (the steadier plan / steering hold it). VS[track]
+  // [difficulty]: x DIFFICULTY.vScale, keeps Easy / Medium / Hard at their lap times from before v3 (flat-out curves are
+  // quicker now, slow corners a little slower: the AI no longer runs into them faster than its own plan; measured with
+  // tools/ai_vs_ref.mjs' car; '_' = unknown circuits)
+  const TUNE = { easy: { steerI: 1 }, medium: { steerI: 1 }, hard: { steerI: 1 }, extreme: { lat: 0.97, lowK: 1.0 } };
+  const VS = {
+    vortex: { hard: 0.9953, medium: 0.9935, easy: 0.9775 },
+    harbour: { hard: 1.0305, medium: 1.0253, easy: 1.0049 },
+    kotori: { hard: 0.9862, medium: 0.9906, easy: 0.9761 },
+    mirage: { hard: 1.0017, medium: 0.9994, easy: 0.9819 },
+    serrano: { hard: 1.0091, medium: 0.9676, easy: 0.8994 },
+    leman: { hard: 0.9945, medium: 0.9789, easy: 0.9217 },
+    dorado: { hard: 1.0007, medium: 0.9936, easy: 0.9717 },
+    _: { easy: 0.9619, medium: 0.9927, hard: 1.0026 },
+  };
+  const vsOf = (id, did) => { const t = VS[id] || VS._; return (t && t[did]) || 1; };
   // ---------- brain ----------
   function create(car, diff, seed, G) {
     diff = diff || DIFFICULTY.medium;
+    const tu = TUNE[diff.id] || {};
     const rnd = U.rng(((seed | 0) ^ 0x68e31da4) >>> 0);
     const cons = [];
-    for (let i = 0; i < 5; i++) cons.push({ rel: 0, relMe: 0, dd: 0, side: 0, xMax: 0, ds: 0, v: 0 });
+    for (let i = 0; i < 5; i++) cons.push({ rel: 0, relMe: 0, dd: 0, side: 0, xMax: 0, ds: 0, v: 0, dHold: 0 });
     const perf = (car.team && car.team.perf) || 1;
     const b = {
       diff, rnd,
@@ -4387,15 +4483,16 @@ const AI = (() => {
       stat: { atk: 0, def: 0, dep: 0, atkPl: 0, defPl: 0, depPl: 0 },
       pow: 1 - (1 - diff.pace) * P.powK,
       // optional per-difficulty envelope overrides (extreme drives at the physics limit)
-      latP: diff.lat || P.lat, brkP: diff.brk || P.brk, fcKd: diff.fcK || P.fcK, fcK: P.fcK, lim: 0, lockV: diff.lockV || 0, lowK: diff.lowK || P.lowK,
+      latP: tu.lat || diff.lat || P.lat, brkP: diff.brk || P.brk, fcKd: diff.fcK || P.fcK, fcK: P.fcK, lim: 0, lockV: diff.lockV || 0, lowK: tu.lowK || diff.lowK || P.lowK,
       // technique (Extreme, top of adaptive; from the player's recorded laps): straight-line target (m/s), steering
       // integral gain (the offset a loaded front leaves on exits), curvature blur weight of the speed plan
-      vTop: diff.vTop || VTOP, sI: diff.steerI || 0, eI: 0, kBl: diff.kBlur || 0, kX: diff.kerbX || 0, kxE: 0,
+      vTop: diff.vTop || VTOP, sI: tu.steerI || diff.steerI || 0, eI: 0, kBl: diff.kBlur || 0, kX: diff.kerbX || 0, kxE: 0,
       t1Brk: 0.86 + 0.1 * rnd(),
       reactT: rnd() * 0.22 * diff.reaction / 0.3,                     // added to Race's 0.12-0.3 s launch delay
       bogT: rnd() < 0.06 + diff.mistake * 4 ? 0.6 + rnd() * 0.8 : 0,    // slow getaway: throttle capped for a moment
       startMove: false, smN: 0, smWill: false,   // start: at most one move (smWill: willing to cover this start, rolled below)
-      nA: Math.max(0.3, diff.lineNoise), nK1: periodic(TAU / (260 + rnd() * 240), G.track), nP1: rnd() * TAU, nK2: periodic(TAU / (110 + rnd() * 80), G.track), nP2: rnd() * TAU,
+      nA: Math.max(0.3, diff.lineNoise), nK1: periodic(TAU / (260 + rnd() * 240), G.track), nP1: rnd() * TAU, nK2: periodic(TAU / (200 + rnd() * 120), G.track), nP2: rnd() * TAU,
+      nzW: 1, nzH: 0, dNow: 0,   // line-noise hold (cars close): live weight, held offset; lateral position (racecraft)
       atkGap: 0.35 + diff.aggression * 0.8, defGap: 0.25 + diff.aggression * 0.45,
       w: 0, wT: 0, wRate: 1, absSide: 0, absM: 2, absD: 0, absDT: 0, absRate: 2, free: false,
       off: 0, offT: 0, offRate: 1.5, cons, nCons: 0,
@@ -4404,7 +4501,7 @@ const AI = (() => {
       behindT: 0, behindCar: null,
       lastC: -1, mistX: 0, mistMul: 1, mistBrk: 1,
       rec: 0, recT: 0, stuckT: 0, offTrackT: 0, recFwd: 0,
-      vScale: diff.vScale || 1,
+      vScale: (diff.vScale || 1) * (diff.adaptive ? 1 : vsOf(G && G.track ? G.track.id : null, diff.id)),
       launch: !!(G && G.race && G.race.phase !== 'racing'), t: 0, wasKin: !!car.kinematic, aeroCD: 0, startT: -1, vT: 0, vLim: VTOP, planBrk: Infinity, plPit: null, lastLap: -1,
     };
     b.pace = P.base * (1 - (1 - diff.pace) * P.paceK) * b.paceFix;
@@ -4449,6 +4546,7 @@ const AI = (() => {
     // human getaway: extra reaction on top of Race's launch delay, occasional bogged start (TC-limited wheelspin)
     if (b.launch && race && phase === 'racing' && race.t < b.reactT) { inp.throttle = 0; inp.brake = car.isPlayer ? 0.45 : 1; inp.steer = 0; return inp; }
     const A = prep(track);
+    b.G = G;
     b.t += dt;
     if (b.startT < 0) b.startT = race ? race.t : 0;
     if (b.wasKin) {   // just released from the pit lane (Race hands back at the limiter-end line)
@@ -4461,7 +4559,10 @@ const AI = (() => {
     }
     const v = car.speed;
     const idx = car.idx >= 0 ? car.idx : Math.round(car.s / A.step) % A.N;
-    const rel = wrapA(car.h - A.th[idx]);
+    // (relative to the track tangent interpolated at car.s: the sampled tangent th[idx] steps by up to ~0.1 rad in
+    // hairpins as idx moves on, a ~0.2 m jump of the steering's front-axle estimate at every track sample)
+    let rel;
+    { const f = car.s / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N; rel = wrapA(car.h - (A.th[i] + wrapA(A.th[i + 1 === A.N ? 0 : i + 1] - A.th[i]) * u)); }
     const cosRel = Math.cos(rel);
     b.aeroCD -= dt; b.atkCool -= dt;
 
@@ -4503,7 +4604,7 @@ const AI = (() => {
     // safety margin grows as grip drops (wet / worn): relative to a fresh dry tyre of this compound
     const comp = (car.tyre && COMPOUNDS[car.tyre.compound]) || COMPOUNDS.M;
     // (a tyre out of its window: the cornering grip it really has left, wLat)
-    const gRel = clamp(car.grip * wLat / comp.grip, 0.3, 1);
+    const gRel = b.gRel = clamp(car.grip * wLat / comp.grip, 0.3, 1);
     b.gMargin = 1 - P.wetK * (1 - gRel);
     // corner grip share (technique: Extreme / top of adaptive) like brk / fcK: the higher share in clean air only (b.lim,
     // last step's), the standard one in traffic (offsets / cars alongside: the car ran wide out of chicanes with it)
@@ -4515,7 +4616,16 @@ const AI = (() => {
     // in / out over ~1.5 s so a car appearing alongside never snaps the path sideways
     b.kxE = approach(b.kxE, b.kw >= 0.999 ? b.kX * b.lim : 0, dt * 0.7);
     if (b.kxE > 0 && b.kw >= 0.999) b.kw = 1 + b.kxE;
-    let pace = b.pace * (finished ? 0.62 : 1) * (startPh ? 0.985 : 1);
+    // cool-down after the flag: the same lap for every difficulty (the player's car gets a Medium brain): from the line,
+    // lift and coast down to ~60 % of the car's corner speeds / ~205 km/h over ~400 m, then from 3/4 of a lap on ease off
+    // to ~42 % (towards the pits / the grid) — a lap ~1.3 x a race lap (it was ~1.7 x, 150 km/h at most: a crawl)
+    if (finished) {
+      if (b.coolS == null) { b.coolS = car.s; b.coolD = 0; }
+      b.coolD += v * dt;
+      const L = A.L, u = b.coolD / L, k0 = clamp(1 - b.coolD / 400, 0, 1);
+      b.coolF = (P.coolK + (1 - P.coolK) * k0) * (1 - (P.coolK - P.coolEnd) / P.coolK * clamp((u - 0.75) / 0.25, 0, 1));
+    } else b.coolF = 0;
+    let pace = b.pace * (startPh ? 0.985 : 1);
     // a lane / offset change still under way near a braking zone (traffic): the path the car will steer is tighter than the
     // speed plan's (it freezes those transitions) -> a 5 % corner-speed margin until it is back on its path
     if (!startPh && A.toBrk[idx] < 150 && !(b.atk && b.atkPh >= 2) && (Math.abs(b.w - b.wT) > 0.05 || Math.abs(b.off - b.offT) > 0.4)) pace *= 0.95;   // (not in a committed pass)
@@ -4529,6 +4639,7 @@ const AI = (() => {
     // late-braking move (racecraft sets lateBrk + lateCap): the braking share may rise by lateBrk, but only up to lateCap
     // (ATK table below: Extreme up to the car's physical limit); corner speeds stay those of the plan
     if (b.lateBrk > 1 && b.lateCap) brkMul = Math.min(brkMul * b.lateBrk, Math.max(brkMul, b.lateCap));
+    if (b.coolF > 0) brkMul *= 0.6;   // (cool-down: gentle braking)
     // mistakes: rolled once per corner
     const ci = A.nextC[idx];
     if (ci !== b.lastC) {
@@ -4569,8 +4680,8 @@ const AI = (() => {
       if (P.dbgCar === car.code) { const out = []; for (let q = 0; q < K; q += 2) { const i = (Math.floor(car.s / A.step) + q * STRIDE) % A.N; out.push(`${kX[q].toFixed(0)}:${(kPX[q] - A.px[i]) * A.nx[i] + (kPZ[q] - A.pz[i]) * A.nz[i] > 0 ? '+' : ''}${((kPX[q] - A.px[i]) * A.nx[i] + (kPZ[q] - A.pz[i]) * A.nz[i]).toFixed(1)}/L${A.line[i].toFixed(1)}/v${(kVc[q] * 3.6) | 0}`); } b.dbgPath = out.join(' '); } }
     // adaptive: throttle aimed at the planned speed a little further on when it is rising (earlier, fuller throttle out of corners)
     let vThr = vT;
-    if (b.lead > 0 && !car.offTrack && !startPh) {
-      const xl2 = v * (P.lag + b.lead);
+    if ((b.lead > 0 || P.thrX > 0) && !car.offTrack && !startPh) {
+      const xl2 = Math.max(v * (P.lag + b.lead), xl + P.thrX);
       let k2 = k;
       while (k2 < K - 2 && kX[k2 + 1] <= xl2) k2++;
       const t2 = clamp((xl2 - kX[k2]) / Math.max(1e-3, kX[k2 + 1] - kX[k2]), 0, 1), v2 = kV[k2] + (kV[k2 + 1] - kV[k2]) * t2;
@@ -4615,6 +4726,7 @@ const AI = (() => {
     if (car.isPlayer && v < 0.8 && inp.brake > 0.45) inp.brake = 0.45;
     // cool-down after the flag: lift and coast down gently on straights instead of braking hard at the line
     if (finished && inp.brake > 0.15 && A.toBrk[idx] > 40) inp.brake = 0.15;   // unless a braking zone is close
+    if (finished && b.coolD < 400 && inp.brake > 0.06 && A.toBrk[idx] > 40) inp.brake = 0.06;   // (just past the line: lift and coast)
     if (car.reverse && !inp.reverse) inp.throttle = Math.max(inp.throttle, 0.1);
 
     // ----- stuck detection (wants to go, doesn't move) -----
@@ -4625,23 +4737,79 @@ const AI = (() => {
     return inp;
   }
 
+  // Flat-out and nearly flat curves, per line + straight-line cap + grip share: w[i] = 1 where the car at full pace, flat
+  // out from the last corner (quasi-static lap at this cap), arrives at or under the curve's limit, 0 where the curve
+  // slows it by >= 12 %, smoothly in between; 0 within 150 m after the apex of (30 m before) a real braking zone (> 8 % slower: slow
+  // corners and their exits keep the difficulty's scaling); blurred over +-20 m. A driver's share of the physical corner
+  // speed is then sc + (1 - sc) w (sc = pace x vScale): a slower driver still takes a flat-out curve flat and lifts only
+  // a little more for a nearly flat one (before, every curve was scaled: it braked in flat-out curves).
+  function flatTable(A, kwOn, cap, lat) {
+    const key = (kwOn ? 'K' : 'L') + Math.round(cap * 2) + '|' + Math.round(lat * 1000);
+    const C0 = A.flat || (A.flat = new Map());
+    let w = C0.get(key);
+    if (w) return w;
+    if (C0.size > 64) C0.clear();
+    const N = A.N, st = A.step, lkT = kwOn ? A.lkK : A.lk;
+    const vc = new Float64Array(N), vf = new Float64Array(N), vb = new Float64Array(N), dp = new Uint8Array(N), raw = new Float64Array(N);
+    for (let i = 0; i < N; i++) { let v = vCorner(lkT[i], lat, 1, cap); for (let q = 0; q < 3; q++) v = vCorner(lkT[i], lat * CFG.perf.latLow(v), 1, cap); vc[i] = v; }
+    // arrival speed: flat out from the previous corner, its own limit not applied (forward pass over the corner limits
+    // of the samples more than 40 m back only); braking zones from the full profile
+    const D = Math.round(40 / st), va = new Float64Array(N);
+    vf.set(vc);
+    for (let p = 0; p < 2; p++) for (let i = 0; i < N; i++) { const j = (i + 1) % N, x = Math.sqrt(vf[i] * vf[i] + 2 * Math.max(0.3, CFG.perf.driveAccel(vf[i])) * st); if (x < vf[j]) vf[j] = x; }
+    for (let i = 0; i < N; i++) { const j = (i - D + N) % N; let v = vf[j]; for (let q = 1; q <= D; q++) v = Math.min(cap, Math.sqrt(v * v + 2 * Math.max(0.3, CFG.perf.driveAccel(v)) * st)); va[i] = v; }
+    vb.set(vf);
+    for (let p = 0; p < 2; p++) for (let i = N - 1; i >= 0; i--) { const j = (i + 1) % N, x = Math.sqrt(vb[j] * vb[j] + 2 * CFG.perf.brakeDecel(vb[j]) * P.brk * st); if (x < vb[i]) vb[i] = x; }
+    for (let i = 0; i < N; i++) dp[i] = vb[i] < vf[i] * 0.92 ? 1 : 0;
+    // (a braking zone runs on to its apex: the window after it counts from the slowest point)
+    for (let i = 0; i < N; i++) if (dp[i] === 1) { let j = (i + 1) % N, n = 0; while (!dp[j] && vb[j] <= vb[(j + N - 1) % N] + 1e-6 && n++ < N / 4) { dp[j] = 2; j = (j + 1) % N; } }
+    const B0 = Math.round(150 / st), B1 = Math.round(30 / st), M0 = Math.round(30 / st);
+    let last = -1e9;
+    for (let n = -B0 - 1; n < N + B1; n++) { const i = ((n % N) + N) % N; if (dp[i]) last = n; if (n - B1 >= 0) raw[n - B1] = n - last <= B0 + B1 ? 0 : 1; }
+    for (let i = 0; i < N; i++) {
+      if (!raw[i]) continue;
+      let mm = 1; for (let q = -M0; q <= M0; q += 2) { const j = (i + q + N) % N, x = vc[j] >= cap - 1e-6 ? 1 : 1 - va[j] / vc[j]; if (x < mm) mm = x; }
+      const u = clamp((mm + 0.12) / 0.12, 0, 1); raw[i] = u * u * (3 - 2 * u);
+    }
+    w = Float32Array.from(blur(raw, Math.round(20 / st)));
+    C0.set(key, w);
+    return w;
+  }
   // backward pass along the planned path; fills kX/kV/kA, returns sample count
   function speedPlan(b, car, A, v, grip, cl, pace, brkMul) {
     const N = A.N, step = A.step, dS = STRIDE * step;
+    // (flat-out curves count as such on a dry track with real grip only)
+    const flatG = clamp((b.gRel - 0.85) / 0.1, 0, 1) * (b.G && b.G.weather && b.G.weather.wet > 0.05 ? 0 : 1);
     const X = Math.min(340, 50 + v * 0.8 + v * v / 30);
     const K = Math.min(MAXK, Math.ceil(X / dS) + 3);
-    const i0 = Math.floor(car.s / step), x0 = i0 * step - car.s;
+    // (samples on a fixed grid of the track: re-aligned to the car every step, a narrow feature fell on a sample in some
+    // steps and between samples in others -> the plan flickered by 40+ km/h, brake / throttle chatter)
+    const i0 = P.grid ? Math.floor(car.s / dS) * STRIDE : Math.floor(car.s / step), x0 = i0 * step - car.s;
+    const sc0 = b.pace * b.vScale;
+    // (straight-line cap as before: x pace too — the top speed is part of the difficulty)
+    const capP = b.vTop * b.vScale * Math.min(1, b.pace);
+    const FT = (P.flatW && !b.adaptive || P.flatW > 1) && sc0 < 0.999 ? flatTable(A, b.kwBase > 0, capP, b.latP) : null;
     holdTrans = !b.free;
     for (let k = 0; k < K; k++) {
       const i = (i0 + k * STRIDE) % N, x = x0 + k * dS;
       const d = pathD(b, A, i * step, x > 0 ? x : 0, v);
       kX[k] = x; kPX[k] = A.px[i] + A.nx[i] * d; kPZ[k] = A.pz[i] + A.nz[i] * d;
       kG[k] = b.kw > 1 ? surfGrip(A.hw[i], d, A.kL[i], A.kR[i], A.roL[i], A.roR[i]) : kerbGrip(A.hw[i], d, A.kL[i], A.kR[i]);   // wheels over a kerb (/ past it): less grip there
-      const dv = d - lnI(A, i, i, 0, b.kw); kDv[k] = dv < 0 ? -dv : dv;
+      const dv = d - lnI(A, i, i, 0, b.kw); kDv[k] = dv < 0 ? -dv : dv; kD[k] = dv;
+      kLk[k] = lineKi(A, i, b.kw); kW[k] = FT ? sc0 + (1 - sc0) * FT[i] * flatG : sc0;
     }
     holdTrans = false;
-    for (let k = 1; k < K - 1; k++) kK[k] = menger(kPX[k - 1], kPZ[k - 1], kPX[k], kPZ[k], kPX[k + 1], kPZ[k + 1]);
-    kK[0] = kK[1]; kK[K - 1] = kK[K - 2];
+    if (P.planK) {
+      // curvature: the line's own (smooth, precomputed) as an offset curve + the planner's offset from it
+      for (let k = 0; k < K; k++) {
+        const q = 1 - kLk[k] * kD[k], dd = k > 0 && k < K - 1 ? (kD[k + 1] - 2 * kD[k] + kD[k - 1]) / (dS * dS) : 0;
+        kK[k] = kLk[k] / (q > 0.3 ? q : 0.3) + dd;
+      }
+      if (K > 2) { kK[0] = kLk[0] / Math.max(0.3, 1 - kLk[0] * kD[0]) + kK[1] - kLk[1] / Math.max(0.3, 1 - kLk[1] * kD[1]); kK[K - 1] = kLk[K - 1] / Math.max(0.3, 1 - kLk[K - 1] * kD[K - 1]) + kK[K - 2] - kLk[K - 2] / Math.max(0.3, 1 - kLk[K - 2] * kD[K - 2]); }
+    } else {
+      for (let k = 1; k < K - 1; k++) kK[k] = menger(kPX[k - 1], kPZ[k - 1], kPX[k], kPZ[k], kPX[k + 1], kPZ[k + 1]);
+      kK[0] = kK[1]; kK[K - 1] = kK[K - 2];
+    }
     // [1 2 1] smoothing: a kink where the planned path meets a limit (edge / car alongside) is rounded off by the car
     // over ~10-20 m, it is not a hairpin (unsmoothed it made the AI brake early on straights)
     // (only where the path is off the racing line: on the line the curvature is the real corner's)
@@ -4674,7 +4842,8 @@ const AI = (() => {
         const km = (Math.abs(kK[k > 0 ? k - 1 : k]) + Math.abs(kK[k]) + Math.abs(kK[k < K - 1 ? k + 1 : k])) / 3;
         const vl = Math.max(vLock(km, b.lockV), vc * 0.85); if (vl < vc) vc = vl;
       }
-      kVc[k] = Math.min(b.vTop * b.vScale, vc * pace * m * b.vScale * b.aeroK);   // vScale: whole speed plan (fixed difficulties); aeroK: setup
+      // vScale: whole speed plan (fixed difficulties); aeroK: setup; kW: this driver's share of the corner speed (flatTable)
+      kVc[k] = b.coolF > 0 ? Math.min(VTOP * b.coolF, vc * m * b.coolF) : Math.min(capP, vc * m * b.aeroK * (pace / b.pace) * kW[k]);
     }
     kV[K - 1] = kVc[K - 1]; kA[K - 1] = 0;
     for (let k = K - 2; k >= 0; k--) {
@@ -4698,7 +4867,7 @@ const AI = (() => {
     const f = sF / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N;
     const j = i + 1 === A.N ? 0 : i + 1;
     const thF = A.th[i] + wrapA(A.th[j] - A.th[i]) * u;
-    const kc = A.kc[i];
+    const kc = A.kc[i] + (A.kc[j] - A.kc[i]) * u;
     const beta = car.speed > 3 ? Math.atan2(car.vLat, Math.max(1, car.vLong)) * P.course : 0;
     const psiE = wrapA(thF + Math.atan2(dP2 - dP, 2 * (1 - kc * dP)) - car.h - beta);
     let e = dF - dP;
@@ -4709,7 +4878,7 @@ const AI = (() => {
       e += b.sI * b.eI;
     }
     const xL = xF + v * P.tFF;
-    const kap = pathCurv(b, A, car.s + xL, xL, v, 4 + v * 0.05);
+    const kap = P.ffK ? pathKap(b, A, car.s + xL, xL, v, 4 + v * 0.05) : pathCurv(b, A, car.s + xL, xL, v, 4 + v * 0.05);
     const delta = Math.atan(WB * kap) * P.kFF + P.kH * psiE - Math.atan2(P.kE * e, v + P.vE) - P.kR * (car.r - v * kap);
     // the AI steers with the base lock only (in hairpins it is already past the front's peak slip, extra lock just scrubs):
     // scale + clamp the input so the wheel angle is exactly what the base lock (and the physics grip cap) would give
@@ -4734,7 +4903,7 @@ const AI = (() => {
     const ci = A.nextC[idx], cn = A.corners[ci];
     const onStr = toBrk > 0 && Math.abs(A.lk[idx]) < 1 / 450;
     b.strOpen = onStr && toBrk > 40; b.vLimAdd = 0;
-    let ah = null, ahDs = 1e9, bh = null, bhDs = -1e9, lapper = null, lapDs = -1e9;
+    let ah = null, ahDs = 1e9, bh = null, bhDs = -1e9, lapper = null, lapDs = -1e9, near = false;
     const myRD = car.raceDist || 0;
     for (let n = 0; n < cars.length; n++) {
       const o = cars[n];
@@ -4743,17 +4912,26 @@ const AI = (() => {
       if (ds > 220 || ds < -90) continue;
       const dd = o.d - car.d, ads = ds < 0 ? -ds : ds, add = dd < 0 ? -dd : dd;
       const closing = v - o.speed;
+      if (ds > -45 && ds < 40 && add < 6.5) near = true;
       // alongside (or about to be): leave a car's width
-      if (b.nCons < 5 && add > 1.2 && add < 6 && (ads < LEN + 1.5 || (ds < 0 && ds > -30 && -closing * 1.2 > ads - LEN))) {
+      // (a car coming up beside on a straight: committed to a pass from behind, out of my lane and closing to overlap
+      // within ~2.5 s. Not in corners: holding a lane there for a car still behind made more contacts in the hairpins)
+      const comm = onStr && toBrk > 60 && ds < 0 && ds > -45 && add > 1.2 && closing < -0.5 && (ads - LEN) / -closing < 2.5;
+      if (b.nCons < 5 && add > 1.2 && add < 6 && (ads < LEN + 1.5 || (ds < 0 && ds > -30 && -closing * 1.2 > ads - LEN) || comm)) {
         const k = b.cons[b.nCons++];
         k.rel = o.d - lineAt(A, o.s, b.kw); k.relMe = car.d - lineAt(A, car.s, b.kw); k.dd = dd;
         k.side = dd > 0 ? 1 : -1; k.xMax = 40 + v * 1.2; k.ds = ds; k.v = o.speed;
+        // never move toward it (F1: leave the room, no squeezing a car alongside / no blocking a committed pass): my path on
+        // its side stays where I am now, unless it is clearly further away than a car's width plus air. A car still
+        // behind (committed, not yet alongside) only holds me where I am (k.comm: no pushing away from it either)
+        k.dHold = k.side > 0 ? Math.max(car.d, o.d - SEP - 0.9) : Math.min(car.d, o.d + SEP + 0.9);
+        k.comm = comm && !(ads < LEN + 1.5 || (ds < 0 && ds > -30 && -closing * 1.2 > ads - LEN));
       }
       // (an AI car still on the pit exit road behind its white line is nobody to attack, defend against or yield to)
       const inLane = o.aiPitRoad && behindLine(A, o.s, o.d);
       if (ds > 0 && ds < ahDs && !inLane) { ah = o; ahDs = ds; }
       if (ds < 0 && ds > bhDs && !inLane) { bh = o; bhDs = ds; }
-      if (ds < 0 && ds > -80 && o.raceDist != null && o.raceDist > myRD + L * 0.5 && ds > lapDs && !inLane) { lapper = o; lapDs = ds; }
+      if (ds < 0 && ds > -80 && ((o.raceDist != null && o.raceDist > myRD + L * 0.5) || (finished && !o.finished && o.speed > v + 2)) && ds > lapDs && !inLane) { lapper = o; lapDs = ds; }
       // collision avoidance: car ahead in my path
       // (the car I'm passing, once I'm out beside its line: judged on where it is, not on its predicted drift - the racing
       // line swinging across would otherwise keep a faster car stuck behind it)
@@ -4782,6 +4960,10 @@ const AI = (() => {
       }
     }
 
+    b.dNow = car.d;
+    // line noise: held while anyone is close, back to the live wave over ~3 s once clear
+    if (near && P.nzHold) { if (b.nzW > 0) { b.nzH = noiseAt(b, A, car.s); b.nzW = 0; } }
+    else if (b.nzW < 1) b.nzW = Math.min(1, b.nzW + dt / 3);
     // default targets
     b.offRate = startPh ? 1.2 : 1.5;
     let offT = 0, wT = 0;
@@ -4791,7 +4973,9 @@ const AI = (() => {
 
     // off-track rejoin: absolute target moving back onto the asphalt
     // (past the edge by more than its own line goes: the two-wheels-off line runs up to the kerb's outer edge by design)
-    const ad = Math.abs(car.d), adX = b.kw > 1 ? Math.max(hw, Math.abs(lineAt(A, car.s, b.kw))) + 0.6 : hw + 0.6;
+    // (a kerb on that side: only once the outer wheels are past its outer edge — a kerb line runs its wheels over it by design)
+    const ad = Math.abs(car.d), kbS = car.d < 0 ? A.kL[idx] : A.kR[idx];
+    const adX = Math.max(b.kw > 1 ? Math.max(hw, Math.abs(lineAt(A, car.s, b.kw))) + 0.6 : 0, kbS ? hw + CFG.kerbWidth - HT + 0.25 : hw + 0.6);
     if (!onRoad && (ad > adX || b.offTrackT > 0)) {
       if (ad > adX) b.offTrackT = 0.6; else b.offTrackT -= dt;
       if (b.w < 0.5) { b.absD = car.d; b.w = 1; }
@@ -4802,7 +4986,8 @@ const AI = (() => {
       b.absRate = 1.6; b.free = true; wT = 1; b.wRate = 3;
       // (all four wheels past the kerb: ease off while crossing back — a rejoin that cuts across the inside of the next
       // corner must not gain time, Race's track-limits rule counts that as a strike)
-      b.vLim = Math.min(b.vLim, ad > hw + CFG.kerbWidth + 0.8 ? Math.max(20, v - 3) : Math.max(25, v));
+      // (just over the kerb: rejoin without lifting)
+      if (ad > hw + CFG.kerbWidth + 0.8) b.vLim = Math.min(b.vLim, Math.max(20, v - 3)); else if (!kbS || ad > hw + CFG.kerbWidth) b.vLim = Math.min(b.vLim, Math.max(25, v));
       b.atk = null;
       b.wT = wT; b.offT = b.off * 0.98;
       return;
@@ -4817,7 +5002,7 @@ const AI = (() => {
 
     // blue flags: move off the line on straights and lift a little for a car lapping us
     b.yieldOn = false;
-    if (lapper && !finished && (-lapDs - LEN) / Math.max(v, 10) < 1.2 && !b.pitIn && !b.pitOut) {
+    if (lapper && (!finished || !lapper.finished) && (-lapDs - LEN) / Math.max(v, 10) < (finished ? 2 : 1.2) && !b.pitIn && !b.pitOut) {
       b.yieldOn = true;
       if (onStr) {
         const ln = lineAt(A, car.s, b.kw);
@@ -4902,10 +5087,18 @@ const AI = (() => {
     car.aiDefending = b.defOn;   // (read by an attacking AI: a defensive move means backing out unless already level)
     if (bh && !finished && !b.pitIn && !b.pitOut && !b.yieldOn && !startPh && b.defC !== ci && onStr && toBrk > 30 && toBrk < 260) {
       const gapB = (-bhDs - LEN) / Math.max(v, 10), lapping = bh === lapper;
-      if (!lapping && gapB < b.defGap && bh.speed > v - 1 && bh.speed < v + 7 && -bhDs > LEN + 1.5 && Math.abs(bh.d - car.d) < 1.6 && toBrk > 70 && b.rnd() < b.aggr * 0.08) {
+      // (not with a car alongside, not once the car behind is coming out of my tow: moving then would be blocking)
+      const bhLat = bh.speed * Math.sin(wrapA(bh.h - A.th[bh.idx >= 0 ? bh.idx : 0])), bhOut = Math.sign(bh.d - car.d) * bhLat > 0.6;
+      if (!lapping && gapB < b.defGap && bh.speed > v - 1 && bh.speed < v + 7 && -bhDs > LEN + 1.5 && Math.abs(bh.d - car.d) < 1.6 && !bhOut && b.nCons === 0 && toBrk > 70 && b.rnd() < b.aggr * 0.08) {
         b.defC = ci; b.defOn = true; b.defCar = bh; b.stat.def++; if (bh === G.player) b.stat.defPl++;
       }
     }
+    // the defended car pulled out to the side I am moving to (or anyone came up alongside): stop the move where I am
+    if (b.defOn && b.defCar && toBrk > -15 && P.noSqueeze) {
+      const o = b.defCar;
+      if (b.nCons > 0 || (Math.sign(o.d - car.d) === cn.dir && Math.abs(o.d - car.d) > 1.2)) { b.defOn = false; b.defHold = ci; b.defHoldD = car.d; }
+    }
+    if (b.defHold === ci && !b.defOn && !b.atk && wT === 0 && onStr && toBrk > 30) { b.absSide = 0; b.absD = b.absDT = b.defHoldD; wT = 1; b.wRate = Math.max(b.wRate, 2); if (b.w < 0.95) b.w = 1; }
     if (b.defOn && !b.atk && wT === 0) {
       // hold the inside through the corner (to the apex): swinging back out under braking overshoots the turn
       // (not in hairpins: a full-lock inside line there just parks the car in front of the pack)
@@ -5134,7 +5327,7 @@ const AI = (() => {
       if (vk < v - 1) clear = false;
       // (capped at b.vTop, not VTOP: at the VTOP cap x pace a straight looked like a corner once the car passed ~330 km/h,
       // and Extreme closed Straight mode ~400 m before the end of Vortex's long straights)
-      if (vCorner(kK[k], gripL, clS, b.vTop) * b.pace < v + 2) { clear = false; if (x < v * 0.7) closeSoon = true; }
+      if (vCorner(kK[k], gripL, clS, b.vTop) * kW[k] / b.vScale < v + 2) { clear = false; if (x < v * 0.7) closeSoon = true; }
     }
     if (b.aeroCD <= 0) {
       if (car.aero === 'corner' && car.inStraightZone && !car.aeroLock && clear && inp.throttle > b.pow - 0.1 && !car.offTrack) { inp.aeroPress = true; b.aeroCD = 0.4; }
@@ -5230,32 +5423,36 @@ const AI = (() => {
     // past Extreme (e > 1): Extreme's technique blends in (none at e <= 1: the reference lap and the calibration below it stay)
     const x = dialI(D_X, e), X = DIFFICULTY.extreme || {};
     b.latP = P.lat * dialI(D_LAT, e) / D_LAT[0]; b.lowK = P.lowK * dialI(D_LOWK, e) / D_LOWK[0]; b.vTop = lerp(VTOP, X.vTop || VTOP, x);
-    b.sI = (X.steerI || 0) * x; b.kBl = (X.kBlur || 0) * x; b.kX = (X.kerbX || 0) * x;
+    // (the steering integral at every effort, as the fixed difficulties)
+    b.sI = Math.max(1, (X.steerI || 0) * x); b.kBl = (X.kBlur || 0) * x; b.kX = (X.kerbX || 0) * x;
   }
   // solo lap time vs effort relative to e = E_REF, per circuit (tools/ai_adapt_cal.mjs; unknown circuits use the mean),
   // and the fixed difficulties' mean car on the same scale (k = T(E_REF) / T): Easy is the floor, Medium the cold start
   const E_REF = 0.75;
-  // (e = 1.25 / 1.5 re-measured with Extreme's technique past e = 1; Vortex rescaled for its quicker reference lap, the
-  // chicane kerb line — ai.js profile v2; the top of the dial stays ~0.3-1.2 % past Extreme, the physics car's limit)
-  const CAL_T = [1.0645, 1.0478, 1.0312, 1.0107, 1, 0.9897, 0.9740, 0.9694];
+  // (v3: re-measured after the driving changes of profile v3 — smooth steering, a consistent speed plan, flat-out curves;
+  // tools/ai_adapt_cal.mjs. The top of the dial (Extreme's technique past e = 1) is now about level with Extreme, which
+  // gained ~0.3-0.8 % from a corner grip share closer to the limit: up to ~0.4 % past it on the open circuits)
+  const CAL_T = [1.0593, 1.0443, 1.0297, 1.0117, 1, 0.9880, 0.9717, 0.9650];
   const CAL_TRACK = {
-    vortex: [1.0654, 1.0487, 1.0330, 1.0118, 1, 0.9913, 0.9659, 0.9604],
-    harbour: [1.0682, 1.0515, 1.0343, 1.0123, 1, 0.9882, 0.9794, 0.9750],
-    kotori: [1.0602, 1.0440, 1.0286, 1.0080, 1, 0.9888, 0.9743, 0.9692],
-    mirage: [1.0670, 1.0497, 1.0317, 1.0126, 1, 0.9919, 0.9793, 0.9788],
-    dorado: [1.0616, 1.0454, 1.0293, 1.0116, 1, 0.9923, 0.9840, 0.9827],
+    vortex: [1.0660, 1.0501, 1.0347, 1.0148, 1, 0.9869, 0.9725, 0.9658],
+    harbour: [1.0618, 1.0463, 1.0311, 1.0112, 1, 0.9871, 0.9700, 0.9626],
+    kotori: [1.0501, 1.0372, 1.0246, 1.0080, 1, 0.9893, 0.9706, 0.9639],
+    mirage: [1.0673, 1.0513, 1.0357, 1.0153, 1, 0.9867, 0.9690, 0.9641],
+    serrano: [1.0599, 1.0444, 1.0290, 1.0121, 1, 0.9872, 0.9693, 0.9604],
+    leman: [1.0531, 1.0384, 1.0247, 1.0079, 1, 0.9889, 0.9715, 0.9617],
+    dorado: [1.0569, 1.0421, 1.0279, 1.0126, 1, 0.9903, 0.9791, 0.9766],
   };
-  // fixed difficulties on the k scale (k = extreme's k x extreme lap / difficulty lap), measured after the wider
-  // difficulty spread (Hard ≈ +10 %, Medium ≈ +21 %, Easy ≈ +42 % vs Extreme)
+  // fixed difficulties on the k scale (k = extreme's k x extreme lap / difficulty lap; the mean of six team cars), v3:
+  // Easy / Medium / Hard keep their lap times (VS), Extreme is quicker, the E_REF reference lap moved (REF_MIG[3])
   const K_FIXED = {
-    vortex: { easy: 0.6910, medium: 0.8230, hard: 0.9180, extreme: 1.0346 },
-    harbour: { easy: 0.7333, medium: 0.8459, hard: 0.9225, extreme: 1.0196 },
-    kotori: { easy: 0.7114, medium: 0.8350, hard: 0.9177, extreme: 1.0263 },
-    mirage: { easy: 0.7172, medium: 0.8379, hard: 0.9191, extreme: 1.0183 },
-    serrano: { easy: 0.7192, medium: 0.8401, hard: 0.9147, extreme: 1.0273 },
-    leman: { easy: 0.7111, medium: 0.8380, hard: 0.9138, extreme: 1.0318 },
-    dorado: { easy: 0.7052, medium: 0.8291, hard: 0.9084, extreme: 1.0130 },
-    _:{ easy: 0.714, medium: 0.837, hard: 0.918, extreme: 1.0249 },
+    vortex: { easy: 0.6804, medium: 0.8090, hard: 0.9019, extreme: 1.0316 },
+    harbour: { easy: 0.7506, medium: 0.8646, hard: 0.9408, extreme: 1.0383 },
+    kotori: { easy: 0.7170, medium: 0.8376, hard: 0.9197, extreme: 1.0342 },
+    mirage: { easy: 0.7250, medium: 0.8448, hard: 0.9263, extreme: 1.0376 },
+    serrano: { easy: 0.7180, medium: 0.8386, hard: 0.9143, extreme: 1.0361 },
+    leman: { easy: 0.7081, medium: 0.8331, hard: 0.9094, extreme: 1.0385 },
+    dorado: { easy: 0.7117, medium: 0.8372, hard: 0.9176, extreme: 1.0227 },
+    _: { easy: 0.7158, medium: 0.8378, hard: 0.9186, extreme: 1.0342 },
   };
   // braking share cap of the limit envelope per circuit: Cerro Dorado's long heavy stops into hairpins (T1 from 340 km/h,
   // T7 downhill) left Extreme's 1.05 share ~15 km/h behind its plan at turn-in (wide on the exits); 1.02 = clean + quicker
@@ -5277,7 +5474,7 @@ const AI = (() => {
   const BAND_F = [0.008, 0.0055, 0.003], BAND_E = [0.001, -0.001, 0, 0.0015, -0.0015, 0.0005, -0.0005];
   const RB_G0 = 1.5, RB_K = 0.0035, RB_MAX = 0.015, RB_RATE = 0.01;   // pull: s gap, per s beyond, cap, rate (1/s)
   const TYPICAL = 0.996;   // the rolling best is an ideal lap: 'level' cars run at the player's typical race lap
-  let profile = { v: 2, tracks: {}, g: null }, profileRev = 0, adaptLast = null, obsLast = null, refDiff = null;   // (v = PROFILE_V, see setProfile)
+  let profile = { v: 3, tracks: {}, g: null }, profileRev = 0, adaptLast = null, obsLast = null, refDiff = null;   // (v = PROFILE_V, see setProfile)
 
   const wetGrip = (c, w) => (c.wetGrip ? (w <= 0.5 ? lerp(c.wetGrip[0], c.wetGrip[1], w * 2) : lerp(c.wetGrip[1], c.wetGrip[2], w * 2 - 1)) : 1);
   const refComp = w => {   // reference tyre for the conditions: Weather.crossovers() (fallback without weather.js)
@@ -5553,8 +5750,10 @@ const AI = (() => {
     b.aggr = S.aggr; b.atkGap = 0.35 + b.aggr * 0.8; b.defGap = 0.25 + b.aggr * 0.45;
   }
   // reference-lap changes per profile version: r (reference time / player time) of an older profile is rescaled so the
-  // stored skill keeps meaning the same lap time. v2: Vortex T1/T2 counted as corners (kerb line) -> reference 0.215 % quicker
-  const PROFILE_V = 2, REF_MIG = { 2: { vortex: 72.332 / 72.488 } };
+  // stored skill keeps meaning the same lap time. v2: Vortex T1/T2 counted as corners (kerb line) -> reference 0.215 % quicker;
+  // v3: the driving changes (smooth steering, consistent speed plan, flat-out curves) moved the E_REF reference laps
+  const PROFILE_V = 3, REF_MIG = { 2: { vortex: 72.332 / 72.488 },
+    3: { vortex: 72.506 / 72.329, harbour: 71.815 / 70.417, kotori: 73.441 / 72.892, mirage: 101.283 / 99.750, serrano: 86.008 / 85.506, leman: 86.936 / 86.417, dorado: 89.659 / 89.087 } };
   function setProfile(p) {
     const out = { v: PROFILE_V, tracks: {}, g: null };
     if (p && typeof p === 'object' && p.tracks && typeof p.tracks === 'object') {
@@ -5764,6 +5963,13 @@ const Race = (() => {
   // difficulty + the car's personality), orders it and staggers its stop laps.
   const SC = CFG.strategy || { paceK: 0.78, wearK: 1.08, shift: 3 };
   const stratK = race => SC[race.difficulty] || SC.medium || { tau: 2.5, cut: 7, aggr: 3, stag: 2 };
+  // the choice's spread for a plan over n laps: temperature tau / window cut (s) = a fixed part + a share of that race time
+  // (counted up to 40 min: long races don't gamble whole minutes)
+  function stratWin(race, n) {
+    const K = stratK(race), T = Math.min(2400, Math.max(0, n || 0) * race.lapTimeEst);
+    return { tau: K.tau + (K.tauR || 0) * T, cut: K.cut + (K.cutR || 0) * T, aggr: K.aggr, stag: K.stag };
+  }
+  const PIT_Q = SC.pitQ != null ? SC.pitQ : 0.35;   // s per car already planning a stop on that lap (race._pitLoad)
   const MAX_STINTS = 4;   // (one more only when 4 can't cover the race: short high-wear races with the two-compound rule)
   // personality (-1..1, + = likes fresh tyres: sees stops cheaper): a team trait plus chance
   const TEAM_STRAT = [0.5, -0.5, 0, 1, -1, 0.5, 0, -0.5, 1, 0, -1, 0.5, 0, -0.5, 1, 0, 0.5, -1, 0, -0.5];
@@ -5832,55 +6038,76 @@ const Race = (() => {
     const key = (Math.floor(r * 4294967296) ^ 0x51f15e7) >>> 0, g = U.rng(key);
     return { key, draw: 0, aggr: U.clamp(0.45 * TEAM_STRAT[ti % TEAM_STRAT.length] + 1.1 * (g() - 0.5), -1, 1) };
   }
-  // pick a plan for N laps from `start` (null: free = the starting tyre too). mode 'pick': at random among the plans at
-  // most cut s off the quickest, weight exp(-perceived extra s / tau); 'best': the best perceived one (mid-race).
-  // -> { seq, stops: [{lap, compound, done}], t } or null (nothing covers N laps)
-  function choosePlan(race, st, N, start, used, lapOffset, mode) {
+  // pick a plan for N laps from `start` (null: free = the starting tyre too). mode 'pick': among the plans at most cut s
+  // off the quickest, first how many stops (each at its best perceived plan: a two-stop is not likelier for having more
+  // compound mixes), then the mix, then where its stops go, each at random with weight exp(-perceived extra s / tau);
+  // 'best': the best perceived one (mid-race). load (race start): race._pitLoad, the cars already planning a stop per lap
+  // -> { seq, stops: [{lap, compound, done}], t, extra (model s off the quickest) } or null (nothing covers N laps)
+  function choosePlan(race, st, N, start, used, lapOffset, mode, load) {
     if (!(N > 0)) return null;
-    const K = stratK(race), opts = planOptions(race, N, start, used);
+    const K = stratWin(race, N), opts = planOptions(race, N, start, used);
     if (!opts.length) return null;
-    const rr = stratRng(st), aggr = (st.aggr || 0) * K.aggr, cand = [], p = [];
-    let pBest = Infinity;
+    const rr = stratRng(st), aggr = (st.aggr || 0) * K.aggr, pick = mode === 'pick', cand = [], v = [], pl = [];
     for (const o of opts) {
       if (o.t - opts[0].t > K.cut + 1e-9) break;
-      const v = o.t - aggr * o.stops;
-      cand.push(o); p.push(v); if (v < pBest) pBest = v;
+      const ps = pick ? placements(race, o, start, lapOffset, rr, K, load) : null;
+      let c = 0;
+      if (ps) { c = Infinity; for (const x of ps) if (x.cost < c) c = x.cost; }
+      cand.push(o); pl.push(ps); v.push(o.t - aggr * o.stops + c);
     }
-    let pick = cand[0];
-    if (mode === 'pick') {
-      let sum = 0;
-      for (let i = 0; i < p.length; i++) sum += (p[i] = Math.exp(-(p[i] - pBest) / K.tau));
-      let r = rr() * sum;
-      for (let i = 0; i < cand.length; i++) { r -= p[i]; if (r <= 0) { pick = cand[i]; break; } }
-    } else for (let i = 1; i < cand.length; i++) if (p[i] < p[cand.indexOf(pick)]) pick = cand[i];
-    return placePlan(race, pick, start, lapOffset, rr, K);
+    let i = 0;
+    if (pick) {
+      const g = new Map();   // stops -> best perceived s
+      for (let j = 0; j < cand.length; j++) { const s = cand[j].stops; if (!g.has(s) || v[j] < g.get(s)) g.set(s, v[j]); }
+      const ks = [...g.keys()], vb = Math.min(...g.values()), k = ks[wPick(rr, ks.map(s => Math.exp(-(g.get(s) - vb) / K.tau)))];
+      const js = [];
+      for (let j = 0; j < cand.length; j++) if (cand[j].stops === k) js.push(j);
+      i = js[wPick(rr, js.map(j => Math.exp(-(v[j] - g.get(k)) / (K.tau * MIX_T))))];   // (the mix: a narrower spread)
+    } else for (let j = 1; j < cand.length; j++) if (v[j] < v[i]) i = j;
+    const ps = pl[i] || placements(race, cand[i], start, lapOffset, rr, K, null);
+    let cb = Infinity;
+    for (const x of ps) if (x.cost < cb) cb = x.cost;
+    const x = ps[wPick(rr, ps.map(q => Math.exp(-(q.cost - cb) / K.tau)))];
+    return { seq: x.seq, stops: stopsOf(x.seq, x.alloc, lapOffset), t: cand[i].t, extra: cand[i].t - opts[0].t };
   }
-  // order a mix (start first, the rest at random) and stagger its stops: a random shift of each stop by up to
-  // CFG.strategy.shift laps, kept if it costs at most stag s (so the field doesn't all box on one lap)
-  function placePlan(race, o, start, lapOffset, rr, K) {
-    const T = stratTables(race), items = o.ms.map((c, i) => ({ c, n: o.alloc[i] }));
-    const first = start ? items.splice(items.findIndex(x => x.c === start), 1)[0] : null;
-    for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)), x = items[i]; items[i] = items[j]; items[j] = x; }
-    if (first) items.unshift(first);
-    const seq = items.map(x => x.c), base = items.map(x => x.n);
-    let alloc = base;
-    if (seq.length > 1) {
-      const c0 = seqTime(T, seq, base), tol = K.stag / race.lapTimeEst, sh = SC.shift || 3, ok = [base], seen = new Set([base.join()]);
-      for (let k = 0; k < 16; k++) {
+  const MIX_T = 0.6;   // the compound mix's temperature, x tau (with its stop count settled, the quicker mixes win more)
+  const wPick = (rr, w) => { let s = 0; for (const x of w) s += x; let r = rr() * s; for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return i; } return w.length - 1; };
+  // where a mix's stops can go: each distinct order (start first) at its best stint lengths, plus up to 16 random shifts of
+  // its stops by <= CFG.strategy.shift laps costing <= stag s more (so the field doesn't all box on one lap)
+  // -> [{ seq, alloc, cost: s over the best lengths + PIT_Q per car already stopping on its stop laps (load, else 0) }]
+  function placements(race, o, start, lapOffset, rr, K, load) {
+    const T = stratTables(race), n = o.ms.length, out = [], seen = new Set(), sh = SC.shift || 3, tol = K.stag / race.lapTimeEst;
+    const c0 = seqTime(T, o.ms, o.alloc);
+    const add = (seq, a) => {
+      let q = 0, acc = lapOffset;
+      if (load) for (let i = 0; i < n - 1; i++) { acc += a[i]; q += load[acc] || 0; }
+      out.push({ seq, alloc: a, cost: (seqTime(T, seq, a) - c0) * race.lapTimeEst + PIT_Q * q });
+    };
+    const perm = (pre, rest) => {
+      if (rest.length) { for (let i = 0; i < rest.length; i++) perm(pre.concat(rest[i]), rest.slice(0, i).concat(rest.slice(i + 1))); return; }
+      const seq = pre.map(i => o.ms[i]), base = pre.map(i => o.alloc[i]), key = seq.join('') + base.join();
+      if ((start && seq[0] !== start) || seen.has(key)) return;
+      seen.add(key);
+      const sa = new Set([base.join()]);
+      add(seq, base);
+      if (n > 1) for (let k = 0; k < 16; k++) {
         const a = base.slice();
-        for (let i = 0; i < a.length - 1; i++) { const d = Math.floor(rr() * (2 * sh + 1)) - sh; a[i] += d; a[i + 1] -= d; }
-        if (!seen.has(a.join()) && seqTime(T, seq, a) <= c0 + tol) { seen.add(a.join()); ok.push(a); }   // (distinct ones: even odds)
+        for (let i = 0; i < n - 1; i++) { const d = Math.floor(rr() * (2 * sh + 1)) - sh; a[i] += d; a[i + 1] -= d; }
+        if (!sa.has(a.join()) && seqTime(T, seq, a) <= c0 + tol) { sa.add(a.join()); add(seq, a); }   // (distinct ones: even odds)
       }
-      alloc = ok[Math.floor(rr() * ok.length)];
-    }
-    return { seq, stops: stopsOf(seq, alloc, lapOffset), t: o.t };
+    };
+    perm([], o.ms.map((c, i) => i));
+    return out;
   }
   const stopsOf = (seq, a, off) => { const s = []; let acc = off; for (let i = 0; i < seq.length - 1; i++) { acc += a[i]; s.push({ lap: acc, compound: seq[i + 1], done: false }); } return s; };
   function setPlan(st, cur, pl) {
     st.stops = pl ? pl.stops.map(x => ({ lap: x.lap, compound: x.compound, done: false })) : [];
     st.plan = [cur].concat(st.stops.map(x => x.compound)).join('-');
     st.pending = null;
+    if (pl && pl.extra != null) st.margin = pl.extra;   // (model s the chosen mix is off the quickest: keepPlan keeps it)
   }
+  // race start: the stops of a plan go into race._pitLoad (cars planning a stop per lap: the next cars stagger theirs)
+  const addLoad = (race, pl) => { const L = race._pitLoad || (race._pitLoad = {}); if (pl) for (const x of pl.stops) L[x.lap] = (L[x.lap] || 0) + 1; return pl; };
   // no plan covers the laps left (stints too short even with the most stops): stop whenever the tyres are done
   function fallbackStops(race, n, cur, off) {
     const T = stratTables(race), hc = race.wx ? (isWetTyre(cur) ? cur : 'H') : wetCompound(race) || 'H', stops = [];
@@ -5893,7 +6120,7 @@ const Race = (() => {
     let start = w;
     if (!w && !race.wearScale) start = r < 0.65 ? 'S' : 'M';   // (no wear: nothing to plan)
     else if (!w && !(race.laps > 0)) start = r < 0.22 ? 'S' : r < 0.8 ? 'M' : 'H';
-    else if (!w) { st.plan = choosePlan(race, st, race.laps, null, [], 0, 'pick'); start = st.plan ? st.plan.seq[0] : 'M'; }
+    else if (!w) { st.plan = addLoad(race, choosePlan(race, st, race.laps, null, [], 0, 'pick', race._pitLoad || (race._pitLoad = {}))); start = st.plan ? st.plan.seq[0] : 'M'; }
     return { start, st };
   }
   // car.strategy for an AI car (Race.create): the plan picked with its starting tyre, else one from the tyre it is on
@@ -5902,19 +6129,20 @@ const Race = (() => {
     const st = { auto: true, stops: [], plan: car.tyre.compound, pending: null, aggr: p.aggr, key: p.key, draw: p.draw || 0 };
     const cur = car.tyre.compound;
     let pl = p.plan && p.plan.seq[0] === cur ? p.plan : null;
-    if (!pl && race.wearScale > 0) pl = choosePlan(race, st, race.laps, cur, car.compoundsUsed, 0, 'pick') || fallbackStops(race, race.laps, cur, 0);
+    if (!pl && race.wearScale > 0) pl = addLoad(race, choosePlan(race, st, race.laps, cur, car.compoundsUsed, 0, 'pick', race._pitLoad || (race._pitLoad = {}))) || fallbackStops(race, race.laps, cur, 0);
     setPlan(st, cur, pl);
     return st;
   }
   // the rest of the plan after the stop it planned at lap `off` (rest: its later stops), or null when that no longer
-  // fits or pays (cut s off the best): its stop laps as planned while they cost <= stag s more, else re-spaced
-  function keepPlan(race, rest, n, off, cur, used) {
-    const T = stratTables(race), K = stratK(race), seq = [cur].concat(rest.map(x => x.compound));
+  // fits or pays (more than the window for n laps, or tol s: the margin the car chose its plan with, off the best): its
+  // stop laps as planned while they cost <= stag s more, else re-spaced
+  function keepPlan(race, rest, n, off, cur, used, tol) {
+    const T = stratTables(race), K = stratWin(race, n), seq = [cur].concat(rest.map(x => x.compound));
     if (!ruleOk(race, used, seq)) return null;
     const opt = allocSeq(T, seq, n), opts = planOptions(race, n, cur, used);
     if (!opt || !opts.length) return null;
     const tOpt = seqTime(T, seq, opt);
-    if ((tOpt + rest.length * T.pit) * race.lapTimeEst > opts[0].t + K.cut) return null;
+    if ((tOpt + rest.length * T.pit) * race.lapTimeEst > opts[0].t + Math.max(K.cut, tol || 0)) return null;
     const was = [];
     let prev = 0;
     for (const x of rest) { const b = x.lap - off; was.push(b - prev); prev = b; }
@@ -5933,7 +6161,7 @@ const Race = (() => {
     if (k < 0) { const x = st.stops.find(y => !y.done); if (x && x.compound === cur && Math.abs(x.lap - off) <= 3) k = st.stops.indexOf(x); }
     let pl = null;
     if (n > 0 && race.wearScale > 0) {
-      if (k >= 0 && st.stops[k].compound === cur) pl = keepPlan(race, st.stops.slice(k + 1), n, off, cur, car.compoundsUsed);
+      if (k >= 0 && st.stops[k].compound === cur) pl = keepPlan(race, st.stops.slice(k + 1), n, off, cur, car.compoundsUsed, (st.margin || 0) + 1);
       if (!pl) pl = choosePlan(race, st, n, cur, car.compoundsUsed, off, 'best') || fallbackStops(race, n, cur, off);
     }
     setPlan(st, cur, pl);
@@ -6208,7 +6436,12 @@ const Race = (() => {
     place(P, track, s, track.sample(s).raceLine);
     initCar(race, P, track, rnd, diff, 0);
     P._race.aeroStartLock = false; P.aeroLock = false;
-    race.order = G.cars.slice(); race.grid = G.cars.slice();
+    // running order (who goes out when, the player included): random each session, seeded by the race seed on its own
+    // stream (race.rnd's draws below stay as they were). race.order / race.grid = it until the grid forms: the entry
+    // list shows it (everyone before the player has set a lap, the rest "No Time") and the tower lists it
+    const ro = U.rng((race.seed ^ 0x2b992dd5) >>> 0), run = G.cars.slice();
+    for (let i = run.length - 1; i > 0; i--) { const j = Math.floor(ro() * (i + 1)), x = run[i]; run[i] = run[j]; run[j] = x; }
+    race.order = run.slice(); race.grid = run.slice();
     // AI times from team pace x difficulty + noise (calibrated to the AI's real race pace on the reference line)
     // calibrated to the AI's measured solo laps per difficulty (vs the track's reference lap estimate)
     // reference AI quali lap: simulate one real flying lap with the AI on this track, difficulty and weather
@@ -6217,7 +6450,7 @@ const Race = (() => {
     if (!(ref > 20)) ref = race.lapTimeEst * QUALI_K;
     const times = G.cars.filter(c => c !== P).map(car => ({ car, time: ref / car.team.perf * (1 + (rnd() + rnd() - 1) * 0.006) }));
     times.sort((a, b) => a.time - b.time);
-    race.quali = { times, done: false, player: null, endT: null, maxT: TT_RUNUP / 25 + 2.3 * race.lapTimeEst + 20, rnd, diff };
+    race.quali = { times, done: false, player: null, endT: null, maxT: TT_RUNUP / 25 + 2.3 * race.lapTimeEst + 20, rnd, diff, runOrder: run };
     // simulated AI sector times (split like the reference lap, small noise, summing to each lap time) so the
     // player's sector colours compare against the field instead of always being purple
     const T = G.track, secT = [0, 0, 0];
@@ -8201,6 +8434,23 @@ const NetCore = (() => {
     }
     return ev;
   }
+  // give-back orders (the server's Race advStep) mirrored onto the client's cars from the relayed giveBack / giveBackDone
+  // events: car.giveBack as Race sets it (the open place order first), so an AI driving the local car (pause menu,
+  // cool-down, bots) lets that car by, and an AI behind a car that owes it the place goes for it. An order past its
+  // window (+2 s: the server's verdict always follows) is dropped (gbSync)
+  function gbEvent(ev, t) {
+    const c = ev && ev.car;
+    if (!c || (ev.type !== 'giveBack' && ev.type !== 'giveBackDone')) return;
+    const L = c._netGb || (c._netGb = []);
+    if (ev.type === 'giveBack') L.push({ kind: ev.kind, to: ev.to || null, need: +ev.need || 0, until: ev.until, sec: ev.sec, turn: ev.turn || '', id: ev.id });
+    else for (let i = L.length - 1; i >= 0; i--) if (L[i].id === ev.id && L[i].kind === ev.kind && L[i].to === (ev.to || null)) L.splice(i, 1);
+    gbSync(c, t);
+  }
+  function gbSync(c, t) {
+    const L = c._netGb || [];
+    for (let i = L.length - 1; i >= 0; i--) if (t != null && L[i].until != null && t > L[i].until + 2) L.splice(i, 1);
+    c.giveBack = L.find(q => q.kind === 'place') || L[0] || null;
+  }
 
   // ---------- clock sync (ping / pong): offset = server - local, from the lowest-RTT quarter of the last 32 samples ----
   // (their mean: a sample's error is half its up / down delay difference, which averages out over the few fastest —
@@ -8298,6 +8548,11 @@ const NetCore = (() => {
   }
 
   // ---------- room settings (server sanitises, clients show them) ----------
+  // quick emotes: [key, text]. The server checks the key against this list and sends the text with it, so a player on an
+  // older copy of the page still sees what was said (not a bare key)
+  const EMOTES = [['gg', 'GG'], ['gl', 'GOOD LUCK'], ['nice', 'NICE ONE'], ['sorry', 'SORRY'], ['wait', 'WAIT'], ['go', "LET'S GO"],
+    ['ty', 'THANKS'], ['wd', 'WELL DRIVEN'], ['close', 'CLOSE ONE!'], ['oops', 'OOPS'], ['wow', 'WOW'], ['lol', 'HAHA'],
+    ['again', 'REMATCH?'], ['ready', 'READY?'], ['brb', 'BE RIGHT BACK'], ['bye', 'GOTTA GO']];
   const OPT = {
     mode: ['race', 'timetrial'], laps: [1, 2, 3, 5, 8, 10, 15, 20, 30], weather: ['dry', 'damp', 'wet', 'dynamic'], timeOfDay: ['day', 'dusk', 'night'],
     difficulty: ['easy', 'medium', 'hard', 'extreme'], tyreWear: ['off', 'normal', 'high'], contact: ['contact', 'ghost'],
@@ -8607,6 +8862,7 @@ const NetCore = (() => {
       pitRoadFlags(S);
     }
     if (me && me._race && !me.finished) me.curLapTime = race.phase === 'racing' ? Math.max(0, race.t - (me._race.lapStartT || 0)) : 0;
+    if (me && me.giveBack) gbSync(me, race.t);   // (an order the server's verdict never came for: dropped after its window)
     if (race.wx && race.phase === 'racing' && typeof Weather !== 'undefined' && Weather.step) Weather.step(race.wx, G, dt);
     return true;
   }
@@ -8767,7 +9023,7 @@ const NetCore = (() => {
         return true;
       case 'ev':
         if (S.mode !== 'race') return true;
-        for (const o of m.e || []) { const ev = unpackEvent(o, S.byId); if (ev) G.events.push(ev); }
+        for (const o of m.e || []) { const ev = unpackEvent(o, S.byId); if (ev) { gbEvent(ev, race && race.t); G.events.push(ev); } }
         return true;
       case 'wx':
         if (race && race.wx) { const W = race.wx; W.x = Math.max(W.x || 0, m.x || 0); W.wet = m.wet; W.rain = m.rain; if (m.trend != null) W.trend = m.trend; }
@@ -8857,7 +9113,7 @@ const NetCore = (() => {
   const cleanName = n => String(n == null ? '' : n).replace(/[<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16) || 'Player';
 
   return {
-    VERSION, PORT, HZ, MT, STATE_LEN, SNAP_HEAD, SNAP_CAR, RACE_HEAD, RACE_CAR, NEAR, FAR_EVERY, INTERP, PRED_NEAR, PRED_FAR, MAX_EXTRAP, COMP, OPT, DEF,
+    VERSION, PORT, HZ, MT, STATE_LEN, SNAP_HEAD, SNAP_CAR, RACE_HEAD, RACE_CAR, NEAR, FAR_EVERY, INTERP, PRED_NEAR, PRED_FAR, MAX_EXTRAP, COMP, OPT, DEF, EMOTES,
     newState, stateFromCar, writeState, readState, copyState, writeSnapHead, writeSnapCar, readSnap, writeRace, readRace,
     infoOf, applyInfo, packEvent, unpackEvent, EV_SKIP,
     makeClock, clockSample, serverNow, makeBuf, bufPush, bufReset, bufSample, extrap,
