@@ -85,6 +85,50 @@ function send(p, o) { if (p && p.ws && p.ws.open) p.ws.send(typeof o === 'string
 function sendAll(room, o, except) { const s = JSON.stringify(o); for (const p of room.players) if (p !== except) send(p, s); }
 const connected = p => !!(p.ws && p.ws.open);
 
+// names on screen (p.dname): two or more drivers in a room with the same typed name (case-insensitive) are numbered
+// "Player 1", "Player 2", … in join order (NAMES.numbered); the 3-letter tower codes stay unique as before (PLA, PLX).
+// Every client gets the server's names. In the lobby (no session running) the numbers follow the join order; while a
+// race / time trial runs nobody is renamed: someone leaving keeps everyone else's number, and a newcomer (or a driver
+// who changes their name) gets a number not used in the room or in that session.
+const nameKey = n => String(n == null ? '' : n).trim().toLowerCase();
+const dname = p => p.dname || p.name;
+const numbered = (n, k) => (NAMES && NAMES.numbered ? NAMES.numbered(n, k) : k > 0 ? n + '\u00a0' + k : n);   // ("Player" + 2 -> "Player 2", a no-break space)
+function numberNames(room) {
+  const sim = room.sim && !room.sim.stopped ? room.sim : null, groups = new Map();
+  for (const p of room.players) { const k = nameKey(p.name); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
+  let changed = false;
+  for (const [k, list] of groups) {
+    if (!sim) list.forEach((p, i) => { p.nameNo = list.length > 1 ? i + 1 : 0; });
+    else {
+      const inSim = n => !!(sim.names && sim.names.has(nameKey(numbered(list[0].name, n)))), taken = new Set(), redo = [];
+      let plain = false;
+      for (const p of list) {   // (keeps the name it showed: same name typed, that number / the plain name not claimed by an earlier one)
+        if (p.nameKey !== k || (p.nameNo ? taken.has(p.nameNo) : plain)) { redo.push(p); continue; }
+        if (p.nameNo) taken.add(p.nameNo); else plain = true;
+      }
+      for (const p of redo) {
+        if (list.length === 1 && !inSim(0)) { p.nameNo = 0; continue; }
+        let n = plain || inSim(0) ? 2 : 1;
+        while (taken.has(n) || inSim(n)) n++;
+        p.nameNo = n; taken.add(n);
+      }
+    }
+    for (const p of list) { p.nameKey = k; const d = numbered(p.name, p.nameNo); if (p.dname !== d) { p.dname = d; changed = true; } }
+  }
+  if (changed && sim && sim.mode === 'timetrial') { sim.roster(); sim.leaderboard(true); }
+  return changed;
+}
+// online / away, for every client (room message: conn + away / lobby; urgent when it changes). awayOf: 1 = in the running
+// session but not at the wheel (race: the AI drives their car — tab in the background, idle 3 s; time trial: tab in the
+// background or no state for 3 s), 2 = went back to the lobby mid-race (the AI brings their car home), 0 = otherwise
+function awayOf(room, p) {
+  const sim = room.sim;
+  if (!sim || sim.stopped || !connected(p) || !sim.has(p)) return 0;
+  if (sim.mode === 'race') { const n = sim.byPid.get(p.id).net; return n && n.afk ? (n.lobby ? 2 : 1) : 0; }
+  const e = sim.ent.get(p.id);
+  return e && e.active && (e.away || (e.rep && now() - e.recvT > AFK_MS)) ? 1 : 0;
+}
+
 function newCode() {
   for (let k = 0; k < 1000; k++) { const c = String(100000 + crypto.randomInt(900000)); if (!rooms.has(c)) return c; }
   return null;
@@ -103,7 +147,7 @@ function freeNumber(room, want, self) {
 }
 function applyMe(room, p, me) {
   if (!me || typeof me !== 'object') return;
-  if (me.name != null) p.name = N.cleanName(me.name);
+  if (me.name != null) { const n = N.cleanName(me.name); if (n !== p.name) { p.name = n; if (p.room === room) numberNames(room); } }
   if (me.team != null && room.phase === 'lobby') { const t = freeTeam(room, me.team | 0, p); if (t >= 0) p.team = t; }
   if (me.number != null) p.number = freeNumber(room, me.number | 0, p);
   if (me.compound != null && (N.COMP.includes(me.compound) || me.compound === 'A')) p.compound = me.compound;   // ('A' = AUTO: suitCompound at the start)
@@ -114,8 +158,8 @@ function roomMsg(room, p) {
   const sim = room.sim;
   return {
     t: 'room', code: room.code, phase: room.phase, host: room.host ? room.host.id : null, you: p.id, settings: room.settings, tracks: TRACK_IDS,
-    players: room.players.map(q => ({ id: q.id, name: q.name, team: q.team, number: q.number, compound: q.compound, ready: q.ready, ping: q.ping | 0,
-      conn: connected(q), host: q === room.host, inRace: !!(sim && sim.has(q)) })),
+    players: room.players.map(q => { const a = awayOf(room, q); return { id: q.id, name: dname(q), team: q.team, number: q.number, compound: q.compound, ready: q.ready, ping: q.ping | 0,
+      conn: connected(q), away: a > 0, lobby: a === 2, host: q === room.host, inRace: !!(sim && sim.has(q)) }; }),   // (name: as shown, numbered when shared)
     race: sim && sim.brief ? sim.brief() : null,
   };
 }
@@ -128,17 +172,18 @@ function createRoom(host, settings, me) {
   const room = { code, host, players: [], settings: N.roomSettings(settings, TRACK_IDS, 1), phase: 'lobby', sim: null, dirty: true, urgent: true, sentT: 0, created: Date.now() };
   rooms.set(code, room);
   joinRoom(room, host, me);
-  log(`room ${code} created by #${host.id} ${host.name}`);
+  log(`room ${code} created by #${host.id} ${dname(host)}`);
 }
 function joinRoom(room, p, me) {
   const cap = Math.min(MAX_IN_ROOM, room.settings.humanSlots || MAX_IN_ROOM);
   if (room.players.length >= cap && !room.players.includes(p)) { send(p, { t: 'error', code: 'full', msg: `Room ${N.fmtCode(room.code)} is full: ${room.players.length} of ${cap} drivers`, cap }); return false; }
   if (p.room && p.room !== room) leaveRoom(p, 'switch');
-  if (!room.players.includes(p)) room.players.push(p);
+  if (!room.players.includes(p)) { room.players.push(p); p.nameKey = null; p.nameNo = 0; p.dname = null; }   // (a newcomer here: numbered afresh)
   p.room = room; p.ready = false; p.loaded = false;
   p.team = freeTeam(room, me && me.team != null ? me.team | 0 : p.team, p);
   p.number = freeNumber(room, me && me.number != null ? me.number | 0 : p.number, p);
   applyMe(room, p, Object.assign({}, me, { team: undefined, number: undefined }));
+  numberNames(room);
   if (!room.host || !room.players.includes(room.host)) room.host = p;
   room.urgent = true;
   if (room.sim && room.sim.onJoin) room.sim.onJoin(p);
@@ -152,7 +197,8 @@ function leaveRoom(p, why) {
   if (room.sim && room.sim.onLeave) room.sim.onLeave(p);
   if (room.host === p) room.host = room.players.find(connected) || room.players[0] || null;
   room.urgent = true;
-  log(`#${p.id} ${p.name} left room ${room.code} (${why})`);
+  numberNames(room);   // (lobby: the others' numbers follow the join order again; mid-session nobody is renamed)
+  log(`#${p.id} ${dname(p)} left room ${room.code} (${why})`);
   if (!room.players.length) { if (room.sim) room.sim.stop(); rooms.delete(room.code); log(`room ${room.code} closed`); }
 }
 
@@ -225,10 +271,12 @@ class RaceSim {
       car.isPlayer = false; car.assists = { tc: true, abs: true }; car.stability = 1;
       const p = humans.find(h => h.team === car.teamIndex);
       if (p) {
-        const nm = splitName(p.name);
-        car.driver = { first: nm.first, last: nm.last, code: makeCode(nm.last, nm.first), number: p.number };
-        car.code = car.driver.code; car.name = nm.last; car.number = p.number; car.firstName = nm.first; car.lastName = nm.last;
-        car.net = { p, epoch: 1, auth: 'client', why: null, rep: null, prev: null, recvT: now(), afk: false, brain: null, bad: 0, stale: 0, n: 0, rep0: null, ex: 0, ez: 0, eh: 0 };
+        // the names on screen from the shown name (numbered when two drivers typed the same: "Player 2" -> '' + 'Player 2'),
+        // the 3-letter code from the typed one (two "Player": PLA and PLX below); fixed for the whole race
+        const nm = splitName(p.name), dn = splitName(dname(p));
+        car.driver = { first: dn.first, last: dn.last, code: makeCode(nm.last, nm.first), number: p.number };
+        car.code = car.driver.code; car.name = dn.last; car.number = p.number; car.firstName = dn.first; car.lastName = dn.last;
+        car.net = { p, dname: dname(p), typed: nm, epoch: 1, auth: 'client', why: null, rep: null, prev: null, recvT: now(), afk: false, lobby: false, brain: null, bad: 0, stale: 0, n: 0, rep0: null, ex: 0, ez: 0, eh: 0 };
         car.pitManual = true;   // (Race: the player drives the pit entry road; the autopilot takes the car at the limiter line)
         car.strategy = { auto: false, stops: [], plan: '', pending: null }; car.wantPit = false; car.pitSpeedingChance = 0;
         const c = N.COMP.includes(p.compound) ? p.compound : suitCompound(race, 'M');   // (a picked tyre exactly; AUTO 'A': the one the conditions call for)
@@ -237,11 +285,13 @@ class RaceSim {
         p.carId = car.id; p.loaded = false;
       } else G.brains.set(car, AI.create(car, this.diff, seed + car.id * 7919, G));
     }
-    // unique codes / numbers (humans keep theirs; two humans with the same code: the later one gets an alternative)
-    for (const car of G.cars) {
-      if (!car.net) continue;
+    // unique codes / numbers (humans keep theirs; two humans with the same code: the later one to join gets an alternative,
+    // so "Player 1" is PLA and "Player 2" PLX)
+    for (const p of humans) {
+      const car = G.cars.find(c => c.net && c.net.p === p);
+      if (!car) continue;
       if (usedCode.has(car.code)) {
-        const L2 = (car.lastName || '').replace(/[^A-Za-z]/g, '').toUpperCase() + 'XXX', F = ((car.firstName || '').replace(/[^A-Za-z]/g, '').toUpperCase() || 'X');
+        const L2 = (car.net.typed.last || '').replace(/[^A-Za-z]/g, '').toUpperCase() + 'XXX', F = ((car.net.typed.first || '').replace(/[^A-Za-z]/g, '').toUpperCase() || 'X');
         const alt = [L2.slice(0, 2) + F[0], L2[0] + L2.slice(2, 4), L2.slice(0, 2) + L2.slice(-4, -3), F.slice(0, 3)].find(c => c.length === 3 && !usedCode.has(c));
         if (alt) { car.code = alt; car.driver.code = alt; }
       }
@@ -256,6 +306,7 @@ class RaceSim {
     }
     G.world = { track, cars: G.cars, race, events: G.events, weather: G.weather, assists: { tc: true, abs: true }, wearPerMetre: wearPerMetre(S, track) };
     this.byPid = new Map(); for (const car of G.cars) if (car.net) this.byPid.set(car.net.p.id, car);
+    this.names = new Set(humans.map(p => nameKey(dname(p))));   // (numberNames: names in this race are not given to a newcomer)
     this.ghost = S.contact === 'ghost';
     this.t0 = now(); this.steps = 0; this.snapSeq = 0; this.snapT = this.t0; this.raceT = this.t0; this.infoT = this.t0; this.wxT = this.t0;
     this.phase = 'loading'; this.loadT0 = this.t0; this.sched = null; this.goSent = false; this.endT = null; this.evq = [];
@@ -271,7 +322,7 @@ class RaceSim {
     const G = this.G, car = this.byPid.get(p.id);
     return {
       t: 'race', mode: 'race', seed: this.seed, settings: this.S, field: this.race.field.slice(), you: car ? car.id : -1, resume: !!resume,
-      cars: G.cars.map(c => ({ id: c.id, team: c.teamIndex, pid: c.net ? c.net.p.id : null, name: c.net ? c.net.p.name : null, first: c.firstName || '', last: c.lastName || c.name,
+      cars: G.cars.map(c => ({ id: c.id, team: c.teamIndex, pid: c.net ? c.net.p.id : null, name: c.net ? c.net.dname : null, first: c.firstName || '', last: c.lastName || c.name,
         code: c.code, number: c.number, compound: c._race && c.compoundsUsed ? c.compoundsUsed[0] : c.tyre.compound, grid: c.grid })),
       epoch: car && car.net ? car.net.epoch : 0, sched: this.sched, t0: this.goSent ? this.raceT0 : null,
       mySetup: car && car.setup ? { fw: car.setup.fw, rw: car.setup.rw } : null,   // (only this player's own)
@@ -302,10 +353,14 @@ class RaceSim {
     if (s.pitc >= 1 && s.pitc <= 5) { car.nextCompound = N.COMP[s.pitc - 1]; car.wxStop = true; }
     if (!car.kinematic) { car.tyre.wear = U.clamp(s.wear, 0, 1); car.battery = s.bat * (car.batteryCap || CFG.energy.cap); }
   }
-  onReclaim(p) { const car = this.byPid.get(p.id); if (car && car.net && car.net.afk) { car.net.afk = false; car.net.recvT = now(); } }
-  // the player's tab went to the background / they went back to the lobby: the AI drives at once (not after AFK_MS of a
-  // frozen car); any key back in the race reclaims it, as after a drop
-  onAway(p) { const car = this.byPid.get(p.id); if (car && car.net && !car.net.afk && this.race.phase === 'racing') { car.net.afk = true; log(`room ${this.room.code}: #${p.id} ${p.name} away -> AI drives`); } }
+  onReclaim(p) { const car = this.byPid.get(p.id); if (car && car.net && car.net.afk) { car.net.afk = false; car.net.lobby = false; car.net.recvT = now(); } }
+  // the player's tab went to the background / they went back to the lobby (m.lobby): the AI drives at once (not after
+  // AFK_MS of a frozen car); any key back in the race reclaims it, as after a drop
+  onAway(p, m) {
+    const car = this.byPid.get(p.id); if (!car || !car.net) return;
+    if (m && m.lobby) car.net.lobby = true;   // (awayOf: the others see them in the lobby, their car as away)
+    if (!car.net.afk && this.race.phase === 'racing') { car.net.afk = true; log(`room ${this.room.code}: #${p.id} ${dname(p)} away -> AI drives`); }
+  }
   // tyre choice made in the pit lane (after the limiter line the server drives: no STATE packets carry it then)
   onPitc(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c)) { car.nextCompound = m.c; car.wxStop = true; } }
   // ---- control hand-over (epochs): the client ignores / the server rejects everything from an older epoch
@@ -340,7 +395,7 @@ class RaceSim {
     car.speed = Math.hypot(car.vx, car.vz); car.vLong = car.vx * ch + car.vz * sh; car.vLat = -car.vx * sh + car.vz * ch;
     car.surface = track.surface(car.s, car.d);
     car.offTrack = car.surface === SURF.GRASS || car.surface === SURF.GRAVEL || car.surface === SURF.RUNOFF;
-    if ((race.phase === 'racing') && !n.afk && tNow - n.recvT > AFK_MS) { n.afk = true; log(`room ${this.room.code}: #${n.p.id} ${n.p.name} idle -> AI drives`); }
+    if ((race.phase === 'racing') && !n.afk && tNow - n.recvT > AFK_MS) { n.afk = true; log(`room ${this.room.code}: #${n.p.id} ${n.dname} idle -> AI drives`); }
   }
   step(tNow) {
     const G = this.G, race = this.race, dt = STEP, cars = G.cars, pre = race.phase === 'grid' || race.phase === 'lights';
@@ -490,7 +545,7 @@ class RaceSim {
   resume(p) {
     const car = this.byPid.get(p.id);
     if (!car) return;
-    car.net.left = false; car.net.afk = false;
+    car.net.left = false; car.net.afk = false; car.net.lobby = false;
     send(p, this.setupMsg(p, true));
     const k = new Map(this.infoKey); this.info(true, p); this.infoKey = k;
     if (this.results) send(p, this.resFor(p));
@@ -509,6 +564,7 @@ class TTSim {
     this.snapSeq = 0; this.snapT = now(); this.lbKey = '';
     this._st = N.newState(); this._pr = {};
     this.minLap = this.track.length / 95;   // m/s cap of the fastest possible lap (anything quicker is not a lap)
+    this.names = new Set();        // names shown in this session (numberNames: not given to a newcomer)
     for (const p of room.players.filter(connected)) this.add(p);
     log(`room ${room.code}: time trial on ${this.track.id}`);
   }
@@ -523,8 +579,9 @@ class TTSim {
       e = { id, p, rep: null, recvT: 0, prog: 0, lastS: null, best: null, bestS: null, laps: 0, last: null, ghost: null, ghostT: null, active: true };
       this.slots[id] = e; this.ent.set(p.id, e);
     }
-    e.active = true;
+    e.active = true; e.away = false;
     p.carId = e.id;
+    this.names.add(nameKey(dname(p)));
     send(p, this.setupMsg(p));
     this.roster(); this.leaderboard(true);
     return e;
@@ -533,16 +590,17 @@ class TTSim {
     const e = this.ent.get(p.id);
     const su = p.setups && p.setups[this.S.trackId];
     return { t: 'race', mode: 'timetrial', seed: this.seed, settings: this.S, you: e ? e.id : -1, players: this.rosterList(), mySetup: su ? { fw: su.fw, rw: su.rw } : null,
-      cars: [{ id: e ? e.id : 0, team: p.team, pid: p.id, name: p.name, number: p.number, compound: p.compound, grid: 1 }] };
+      cars: [{ id: e ? e.id : 0, team: p.team, pid: p.id, name: dname(p), number: p.number, compound: p.compound, grid: 1 }] };
   }
-  rosterList() { return this.slots.filter(Boolean).map(e => ({ id: e.id, pid: e.p.id, name: e.p.name, team: e.p.team, number: e.p.number, active: e.active && connected(e.p) })); }
+  rosterList() { return this.slots.filter(Boolean).map(e => ({ id: e.id, pid: e.p.id, name: dname(e.p), team: e.p.team, number: e.p.number, active: e.active && connected(e.p) })); }
   roster() { sendAll(this.room, { t: 'roster', players: this.rosterList() }); }
   onJoin() {}
   onLeave(p) { const e = this.ent.get(p.id); if (e) { e.active = false; this.roster(); } }
-  onBack(p) { const e = this.ent.get(p.id); if (e) { e.active = false; this.roster(); } }
+  onBack(p) { const e = this.ent.get(p.id); if (e) { e.active = false; e.away = false; this.roster(); } }
   stop() { this.stopped = true; }
   onLoaded() {}
   onReclaim() {}
+  onAway(p) { const e = this.ent.get(p.id); if (e && e.active) e.away = true; }   // (tab in the background: away until its next state)
   onState(p, dv) {
     const e = this.ent.get(p.id); if (!e || !e.active) return;
     const s = N.readState(dv, this._st); if (!s) return;
@@ -553,7 +611,7 @@ class TTSim {
     const rep = e.rep || (e.rep = N.newState());
     N.copyState(s, rep); rep.s = this._pr.s; rep.idx = this._pr.idx;
     if (e.lastS != null) { const ds = this.track.deltaS(e.lastS, rep.s); if (ds > 0 && ds < 60) e.prog += ds; }
-    e.lastS = rep.s; e.recvT = t;
+    e.lastS = rep.s; e.recvT = t; e.away = false;
     if (FAST) relayNear(this, { id: e.id, x: rep.x, z: rep.z }, rep, 0, t, 0);
   }
   onLap(p, m) {
@@ -578,11 +636,11 @@ class TTSim {
   getGhost(p, m) {
     const e = [...this.ent.values()].find(x => x.p.id === (m.pid | 0));
     if (!e || !e.ghost) return send(p, { t: 'ghost', pid: m.pid | 0, data: null });
-    send(p, { t: 'ghost', pid: e.p.id, name: e.p.name, team: e.p.team, time: e.best, data: e.ghost });
+    send(p, { t: 'ghost', pid: e.p.id, name: dname(e.p), team: e.p.team, time: e.best, data: e.ghost });
   }
   leaderboard(force) {
     const rows = [...this.ent.values()].filter(e => e.best != null).sort((a, b) => a.best - b.best)
-      .map(e => ({ pid: e.p.id, id: e.id, name: e.p.name, team: e.p.team, number: e.p.number, best: e.best, s: e.bestS, laps: e.laps, ghost: !!e.ghost }));
+      .map(e => ({ pid: e.p.id, id: e.id, name: dname(e.p), team: e.p.team, number: e.p.number, best: e.best, s: e.bestS, laps: e.laps, ghost: !!e.ghost }));
     const k = JSON.stringify(rows);
     if (!force && k === this.lbKey) return;
     this.lbKey = k;
@@ -628,7 +686,7 @@ function onText(p, raw) {
       const r = rooms.get(N.cleanCode(m.code));
       if (!r) return send(p, { t: 'error', msg: 'No room with code ' + N.fmtCode(N.cleanCode(m.code)), code: 'noroom' });
       if (m.me && m.me.name) p.name = N.cleanName(m.me.name);
-      if (joinRoom(r, p, m.me)) log(`#${p.id} ${p.name} joined room ${r.code} (${r.players.length})`);
+      if (joinRoom(r, p, m.me)) log(`#${p.id} ${dname(p)} joined room ${r.code} (${r.players.length})`);
       break;
     }
     case 'me': if (room) { applyMe(room, p, m); room.urgent = true; } break;
@@ -640,9 +698,10 @@ function onText(p, raw) {
     case 'start': {
       if (!host || room.phase !== 'lobby') return;
       const waiting = room.players.filter(q => q !== p && connected(q) && !q.ready);
-      if (waiting.length && !m.force) return send(p, { t: 'error', msg: 'Waiting for ' + waiting.map(q => q.name).join(', ') + ' to be ready', code: 'notready' });
+      if (waiting.length && !m.force) return send(p, { t: 'error', msg: 'Waiting for ' + waiting.map(dname).join(', ') + ' to be ready', code: 'notready' });
       room.settings = N.roomSettings(room.settings, TRACK_IDS, room.players.filter(connected).length);
       if (room.sim) room.sim.stop();
+      room.sim = null; numberNames(room);   // (a new session starts from the lobby's numbering, in join order)
       p.ready = true;
       try { room.sim = room.settings.mode === 'timetrial' ? new TTSim(room) : new RaceSim(room); }
       catch (e) { console.error(e); room.sim = null; return send(p, { t: 'error', msg: 'Could not start: ' + e.message }); }
@@ -652,7 +711,7 @@ function onText(p, raw) {
     }
     case 'back': {   // host: end the session for everyone (back to the lobby)
       if (!host || !sim) return;
-      sim.stop(); room.sim = null; room.phase = 'lobby'; room.urgent = true;
+      sim.stop(); room.sim = null; room.phase = 'lobby'; room.urgent = true; numberNames(room);
       for (const q of room.players) q.ready = false;
       sendAll(room, { t: 'end' });
       break;
@@ -661,7 +720,7 @@ function onText(p, raw) {
     case 'ttleave': if (sim && sim.onBack) sim.onBack(p); break;
     case 'loaded': if (sim) sim.onLoaded(p); break;
     case 'reclaim': if (sim) sim.onReclaim(p); break;
-    case 'away': if (sim && sim.onAway) sim.onAway(p); break;
+    case 'away': if (sim && sim.onAway) sim.onAway(p, m); break;   // (m.lobby: went back to the lobby)
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
     case 'lap': if (sim && sim.onLap) sim.onLap(p, m); break;
     case 'ghost': if (sim && sim.onGhost) sim.onGhost(p, m); break;
@@ -689,7 +748,7 @@ function onConnection(ws) {
         p = old; p.ws = ws; p.discT = null;
         ws.send(JSON.stringify({ t: 'welcome', id: p.id, token: p.token, s: now(), resumed: !!p.room }));
         if (p.room) { p.room.urgent = true; if (p.room.sim && p.room.sim.resume) p.room.sim.resume(p); else if (p.room.sim && p.room.sim.mode === 'timetrial' && p.room.sim.has(p)) p.room.sim.add(p); }
-        log(`#${p.id} ${p.name} reconnected`);
+        log(`#${p.id} ${dname(p)} reconnected`);
       } else {
         p = { id: nextPid++, token: crypto.randomBytes(12).toString('hex'), name: N.cleanName(m.name), ws, room: null, team: -1, number: 7, compound: 'A', ready: false, ping: 0, discT: null, carId: null };
         byToken.set(p.token, p);
@@ -716,9 +775,11 @@ function onConnection(ws) {
 setInterval(() => {
   const t = now(), wall = Date.now();
   for (const room of rooms.values()) {
-    if (room.sim) { try { room.sim.update(t); } catch (e) { console.error(`room ${room.code} sim error`, e); room.sim.stop(); room.sim = null; room.phase = 'lobby'; room.urgent = true; sendAll(room, { t: 'error', msg: 'The session crashed on the server: ' + e.message }); sendAll(room, { t: 'end' }); } }
-    if (room.sim && room.sim.stopped) { room.sim = null; if (room.phase !== 'lobby') { room.phase = 'lobby'; room.urgent = true; } }
+    if (room.sim) { try { room.sim.update(t); } catch (e) { console.error(`room ${room.code} sim error`, e); room.sim.stop(); room.sim = null; room.phase = 'lobby'; room.urgent = true; numberNames(room); sendAll(room, { t: 'error', msg: 'The session crashed on the server: ' + e.message }); sendAll(room, { t: 'end' }); } }
+    if (room.sim && room.sim.stopped) { room.sim = null; if (room.phase !== 'lobby') { room.phase = 'lobby'; room.urgent = true; } if (numberNames(room)) room.urgent = true; }
     for (const p of room.players.slice()) if (p.discT && wall - p.discT > RECONNECT_S * 1000) { leaveRoom(p, 'timeout'); byToken.delete(p.token); }
+    // online / away changed (a dropped connection, the AI taking a car, a tab back): everyone's room message at once
+    for (const p of room.players) { const k = (connected(p) ? 1 : 0) + 2 * awayOf(room, p); if (p.netSt !== k) { p.netSt = k; room.urgent = true; } }
     // lobby changes go out at once (<= ~7 / s); ping-only updates at most every 0.5 s in the lobby, 3 s in a session
     if (rooms.has(room.code) && (room.urgent ? t - room.sentT > 150 : room.dirty && t - room.sentT > (room.sim ? 3000 : 500))) sendRoom(room);
   }

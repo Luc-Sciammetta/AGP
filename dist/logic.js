@@ -89,13 +89,20 @@ const NAMES = {
 // digit is the surname (shown bold), the words before it are the first name(s); marks after it stay with it. One word =
 // just a surname, never an invented first name ("One" -> '' + 'One', "One Two Three" -> 'One Two' + 'Three',
 // "One :)" -> '' + 'One :)', "One Two :)" -> 'One' + 'Two :)').
+// Multiplayer numbers drivers who typed the same name ("Player 1", "Player 2": NAMES.numbered, a no-break space before the
+// number); that number stays with the surname ("Test Driver 2" -> 'Test' + 'Driver 2').
 NAMES.split = full => {
-  const w = String(full == null ? '' : full).trim().split(/\s+/).filter(Boolean), has = x => /[\p{L}\p{N}]/u.test(x);
+  let s = String(full == null ? '' : full).trim();
+  const no = (s.match(/ \d+$/) || [''])[0];
+  if (no) s = s.slice(0, -no.length).trim();
+  const w = s.split(/\s+/).filter(Boolean), has = x => /[\p{L}\p{N}]/u.test(x);
   let k = w.length - 1;
   while (k > 0 && !has(w[k])) k--;
   const first = w.slice(0, Math.max(0, k)).join(' ');
-  return has(first) ? { first, last: w.slice(k).join(' ') } : { first: '', last: w.join(' ') };
+  return has(first) ? { first, last: w.slice(k).join(' ') + no } : { first: '', last: w.join(' ') + no };
 };
+// a typed name + its duplicate number (0 = none): "Player", 2 -> "Player 2" (no-break space: NAMES.split keeps it with the surname)
+NAMES.numbered = (name, n) => (n > 0 ? String(name) + ' ' + n : String(name));
 // stored first / last -> the parts to show (the whole name split again: first 'One' + last ':)' -> '' + 'One :)')
 NAMES.parts = (first, last) => NAMES.split((first ? first + ' ' : '') + (last == null ? '' : last));
 // 3-letter timing-tower code: the surname's letters, then the first name's, digits, X ("One :)" -> ONE, "One Two Three" -> THR)
@@ -201,6 +208,22 @@ const CFG = {
     baseUse: 0.45,        // wear-rate factor = (baseUse + loadUse * tyreUsage^2 + lockups/spin/off-track) / usageNorm
     loadUse: 1.0,
     usageNorm: 0.8,       // calibrated so an average lap ≈ 1.0
+  },
+
+  // AI tyre strategy (Race: planOptions / choosePlan). Every plan of up to 3 stops (4 only if nothing shorter covers the
+  // race) is timed with the tyre model: a lap costs the compound's pace + its wear loss, a stop race.pitLossEst. Each car
+  // then picks one near the best: weight exp(-extra perceived s / tau) among the plans at most `cut` s slower, where
+  // perceived = model time - personality (-1..1, team trait + chance) x aggr s per stop (a car that likes fresh tyres sees
+  // stops cheaper, a track-position one dearer). Stop laps: a random shift of up to `shift` laps costing <= `stag` s.
+  // Model, measured on solo AI races: the AI gains paceK of a compound's 1/sqrt(grip) step, racing wears wearK x nominal
+  // (20 laps at Kotori, Extreme, normal wear: M-H 0, H-H +3.7 s, S-M-M +6.4 s, 3 stops +16.9 s; model +3.2 / +7.6 / +16.4)
+  strategy: {
+    paceK: 0.78, wearK: 1.08, shift: 3,
+    easy:     { tau: 4,   cut: 11,  aggr: 4.5, stag: 2.5 },
+    medium:   { tau: 3,   cut: 8,   aggr: 3.5, stag: 2 },
+    adaptive: { tau: 2,   cut: 5,   aggr: 2.5, stag: 1.5 },
+    hard:     { tau: 1.4, cut: 3.5, aggr: 1.5, stag: 1.2 },
+    extreme:  { tau: 1,   cut: 2.5, aggr: 1,   stag: 1 },
   },
 
   surface: [
@@ -470,30 +493,39 @@ CFG.setup = {
 //         (first-lap latitude). spin: a car that lost control (spinning / sliding) is penalised too. sec (big: { imp, sec }
 //         heavier hits), cool = s during which one car gets one contact penalty (one incident)
 //   tl    track limits (all four wheels off): warn = warnings before the penalty strike, gain = s gained off track for a
-//         strike, cut = s gained for an immediate penalty (chicane cut), sec
+//         strike, cut = s gained that has to be given back (a cut chicane: adv), sec
+//   adv   leaving the track and gaining an advantage (Race advStep). A car that passes another while off track (or within
+//         rejoin s of coming back) must give the place back within passWin s, else passSec; it has to be ahead by more
+//         than margin m to count. Time gained off track past tl.cut s (no place) must be given back within timeWin s
+//         (lost vs its own pace, (1 - slack) x the gain), else tl.sec; more than big s gained = the penalty at once. A
+//         give-back replaces the track-limits strike of that moment (never both)
 //   pitTol  km/h over the 100 km/h pit limit tolerated at the limiter line; jump = m moved before lights out, jumpSec
 CFG.penalties = {
   def: 'standard', levels: ['off', 'lenient', 'standard', 'strict'],
   names: { off: 'OFF', lenient: 'LENIENT', standard: 'STANDARD', strict: 'STRICT' },
   help: {
     off: 'No penalties at all: contact, track limits, corner cuts, pit-lane speeding and jump starts go unpunished.',
-    lenient: 'Only big hits that are clearly your fault. Five track-limits warnings, big corner cuts only, generous pit-lane and start tolerance.',
-    standard: 'Clear rear-ends, divebombs and moving into a car alongside; light contact is a racing incident. Three track-limits warnings, then 5 s.',
-    strict: 'Close to real F1 stewarding: smaller hits and lunges count, any track-limits gain is a strike, 1 km/h pit tolerance, 10 s jump start.',
+    lenient: 'Only big hits that are clearly your fault. Five track-limits warnings; places or big time gained off track must be given back within 30 s. Generous pit-lane and start tolerance.',
+    standard: 'Clear rear-ends, divebombs and moving into a car alongside; light contact is a racing incident. Three track-limits warnings, then 5 s. Give back a place or time gained off track within 20 s.',
+    strict: 'Close to real F1 stewarding: smaller rear-end hits and lunges count (wheel-to-wheel rubbing is still a racing incident), any track-limits gain is a strike, places gained off track go back within 15 s (or 10 s), 1 km/h pit tolerance, 10 s jump start.',
   },
   lenient: {
     col: { light: 4, rear: 9, side: 6, dive: 8, share: 0.8, along: 1.6, back: 13, lunge: 6, diveNA: true, lap1: 1.5, lap1Dist: 1500, spin: false, sec: 5, big: null, cool: 8 },
     tl: { warn: 5, gain: 0.35, cut: 1.5, sec: 5 },
+    adv: { rejoin: 1.0, margin: 3, passWin: 30, passSec: 5, timeWin: 30, slack: 0.3, big: 4 },
     pitTol: 10, jump: 1.2, jumpSec: 5,
   },
   standard: {
     col: { light: 3, rear: 6, side: 4, dive: 5.5, share: 0.7, along: 2.4, back: 10, lunge: 4, diveNA: true, lap1: 1.25, lap1Dist: 1200, spin: false, sec: 5, big: null, cool: 8 },
     tl: { warn: 3, gain: 0.15, cut: 0.8, sec: 5 },
+    adv: { rejoin: 1.5, margin: 0.5, passWin: 20, passSec: 5, timeWin: 20, slack: 0.15, big: 3 },
     pitTol: 5, jump: 0.6, jumpSec: 5,
   },
   strict: {
-    col: { light: 2.2, rear: 4, side: 3, dive: 3.5, share: 0.62, along: 2.4, back: 8, lunge: 2.5, diveNA: true, lap1: 1, lap1Dist: 0, spin: true, sec: 5, big: { imp: 11, sec: 10 }, cool: 6 },
+    // (side by side: the same bar as STANDARD, wheel-to-wheel rubbing is a racing incident; stricter on rear-ends / lunges)
+    col: { light: 3, rear: 4, side: 4, dive: 3.5, share: 0.62, along: 2.4, back: 8, lunge: 2.5, diveNA: true, lap1: 1, lap1Dist: 0, spin: true, sec: 5, big: { imp: 11, sec: 10 }, cool: 6 },
     tl: { warn: 3, gain: 0.05, cut: 0.5, sec: 5 },
+    adv: { rejoin: 2.0, margin: 0.5, passWin: 15, passSec: 10, timeWin: 15, slack: 0.05, big: 2.5 },
     pitTol: 1, jump: 0.3, jumpSec: 10,
   },
 };
@@ -526,7 +558,10 @@ CFG.penalties = {
 //
 // theme (all hex strings unless noted), passed through to track.theme:
 //   sky, skyTop (zenith), fog, sun, grass, ground (far terrain), runoff (paved run-off), gravel, asphalt, line (edge
-//   lines), kerbA/kerbB (kerb stripes), barrier (armco/concrete), tyreWall, water, building, timeOfDay 'day'|'dusk',
+//   lines), kerbA/kerbB (kerb stripes), barrier (armco/concrete), tyreWall, water, building, timeOfDay 'day'|'dusk'|'night'
+//   (the circuit's DEFAULT time of day: quick race / time trial / championship rounds start on it, the player can pick
+//   another), palette 'day'|'dusk'|'night' (the time of day sky / skyTop / fog / sun / fogNear / fogFar / sunElevation were
+//   authored for; render3d uses them only at that time of day, presets otherwise; default = timeOfDay),
 //   street (bool: concrete walls + fences instead of armco/tyres, no grass verges), fogNear/fogFar (m).
 // scenery (free-form hints for render3d; at-specs are resolved to s by buildTrack: at -> s, from/to -> s0/s1):
 //   grandstands: [{at, side (+1 right / -1 left of racing dir), len (m), rows?}]
@@ -586,7 +621,7 @@ const TRACK_DATA = {
     theme: {
       sky: '#9fcbf0', skyTop: '#3f86d6', fog: '#c4dcee', sun: '#fff3d1', grass: '#4c8a2e', ground: '#5e7d3a',
       runoff: '#7f858c', gravel: '#d2bd8e', asphalt: '#3b3e43', line: '#f4f4f4', kerbA: '#d7262b', kerbB: '#f5f5f5',
-      barrier: '#c7cbd1', tyreWall: '#222428', water: '#3b6f96', building: '#d8cbb3', timeOfDay: 'day', street: false,
+      barrier: '#c7cbd1', tyreWall: '#222428', water: '#3b6f96', building: '#d8cbb3', timeOfDay: 'day', palette: 'day', street: false,
       fogNear: 500, fogFar: 3200,
     },
     scenery: {
@@ -667,7 +702,7 @@ const TRACK_DATA = {
     theme: {
       sky: '#f2a36b', skyTop: '#3b3f7a', fog: '#c98f78', sun: '#ffb070', grass: '#3f6b35', ground: '#6d6a66',
       runoff: '#6e7075', gravel: '#b9a383', asphalt: '#34363b', line: '#f0f0f0', kerbA: '#d3202a', kerbB: '#f2f2f2',
-      barrier: '#d9d9d6', tyreWall: '#1f2024', water: '#1f4d73', building: '#e3cfb0', timeOfDay: 'dusk', street: true,
+      barrier: '#d9d9d6', tyreWall: '#1f2024', water: '#1f4d73', building: '#e3cfb0', timeOfDay: 'day', palette: 'dusk', street: true,   // (sky / fog / sun: the dusk look)
       fogNear: 250, fogFar: 1800,
     },
     scenery: {
@@ -751,7 +786,7 @@ const TRACK_DATA = {
     theme: {
       sky: '#a9cde8', skyTop: '#4d86c4', fog: '#c9d9e3', sun: '#fff1d6', grass: '#4a8736', ground: '#3f6a34',
       runoff: '#80868d', gravel: '#cfbd92', asphalt: '#393c41', line: '#f4f4f4', kerbA: '#d2232a', kerbB: '#f4f4f4',
-      barrier: '#c5c9cf', tyreWall: '#232427', water: '#4a7fa6', building: '#e6e1d6', timeOfDay: 'day', street: false,
+      barrier: '#c5c9cf', tyreWall: '#232427', water: '#4a7fa6', building: '#e6e1d6', timeOfDay: 'day', palette: 'day', street: false,
       fogNear: 450, fogFar: 2800,
     },
     scenery: {
@@ -854,7 +889,7 @@ const TRACK_DATA = {
       sky: '#131a33', skyTop: '#02050e', fog: '#262233', sun: '#b9c6ff', grass: '#d4ba8a', ground: '#c4a574',
       runoff: '#8f9398', gravel: '#dcc089', asphalt: '#35383d', line: '#f4f4f4', kerbA: '#d3202a', kerbB: '#f4f4f4',
       barrier: '#cfd2d6', tyreWall: '#222428', water: '#1d4f73', building: '#e8d9bd', concrete: '#d6d0c4',
-      timeOfDay: 'night', street: false, fogNear: 300, fogFar: 2600,
+      timeOfDay: 'night', palette: 'night', street: false, fogNear: 300, fogFar: 2600,
     },
     scenery: {
       grandstands: [
@@ -960,7 +995,7 @@ const TRACK_DATA = {
     theme: {
       sky: '#a8cdee', skyTop: '#4a86cf', fog: '#c6dae8', sun: '#fff2d4', grass: '#4b8d31', ground: '#3d6a2c',
       runoff: '#8c9299', gravel: '#dcc79a', asphalt: '#393c41', line: '#f4f4f4', kerbA: '#d4232a', kerbB: '#f4f4f4',
-      barrier: '#c5c9cf', tyreWall: '#232427', water: '#4a7fa6', building: '#e7e0d2', timeOfDay: 'day', street: false,
+      barrier: '#c5c9cf', tyreWall: '#232427', water: '#4a7fa6', building: '#e7e0d2', timeOfDay: 'day', palette: 'day', street: false,
       fogNear: 450, fogFar: 3000,
     },
     scenery: {
@@ -1074,7 +1109,7 @@ const TRACK_DATA = {
     theme: {
       sky: '#b4d3ec', skyTop: '#4f8bd0', fog: '#d3dde4', sun: '#ffe3b4', grass: '#4a8d31', ground: '#44722e',
       runoff: '#8f959c', gravel: '#dccb9d', asphalt: '#393c41', line: '#f4f4f4', kerbA: '#d4232a', kerbB: '#f4f4f4',
-      barrier: '#c5c9cf', tyreWall: '#232427', water: '#2c6f8c', building: '#e8e1d4', timeOfDay: 'day', street: false,
+      barrier: '#c5c9cf', tyreWall: '#232427', water: '#2c6f8c', building: '#e8e1d4', timeOfDay: 'day', palette: 'day', street: false,
       sunElevation: 0.42, fogNear: 500, fogFar: 3400,   // afternoon race: lower, warmer sun
     },
     scenery: {
@@ -1208,7 +1243,7 @@ const TRACK_DATA = {
       sky: '#a3c9e8', skyTop: '#3f7fc8', fog: '#d8ccb0', sun: '#fff0cf', grass: '#a3a05a', ground: '#8e8a56',
       runoff: '#8f9296', gravel: '#dcc190', asphalt: '#3a3c40', line: '#f4f4f4', kerbA: '#d4232a', kerbB: '#f4f4f4',
       barrier: '#cfd1d4', tyreWall: '#232427', water: '#4a7fa6', building: '#e8cfaa', concrete: '#d9cfbf',
-      hill: '#b39462', hillDark: '#7a6445', timeOfDay: 'day', street: false, sunElevation: 0.62, fogNear: 650, fogFar: 3800,
+      hill: '#b39462', hillDark: '#7a6445', timeOfDay: 'dusk', palette: 'day', street: false, sunElevation: 0.62, fogNear: 650, fogFar: 3800,
     },
     scenery: {
       grandstands: [
@@ -2723,6 +2758,17 @@ const Weather = (() => {
     const k = IDS[ci] === 'I' ? 1 : IDS[ci] === 'W' ? 1.5 : 0;
     return s / QR * (1 + bias * k);
   }
+  // laps j..m-1 on a fresh set of compound ci fitted at the stop before lap j: lap costs x the wear factor of the set's
+  // own age (it wears at o.wpl per lap, as the current set does in these conditions)
+  const FRESH_MIN = 0.3, _fl = new Float64Array(16), _fw = new Float64Array(16);
+  function freshSeg(W, ci, xe, H, o, bias, cliff, wg) {
+    const wpl = o.wpl || 0;
+    for (let k = 0; k < H; k++) {
+      _fl[k] = (k === H - 1 ? o.rem - (H - 1) : 1) * lapCost(W, ci, xe + k, bias);
+      _fw[k] = Math.pow(1 / Math.max(0.3, wg(Math.min(1, wpl * (k + 0.5)), cliff)), GAMMA);
+    }
+    return (j, m) => { let s = 0; for (let k = j; k < m; k++) s += _fl[k] * _fw[k - j]; return s; };
+  }
   function plan(W, o, out = _pl) {
     out.pit = false; out.c1 = null; out.j = -1; out.gain = 0;
     if (!W || !W.dynamic || !(o.rem > 0.3)) return out;
@@ -2746,16 +2792,22 @@ const Weather = (() => {
     let best = base, bc = null, bj = -1;
     for (let a = 0; a < 3; a++) {   // (same wet category = a fresh set of worn inters / wets; slick wear stops are Race's)
       if (cat(cands[a]) === curCat && curCat === 0) continue;
+      // a fresh set of the tyres it's on wears too (from the stop on, at the current set's rate): compared against a set
+      // that never wore, a barely used one looked worth swapping (inters at 19 % -> "box for inters" a lap after fitting
+      // them); and a set short of FRESH_MIN of its cliff is never swapped for another of the same kind
+      const same = cat(cands[a]) === curCat;
+      if (same && !((o.wear || 0) >= FRESH_MIN * cliff)) continue;
       const A = S1[a], ok0 = !guard || allowed(W, curCat, cat(cands[a]), bias);
+      const seg = same && wg ? freshSeg(W, IDS.indexOf(cands[a]), xe, H, o, bias, cliff, wg) : (j, m) => A[m] - A[j];
       for (let j = ok0 ? 0 : 1; j < H; j++) {
         const pre = S0[j] + P;
-        let c1 = pre + A[H] - A[j];
+        let c1 = pre + seg(j, H);
         if (c1 < best) { best = c1; bc = cands[a]; bj = j; }
         if (!two) continue;
         for (let b = 0; b < 3; b++) {
           if (b === a || cat(cands[b]) === cat(cands[a])) continue;
           const B = S1[b];
-          for (let m = j + 1; m < H; m++) { const c2 = pre + A[m] - A[j] + P + B[H] - B[m]; if (c2 < best) { best = c2; bc = cands[a]; bj = j; } }
+          for (let m = j + 1; m < H; m++) { const c2 = pre + seg(j, m) + P + B[H] - B[m]; if (c2 < best) { best = c2; bc = cands[a]; bj = j; } }
         }
       }
     }
@@ -2873,7 +2925,7 @@ const createCar = (opts = {}) => {
     slide: 0, lockup: 0, wheelspin: 0, slipF: 0, slipR: 0, kbCap: 1, kbDir: 0,
     surface: SURF.TRACK, onKerb: false, offTrack: false,
     s: 0, d: 0, idx: -1,
-    inPitLane: false, pitLimiter: false, kinematic: false,
+    inPitLane: false, pitLimiter: false, kinematic: false, pitAssist: 0,
     // 2026 systems
     aero: 'corner', aeroT: 0, inStraightZone: false,
     battery: CFG.energy.cap * CFG.energy.startCharge, batteryCap: CFG.energy.cap,
@@ -3306,11 +3358,52 @@ const Physics = (() => {
     return out;
   }
 
+  // ---------- pit entry assist (human player only, always on) ----------
+  // On the pit entry road short of the limiter line (car.inPitLane, pitState 'entry', no limiter yet: Race.playerPitRoad
+  // in single player, NetCore's pitRoadFlags on a multiplayer client) a human car faster than the limit gets part of its
+  // braking: braking curve to the line (D m away) at vAim = limit - aim, need = (v² - vAim²) / 2 (D - lead·v) m/s²,
+  // pedal = k × (need - drag) / the deceleration a full pedal gives (substep: 1.3 × the tyres' limit, at most brakeForce),
+  // at most cap (× (1 - thr × throttle): on the throttle it brakes less), faded out over the last fade m/s above the
+  // limit, eased in / out at rate per s.
+  // The player's own brake wins when it is the stronger, the throttle is never touched: flat out the car still crosses
+  // the line too fast (the speeding check is unchanged). From the line Race's autopilot has the car (kinematic). AI cars
+  // and autopilot inputs never set input.kb: untouched. car.pitAssist = brake added over the player's own (HUD hint).
+  const PIT_AS = { cap: 0.6, thr: 0.5, k: 1.1, aim: 2 / 3.6, fade: 3 / 3.6, lead: 0.1, rate: 6 };
+  const _pin = {};
+  function pitAssist(car, input, dt, world) {
+    const race = world.race, pg = race && race.pitG, track = world.track, pit = track && track.pit, vL = CFG.race.pitSpeedLimit;
+    const v = car.vLong || 0, own = clamp(input.brake || 0, 0, 1);
+    let b = -1;
+    if (pg && pit && !race.attract && car.inPitLane && car.pitState === 'entry' && !car.pitLimiter && !car.reverse && PIT_AS.cap > 0) {
+      let u = track.wrapS(car.s - pit.entryS);
+      if (u > track.length / 2) u -= track.length;
+      const D = pg.uL0 - u;
+      b = 0;
+      if (D > 0 && v > vL) {
+        const vA = vL - PIT_AS.aim, need = (v * v - vA * vA) / (2 * Math.max(1, D - v * PIT_AS.lead));
+        const aD = (CFG.perf.drag(v) + C.rollingResist * W) / C.mass, aMax = CFG.perf.brakeDecel(v, car.grip || 1);
+        const aP = Math.min(C.brakeForce, 1.3 * (aMax - aD) * C.mass) / C.mass;   // m/s² per unit of pedal (substep's pedal feel)
+        const cap = PIT_AS.cap * (1 - PIT_AS.thr * clamp(input.throttle || 0, 0, 1));
+        b = clamp(PIT_AS.k * (need - aD) / Math.max(1, aP), 0, cap) * smooth((v - vL) / PIT_AS.fade);
+      }
+    }
+    // (off the entry road / past the line: off at once; on it: eased in and out)
+    b = b < 0 ? 0 : U.approach(car._pitAs || 0, b, PIT_AS.rate * dt);
+    car._pitAs = b;
+    car.pitAssist = b > own + 0.005 ? b - own : 0;
+    if (!car.pitAssist) return input;
+    const out = Object.assign(_pin, input);
+    out.brake = b;
+    return out;
+  }
+
   function step(car, input, dt, world) {
-    if (car.kinematic) return;
+    if (car.kinematic) { if (car._pitAs) car._pitAs = car.pitAssist = 0; return; }
     const as = car.isPlayer && input && input.kb != null ? car.assists || world.assists : null;
     if (as && (AST[as.steer] || ABR[as.brake])) input = driveAssist(car, input, dt, world, as);
     else if (car._asB || car._asLim || car._asS) { car._asB = 0; car._asLim = false; car._asS = 0; }
+    if (car.isPlayer && input && input.kb != null) input = pitAssist(car, input, dt, world);
+    else if (car._pitAs) car._pitAs = car.pitAssist = 0;
     const h = dt / SUB;
     for (let i = 0; i < SUB; i++) substep(car, input, h, world, i === 0);
     // cosmetic smoothing of slide indicators once per step
@@ -3784,6 +3877,7 @@ const Physics = (() => {
   }
 
   return { step, collide, place, resetToTrack, wearGrip, wetSlide, hydro, WET,
+    PIT_AS,   // pit entry assist tuning (pitAssist; tests: cap = 0 turns it off)
     // driving assists: plan(track, car) -> { v, grip, rev }, info(plan) adds pa / mask, action(v, vp, vHere, pa) line colour
     assist: { plan: assistPlan, info: planInfo, action: lineAction, lineK, LINE, STEER: AST, BRAKE: ABR,
       cue: brakeCue, CUE } };   // cue(track, car, out?) -> the HUD braking cue (P.vb: latest-braking envelope, planInfo)
@@ -4731,6 +4825,21 @@ const AI = (() => {
         if (lapDs > -35) b.vLim = Math.min(b.vLim, v * 0.985);
       }
     }
+    // giving a place back (Race: car.giveBack, a place gained off the track): no attacking, lift to let that car by (move off
+    // the line on a straight, as for a blue flag; a corner: just slower on the line), then race again once it is past.
+    // Time to give back: a little slower on the straights until Race has seen it lost.
+    const gbo = car.giveBack;
+    if (gbo && !finished && !b.pitIn && !b.pitOut) {
+      const Y = gbo.kind === 'place' ? gbo.to : null;
+      if (Y && !Y.finished && !Y.kinematic) {
+        let gds = Y.s - car.s; if (gds > L / 2) gds -= L; else if (gds < -L / 2) gds += L;
+        if (gds < 3) {   // (still ahead of it, or alongside)
+          b.yieldOn = true;
+          if (onStr) { const ln = lineAt(A, car.s, b.kw); b.absSide = ln > 0 ? -1 : 1; b.absM = 1.6; wT = 1; b.wRate = 1.2; }
+          b.vLim = Math.min(b.vLim, gds > -60 ? Math.max(8, Y.speed - (onStr ? 5 : 3)) : Math.max(12, v * 0.97));
+        }
+      } else if (gbo.kind === 'time' && onStr) b.vLim = Math.min(b.vLim, v * 0.97);
+    }
 
     // attack / slipstream
     if (ah && !finished && !b.pitIn && !b.pitOut && !b.yieldOn && !(startPh && !b.merge)) {
@@ -4738,7 +4847,9 @@ const AI = (() => {
       const oRel = ah.d - lineAt(A, ah.s, b.kw);
       if (b.atk && b.atk !== ah) { b.atk = null; }
       const lappedAhead = ah.raceDist != null && myRD > ah.raceDist + L * 0.5;
-      if (!b.atk && b.atkCool <= 0 && gapT < b.atkGap && (closing > 0.3 || lappedAhead || gapT < 0.3) && (onStr || toBrk > -5)) {
+      // (it owes me the place, Race: car.giveBack - it is letting me by: go for it wherever, no backing out)
+      const owed = !!(ah.giveBack && ah.giveBack.kind === 'place' && ah.giveBack.to === car);
+      if (!b.atk && (b.atkCool <= 0 || owed) && (gapT < b.atkGap || (owed && gap < 40)) && (closing > 0.3 || lappedAhead || owed || gapT < 0.3) && (onStr || toBrk > -5 || owed)) {
         b.atk = ah; b.atkPh = 1; b.atkSide = 0; b.stat.atk++; if (ah === G.player) b.stat.atkPl++;
       }
       if (b.atk === ah) {
@@ -4752,19 +4863,19 @@ const AI = (() => {
           // early-to-mid straight: pull out once in the tow if that speed gets me level before the braking point
           const need = (gap + LEN) * Math.max(v, 20) / Math.max(1, Math.max(0, closing) + dvA);
           const early = onStr && toBrk > 60 && gapT < 0.45 + 0.4 * hg && toBrk > need * (1.35 - 0.45 * hg);
-          const pull = early || gap < 5 + Math.max(0, closing) * 1.3 || (toBrk < 90 && gap < 30) || (!onStr && gap < 4);
+          const pull = early || gap < 5 + Math.max(0, closing) * 1.3 || (toBrk < 90 && gap < 30) || (!onStr && gap < 4) || (owed && gap < 12);
           if (pull) {
             const side = chooseSide(A, ah, cn.dir, idx, ah.d + ah.speed * Math.sin(wrapA(ah.h - A.th[ah.idx >= 0 ? ah.idx : 0])) * 0.8);
             if (side) { b.atkSide = side; b.atkPh = 2; b.atkMin = ahDs; b.atkT = 0; }
           }
-          if (gapT > b.atkGap * 1.6) { b.atk = null; }
+          if (gapT > b.atkGap * 1.6 && !owed) { b.atk = null; }
         }
         if (b.atkPh >= 2) {
           offT = oRel + b.atkSide * (SEP + 0.5 + 0.4 * hg);
           b.offRate = 3.2 + 1.5 * hg;                         // (hungrier: a quicker, decisive move out of the tow)
           if (toBrk > 0 && ahDs > -LEN) b.atkBoost = dvA;       // out of the tow: go for it (drive() lifts the straight cap, boost)
           // not gaining for ~1.5 s on the straight: back into the tow (no hanging out alongside for nothing)
-          if (b.atkPh === 2 && toBrk > 0) { b.atkT += dt; if (ahDs < b.atkMin - 0.4) { b.atkMin = ahDs; b.atkT = 0; } else if (b.atkT > 3) { b.atk = null; b.atkCool = 1.5 + b.rnd() * 1.5; offT = oRel; b.atkBoost = 0; } }
+          if (b.atkPh === 2 && toBrk > 0 && !owed) { b.atkT += dt; if (ahDs < b.atkMin - 0.4) { b.atkMin = ahDs; b.atkT = 0; } else if (b.atkT > 3) { b.atk = null; b.atkCool = 1.5 + b.rnd() * 1.5; offT = oRel; b.atkBoost = 0; } }
           // late-braking move: on the inside (or already level) into the braking zone, brake later than the plan (ATK[..].late,
           // up to ATK[..].cap of the braking limit) to be level / ahead at the apex; never when the defender has the inside
           const lb = atkCraft(b), defInside = Math.sign(ah.d - car.d) === cn.dir && ahDs > 0 && Math.abs(ah.d - car.d) > 1.2;
@@ -4774,9 +4885,9 @@ const AI = (() => {
           // its space: still behind its middle and it is coming across (defending / turning in) -> back out, tuck in behind
           const across = b.atkSide * ah.speed * Math.sin(wrapA(ah.h - A.th[ah.idx >= 0 ? ah.idx : 0]));
           // (also squeezed: no room left between it and the edge / wall while not yet ahead)
-          if (ahDs > LEN * 0.3 && ahDs < LEN * 2.2 && ((across > (ah.aiDefending ? 0.5 : 1.5) && Math.abs(ah.d - car.d) < SEP + 0.8) || (room < -0.6 && Math.abs(ah.d - car.d) < SEP + 0.2))) { b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = oRel; b.atkBoost = 0; b.vLim = Math.min(b.vLim, Math.max(6, ah.speed - 2)); }
+          if (!owed && ahDs > LEN * 0.3 && ahDs < LEN * 2.2 && ((across > (ah.aiDefending ? 0.5 : 1.5) && Math.abs(ah.d - car.d) < SEP + 0.8) || (room < -0.6 && Math.abs(ah.d - car.d) < SEP + 0.2))) { b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = oRel; b.atkBoost = 0; b.vLim = Math.min(b.vLim, Math.max(6, ah.speed - 2)); }
           if (ahDs < (cn.vMin < 28 ? LEN * 0.6 : LEN + 0.8) && Math.abs(ah.d - car.d) > 2.1) b.atkPh = 3;                    // alongside: committed
-          if (b.atkPh === 2 && ((toBrk < 0 && ahDs > LEN * Math.max(0.8, b.lateCap ? lbA.reach - 2 : 0) && closing < 3) || room < -0.8 || gapT > b.atkGap * 1.5)) {
+          if (b.atkPh === 2 && !owed && ((toBrk < 0 && ahDs > LEN * Math.max(0.8, b.lateCap ? lbA.reach - 2 : 0) && closing < 3) || room < -0.8 || gapT > b.atkGap * 1.5)) {
             b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = oRel;
           }
         }
@@ -5509,10 +5620,12 @@ const AI = (() => {
 //   car.wantPit      true = "box at the next opportunity". Race takes the car over (kinematic) ~55 m before the pit
 //                    entry, drives the lane, services it and releases it at the limiter-end line. Cleared after the stop.
 //   car.nextCompound 'S'|'M'|'H' to fit at that stop (null = Race picks one). Cleared after the stop.
-//   car.strategy     { auto, stops: [{lap, compound, done}], plan } default plan made by Race.create for AI cars.
-//                    While auto !== false Race sets wantPit / nextCompound at the start of lap `lap` (the car pits at the
-//                    end of that lap), reacts to real tyre wear and re-plans after every stop. Set auto = false (or
-//                    replace the object) to drive wantPit / nextCompound yourself.
+//   car.strategy     { auto, stops: [{lap, compound, done}], plan, aggr, key } default plan made by Race.create for AI
+//                    cars (0-3 stops picked near the quickest by difficulty + personality aggr, see CFG.strategy; key:
+//                    the car's own random stream). While auto !== false Race sets wantPit / nextCompound at the start
+//                    of lap `lap` (the car pits at the end of that lap), reacts to real tyre wear, keeps the rest of the
+//                    plan after a planned stop and re-plans after any other. Set auto = false (or replace the object)
+//                    to drive wantPit / nextCompound yourself.
 //   car.kinematic    true while Race moves the car in the pit lane (physics skips it; AI.drive output is ignored).
 // Dynamic weather (G.weather.dynamic, see weather.js): Race steps the weather while racing, AI cars decide weather
 // stops ~1 km before the pit entry (Weather.plan: expected lap time on each tyre over the laps left vs the stop,
@@ -5643,88 +5756,193 @@ const Race = (() => {
   }
 
   // ---------- strategy ----------
-  // start tyre: picked from the plan each compound leads to (planStops' cost: pace + fade + stops), the near-equal ones
-  // at random (weight exp(-extra cost / START_TAU)) — a sprint no compound needs a stop for starts on one that lasts
-  // (it was 22 % S / 58 % M / 20 % H whatever the race: softs in a 3-lap race meant a stop, high wear two)
-  const START_TAU = 0.02;
-  function aiStartCompound(race, rnd) {
-    const r = rnd(), w = wetCompound(race);
-    if (w) return w;
-    if (!race.wearScale) return r < 0.65 ? 'S' : 'M';
-    if (!(race.laps > 0)) return r < 0.22 ? 'S' : r < 0.8 ? 'M' : 'H';
-    const ids = ['S', 'M', 'H'], tot = ids.map(c => { const info = {}; planStops(race, race.laps, c, [c], 0, () => 0.5, info); return info.total; });
-    const best = Math.min(...tot), wt = tot.map(t => (isFinite(t) ? Math.exp(-(t - best) / START_TAU) : 0)), sum = wt.reduce((a, x) => a + x, 0);
-    if (!(sum > 0)) return r < 0.22 ? 'S' : r < 0.8 ? 'M' : 'H';
-    let acc = 0;
-    for (let i = 0; i < ids.length; i++) { acc += wt[i] / sum; if (r < acc) return ids[i]; }
-    return ids[ids.length - 1];
-  }
-  // Best stop plan for N laps starting on `start` (compounds `used` already count for the two-compound rule).
-  // Enumerates up to 3 stops; cost = compound pace + tyre fade + pit loss. Stop laps are absolute (lapOffset + k).
-  // info (optional): info.total = the plan's cost (Infinity: no plan covers the distance)
-  function planStops(race, N, start, used, lapOffset, rnd, info) {
-    const stops = [];
-    if (info) info.total = Infinity;
-    if (!(N > 0) || !race.wearScale) { if (info) info.total = 0; return stops; }
-    const maxL = {}, cost = {}, fade = {};
+  // AI tyre plans (knobs: CFG.strategy). A plan is timed in laps of race.lapTimeEst: a lap on compound c at its mid-lap
+  // wear w costs pace[c] + lapLoss (half Physics' grip loss: fade + cliff), w climbing at the racing wear rate; a stint
+  // lasts at most maxL[c] laps (93 % of the nominal laps to the cliff: a set is changed by its cliff — the 3-lap sprint
+  // runs mediums / hards with no stop, see CFG.tyre.minRefLaps); a stop costs race.pitLossEst. planOptions times every
+  // compound mix of up to 3 stops (its best stint lengths); choosePlan picks one per car (near-best ones by chance:
+  // difficulty + the car's personality), orders it and staggers its stop laps.
+  const SC = CFG.strategy || { paceK: 0.78, wearK: 1.08, shift: 3 };
+  const stratK = race => SC[race.difficulty] || SC.medium || { tau: 2.5, cut: 7, aggr: 3, stag: 2 };
+  const MAX_STINTS = 4;   // (one more only when 4 can't cover the race: short high-wear races with the two-compound rule)
+  // personality (-1..1, + = likes fresh tyres: sees stops cheaper): a team trait plus chance
+  const TEAM_STRAT = [0.5, -0.5, 0, 1, -1, 0.5, 0, -0.5, 1, 0, -1, 0.5, 0, -0.5, 1, 0, 0.5, -1, 0, -0.5];
+  const lapLoss = (k, w) => { const t = w > k.cliff ? Math.min(1, (w - k.cliff) / (1 - k.cliff)) : 0; return 0.5 * (CFG.tyre.fade * w + CFG.tyre.cliffDrop * t * t); };
+  // per-race tables: maxL[c], cum[c][n] = time of an n-lap stint on a fresh set (laps); opts: planOptions' cache
+  function stratTables(race) {
+    const T0 = race._stT;
+    if (T0 && T0.laps === race.laps && T0.ws === race.wearScale && T0.lt === race.lapTimeEst && T0.pl === race.pitLossEst) return T0;
+    const T = { laps: race.laps, ws: race.wearScale, lt: race.lapTimeEst, pl: race.pitLossEst, pit: race.pitLossEst / race.lapTimeEst, maxL: {}, cum: {}, opts: new Map() };
     for (const c of ['S', 'M', 'H', 'I', 'W']) {
-      if (!COMPOUNDS[c]) continue;
+      const k = COMPOUNDS[c];
+      if (!k) continue;
       // (a set that cliffs within its first lap can't run a stint: 0, not 1 — soft-to-soft 1-lap stints past the cliff
       // were planned in short high-wear races, then the worn tyres forced yet another stop)
-      maxL[c] = Math.floor(lapsToCliff(race, c) * 0.93);
-      cost[c] = 1 / Math.sqrt(COMPOUNDS[c].grip) - 1;
-      fade[c] = 0.5 * CFG.tyre.fade * race.wearScale / (COMPOUNDS[c].life * refLaps(race));
+      const m = Math.max(0, Math.min(race.laps, Math.floor(lapsToCliff(race, c) * 0.93)));
+      const pace = SC.paceK * (1 / Math.sqrt(k.grip) - 1), rate = SC.wearK * race.wearScale / (k.life * refLaps(race));
+      const cum = new Float64Array(m + 1);
+      for (let i = 0; i < m; i++) cum[i + 1] = cum[i] + pace + lapLoss(k, rate * (i + 0.5));
+      T.maxL[c] = m; T.cum[c] = cum;
     }
-    const pitCost = race.pitLossEst / race.lapTimeEst, ids = compoundsFor(race, start);
-    const seq = [start];
-    let best = null;
-    const evalSeq = () => {
-      const k = seq.length;
-      if (k > N || k > 3) return;   // at most 2 planned stops
-      if (race.twoCompoundActive) { const set = new Set(used); for (const c of seq) set.add(c); if (set.size < 2) return; }
-      let cap = 0;
-      for (const c of seq) { if (maxL[c] < 1) return; cap += maxL[c]; }
-      if (cap < N) return;
-      const alloc = new Array(k).fill(1);
-      for (let rem = N - k; rem > 0; rem--) {
-        let bi = -1, bc = Infinity;
-        for (let i = 0; i < k; i++) {
-          if (alloc[i] >= maxL[seq[i]]) continue;
-          const mc = cost[seq[i]] + fade[seq[i]] * (2 * alloc[i] + 1);
-          if (mc < bc) { bc = mc; bi = i; }
-        }
-        alloc[bi]++;
-      }
-      let total = (k - 1) * pitCost;
-      for (let i = 0; i < k; i++) total += alloc[i] * cost[seq[i]] + fade[seq[i]] * alloc[i] * alloc[i];
-      if (!best || total < best.total - 1e-9) best = { total, seq: seq.slice(), alloc };
-    };
-    const rec = depth => { evalSeq(); if (depth < 3) for (const c of ids) { seq.push(c); rec(depth + 1); seq.pop(); } };
-    rec(0);
-    if (!best) {   // cannot be covered even with 3 stops: stop whenever the tyres are done
-      const hc = race.wx ? (isWetTyre(start) ? start : 'H') : wetCompound(race) || 'H';
-      for (let lap = Math.max(1, maxL[start]); lap < N; lap += Math.max(1, maxL[hc])) stops.push({ lap: lapOffset + lap, compound: hc, done: false });
-      return stops;
-    }
-    if (info) info.total = best.total;
-    let acc = 0;
-    for (let i = 0; i < best.seq.length - 1; i++) {
-      acc += best.alloc[i];
-      const prev = i ? stops[i - 1].lap - lapOffset : 0, nextEnd = acc + best.alloc[i + 1];
-      let lap = acc;
-      const j = lap + Math.floor(rnd() * 3) - 1;   // stagger the field's stops by +-1 lap
-      if (j >= 1 && j <= N - 1 && j > prev && j - prev <= maxL[best.seq[i]] && nextEnd - j <= maxL[best.seq[i + 1]]) lap = j;
-      stops.push({ lap: lapOffset + lap, compound: best.seq[i + 1], done: false });
-    }
-    return stops;
+    race._stT = T;
+    return T;
   }
+  const seqTime = (T, seq, a) => { let t = 0; for (let i = 0; i < seq.length; i++) { if (!(a[i] >= 1 && a[i] <= T.maxL[seq[i]])) return Infinity; t += T.cum[seq[i]][a[i]]; } return t; };
+  // best stint lengths for the stints `seq` over N laps (each 1..maxL; the stint cost is convex: add laps greedily), or null
+  function allocSeq(T, seq, N) {
+    const k = seq.length;
+    let cap = 0;
+    for (const c of seq) { if (!(T.maxL[c] >= 1)) return null; cap += T.maxL[c]; }
+    if (cap < N || k > N) return null;
+    const a = new Array(k).fill(1);
+    for (let r = N - k; r > 0; r--) {
+      let bi = -1, bc = Infinity;
+      for (let i = 0; i < k; i++) { const c = seq[i], n = a[i]; if (n >= T.maxL[c]) continue; const mc = T.cum[c][n + 1] - T.cum[c][n]; if (mc < bc - 1e-12) { bc = mc; bi = i; } }
+      a[bi]++;
+    }
+    return a;
+  }
+  const ruleOk = (race, used, seq) => { if (!race.twoCompoundActive) return true; const s = new Set(used); for (const c of seq) s.add(c); return s.size >= 2; };
+  // every compound mix (multiset) that covers N laps from `start` (null: any start), quickest first:
+  // [{ ms, alloc, t (s, stops included), stops }]. Cached per race.
+  function planOptions(race, N, start, used) {
+    const T = stratTables(race), ids = compoundsFor(race, start || 'M');
+    const key = N + '|' + (start || '*') + '|' + ids.join('') + '|' + (race.twoCompoundActive ? used.slice().sort().join('') : '');
+    let out = T.opts.get(key);
+    if (out) return out;
+    out = [];
+    const ms = [];
+    const evalMs = () => {
+      if (start && ms.indexOf(start) < 0) return;
+      if (!ruleOk(race, used, ms)) return;
+      const a = allocSeq(T, ms, N);
+      if (a) out.push({ ms: ms.slice(), alloc: a, t: (seqTime(T, ms, a) + (ms.length - 1) * T.pit) * race.lapTimeEst, stops: ms.length - 1 });
+    };
+    const rec = (from, depth, maxD) => { if (depth === maxD) { evalMs(); return; } for (let j = from; j < ids.length; j++) { ms.push(ids[j]); rec(j, depth + 1, maxD); ms.pop(); } };
+    for (let d = 1; d <= MAX_STINTS; d++) rec(0, 0, d);
+    if (!out.length) rec(0, 0, MAX_STINTS + 1);
+    out.sort((x, y) => x.t - y.t);
+    if (T.opts.size > 4000) T.opts.clear();
+    T.opts.set(key, out);
+    return out;
+  }
+  // the car's own draws (race.rnd's sequence stays as it was for everything else)
+  const stratRng = st => U.rng(((st.key >>> 0) + Math.imul(0x9e3779b9, (st.draw = (st.draw || 0) + 1))) >>> 0);
+  function stratPersona(ti, r) {
+    const key = (Math.floor(r * 4294967296) ^ 0x51f15e7) >>> 0, g = U.rng(key);
+    return { key, draw: 0, aggr: U.clamp(0.45 * TEAM_STRAT[ti % TEAM_STRAT.length] + 1.1 * (g() - 0.5), -1, 1) };
+  }
+  // pick a plan for N laps from `start` (null: free = the starting tyre too). mode 'pick': at random among the plans at
+  // most cut s off the quickest, weight exp(-perceived extra s / tau); 'best': the best perceived one (mid-race).
+  // -> { seq, stops: [{lap, compound, done}], t } or null (nothing covers N laps)
+  function choosePlan(race, st, N, start, used, lapOffset, mode) {
+    if (!(N > 0)) return null;
+    const K = stratK(race), opts = planOptions(race, N, start, used);
+    if (!opts.length) return null;
+    const rr = stratRng(st), aggr = (st.aggr || 0) * K.aggr, cand = [], p = [];
+    let pBest = Infinity;
+    for (const o of opts) {
+      if (o.t - opts[0].t > K.cut + 1e-9) break;
+      const v = o.t - aggr * o.stops;
+      cand.push(o); p.push(v); if (v < pBest) pBest = v;
+    }
+    let pick = cand[0];
+    if (mode === 'pick') {
+      let sum = 0;
+      for (let i = 0; i < p.length; i++) sum += (p[i] = Math.exp(-(p[i] - pBest) / K.tau));
+      let r = rr() * sum;
+      for (let i = 0; i < cand.length; i++) { r -= p[i]; if (r <= 0) { pick = cand[i]; break; } }
+    } else for (let i = 1; i < cand.length; i++) if (p[i] < p[cand.indexOf(pick)]) pick = cand[i];
+    return placePlan(race, pick, start, lapOffset, rr, K);
+  }
+  // order a mix (start first, the rest at random) and stagger its stops: a random shift of each stop by up to
+  // CFG.strategy.shift laps, kept if it costs at most stag s (so the field doesn't all box on one lap)
+  function placePlan(race, o, start, lapOffset, rr, K) {
+    const T = stratTables(race), items = o.ms.map((c, i) => ({ c, n: o.alloc[i] }));
+    const first = start ? items.splice(items.findIndex(x => x.c === start), 1)[0] : null;
+    for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)), x = items[i]; items[i] = items[j]; items[j] = x; }
+    if (first) items.unshift(first);
+    const seq = items.map(x => x.c), base = items.map(x => x.n);
+    let alloc = base;
+    if (seq.length > 1) {
+      const c0 = seqTime(T, seq, base), tol = K.stag / race.lapTimeEst, sh = SC.shift || 3, ok = [base], seen = new Set([base.join()]);
+      for (let k = 0; k < 16; k++) {
+        const a = base.slice();
+        for (let i = 0; i < a.length - 1; i++) { const d = Math.floor(rr() * (2 * sh + 1)) - sh; a[i] += d; a[i + 1] -= d; }
+        if (!seen.has(a.join()) && seqTime(T, seq, a) <= c0 + tol) { seen.add(a.join()); ok.push(a); }   // (distinct ones: even odds)
+      }
+      alloc = ok[Math.floor(rr() * ok.length)];
+    }
+    return { seq, stops: stopsOf(seq, alloc, lapOffset), t: o.t };
+  }
+  const stopsOf = (seq, a, off) => { const s = []; let acc = off; for (let i = 0; i < seq.length - 1; i++) { acc += a[i]; s.push({ lap: acc, compound: seq[i + 1], done: false }); } return s; };
+  function setPlan(st, cur, pl) {
+    st.stops = pl ? pl.stops.map(x => ({ lap: x.lap, compound: x.compound, done: false })) : [];
+    st.plan = [cur].concat(st.stops.map(x => x.compound)).join('-');
+    st.pending = null;
+  }
+  // no plan covers the laps left (stints too short even with the most stops): stop whenever the tyres are done
+  function fallbackStops(race, n, cur, off) {
+    const T = stratTables(race), hc = race.wx ? (isWetTyre(cur) ? cur : 'H') : wetCompound(race) || 'H', stops = [];
+    for (let lap = Math.max(1, T.maxL[cur] || 0); lap < n; lap += Math.max(1, T.maxL[hc] || 0)) stops.push({ lap: off + lap, compound: hc, done: false });
+    return { seq: [cur].concat(stops.map(x => x.compound)), stops };
+  }
+  // AI starting tyre + race plan (one race.rnd() draw per car, as before; the rest from the car's own stream)
+  function aiStartPlan(race, ti, rnd) {
+    const r = rnd(), w = wetCompound(race), st = stratPersona(ti, r);
+    let start = w;
+    if (!w && !race.wearScale) start = r < 0.65 ? 'S' : 'M';   // (no wear: nothing to plan)
+    else if (!w && !(race.laps > 0)) start = r < 0.22 ? 'S' : r < 0.8 ? 'M' : 'H';
+    else if (!w) { st.plan = choosePlan(race, st, race.laps, null, [], 0, 'pick'); start = st.plan ? st.plan.seq[0] : 'M'; }
+    return { start, st };
+  }
+  // car.strategy for an AI car (Race.create): the plan picked with its starting tyre, else one from the tyre it is on
+  function newStrategy(race, car) {
+    const p = car._stratP || stratPersona(car.teamIndex | 0, U.rng((race.seed ^ Math.imul(car.id + 1, 0x2545f491)) >>> 0)());
+    const st = { auto: true, stops: [], plan: car.tyre.compound, pending: null, aggr: p.aggr, key: p.key, draw: p.draw || 0 };
+    const cur = car.tyre.compound;
+    let pl = p.plan && p.plan.seq[0] === cur ? p.plan : null;
+    if (!pl && race.wearScale > 0) pl = choosePlan(race, st, race.laps, cur, car.compoundsUsed, 0, 'pick') || fallbackStops(race, race.laps, cur, 0);
+    setPlan(st, cur, pl);
+    return st;
+  }
+  // the rest of the plan after the stop it planned at lap `off` (rest: its later stops), or null when that no longer
+  // fits or pays (cut s off the best): its stop laps as planned while they cost <= stag s more, else re-spaced
+  function keepPlan(race, rest, n, off, cur, used) {
+    const T = stratTables(race), K = stratK(race), seq = [cur].concat(rest.map(x => x.compound));
+    if (!ruleOk(race, used, seq)) return null;
+    const opt = allocSeq(T, seq, n), opts = planOptions(race, n, cur, used);
+    if (!opt || !opts.length) return null;
+    const tOpt = seqTime(T, seq, opt);
+    if ((tOpt + rest.length * T.pit) * race.lapTimeEst > opts[0].t + K.cut) return null;
+    const was = [];
+    let prev = 0;
+    for (const x of rest) { const b = x.lap - off; was.push(b - prev); prev = b; }
+    was.push(n - prev);
+    const a = seqTime(T, seq, was) <= tOpt + K.stag / race.lapTimeEst ? was : opt;
+    return { seq, stops: stopsOf(seq, a, off) };
+  }
+  // after every stop (finishService): the planned stop (or one brought up to 3 laps forward with its tyre: covering a
+  // rival, worn out) keeps the rest of the plan; any other stop re-plans the laps left from the tyre fitted
   function replan(race, car, L) {
     const st = car.strategy;
     if (!st || st.auto === false || !race.laps) return;
-    const n = Math.round(remainingLaps(race, car, L));
-    st.stops = planStops(race, n, car.tyre.compound, car.compoundsUsed, race.laps - n, race.rnd);
-    st.plan = [car.tyre.compound].concat(st.stops.map(x => x.compound)).join('-');
-    st.pending = null;
+    const n = Math.round(remainingLaps(race, car, L)), off = race.laps - n, cur = car.tyre.compound;
+    if (st.key == null) { const p = stratPersona(car.teamIndex | 0, U.rng((race.seed ^ Math.imul(car.id + 1, 0x2545f491)) >>> 0)()); st.key = p.key; st.aggr = p.aggr; st.draw = 0; }
+    let k = st.pending ? st.stops.indexOf(st.pending) : -1;
+    if (k < 0) { const x = st.stops.find(y => !y.done); if (x && x.compound === cur && Math.abs(x.lap - off) <= 3) k = st.stops.indexOf(x); }
+    let pl = null;
+    if (n > 0 && race.wearScale > 0) {
+      if (k >= 0 && st.stops[k].compound === cur) pl = keepPlan(race, st.stops.slice(k + 1), n, off, cur, car.compoundsUsed);
+      if (!pl) pl = choosePlan(race, st, n, cur, car.compoundsUsed, off, 'best') || fallbackStops(race, n, cur, off);
+    }
+    setPlan(st, cur, pl);
+  }
+  // tyre for a stop at the end of this lap (worn out, nothing planned): the start of the best plan for the laps after it
+  function nextTyre(race, car, L) {
+    const st = car.strategy, n = Math.round(remainingLaps(race, car, L)) - 1;
+    const pl = st && st.key != null && race.wearScale > 0 && n > 0 && !race.wx ? choosePlan(race, st, n, null, car.compoundsUsed, race.laps - n, 'best') : null;
+    return pl && tyreSuits(race, pl.seq[0], car) ? pl.seq[0] : null;   // (null: Race picks, pickCompound)
   }
   // AI pit decisions, evaluated when a car starts a lap (the pit entry is at the end of that lap)
   function strategyHook(G, race, car) {
@@ -5743,7 +5961,12 @@ const Race = (() => {
     const k = COMPOUNDS[car.tyre.compound] || COMPOUNDS.M, rate = wearPerLap(race, car, L);
     const toCliff = rate > 0 ? (k.cliff - car.tyre.wear) / rate : Infinity;
     const left = remainingLaps(race, car, L);
-    if (toCliff < 1.5 && left - toCliff >= 1.5) { car.wantPit = true; car.nextCompound = null; return; }   // worn out
+    if (toCliff < 1.5 && left - toCliff >= 1.5) {   // worn out: the planned stop comes forward (<= 3 laps), else a stop now
+      car.wantPit = true;
+      if (next && next.lap - car.lap <= 3 && tyreSuits(race, next.compound, car)) { car.nextCompound = next.compound; st.pending = next; }
+      else car.nextCompound = nextTyre(race, car, L);
+      return;
+    }
     if (ruleOpen(race, car) && car.lap >= race.laps - 1) { car.wantPit = true; car.nextCompound = null; return; }
     if (next && toCliff > left + 0.2 && !ruleOpen(race, car)) for (const x of st.stops) x.done = true;
   }
@@ -5848,6 +6071,7 @@ const Race = (() => {
       playerPitCompound: null, leaderFinished: false, winnerTime: null, playerFinishT: null,
       lapTimeEst: L / Math.max(20, vAvg * diff.pace * 0.97), pitLossEst: 22, pitG: null,
       ghostRec: null, bestGhost: null, ghostPlayer: null, trackL: L, wx: null,
+      pb: null,   // time trial: the player's personal best here { time, s: [3], c, fw, rw, cond, saved (from an earlier session), src }
     };
     // penalty level for every mode (race, championship, multiplayer, time trial: its track-limit lap invalidation):
     // opts.penaltyLevel / legacy opts.penalties, else the game's settings (G.settings). race.penalties = any penalties at all
@@ -5880,7 +6104,8 @@ const Race = (() => {
     race.field = fieldTeams(opts, playerTeam, tt, U.rng(seed ^ 0x6a09e667));   // (its own draw: the other seeded picks stay as they were)
     for (const ti of race.field) {
       const isPlayer = ti === playerTeam;
-      let compound = isPlayer ? playerCompound : aiStartCompound(race, rnd), bias = 0;
+      const sp = isPlayer ? null : aiStartPlan(race, ti, rnd);
+      let compound = isPlayer ? playerCompound : sp.start, bias = 0;
       if (race.wx && !isPlayer) {   // bravery: + = trusts wet tyres less (stays on / goes back to slicks sooner)
         const ag = diff.aggression != null ? diff.aggression : 0.55;
         bias = (0.016 + 0.01 * (1 - ag)) * (race.wr() * 2 - 1) + 0.008 * (ag - 0.55);
@@ -5889,6 +6114,7 @@ const Race = (() => {
       }
       const car = makeCar({ id: cars.length, team: TEAMS[ti], teamIndex: ti, isPlayer, compound });
       car.wxBias = bias;
+      if (sp) car._stratP = sp.st;   // (its plan + personality: car.strategy, see initCar)
       cars.push(car);
     }
     const player = cars.find(c => c.isPlayer);
@@ -6186,10 +6412,7 @@ const Race = (() => {
     });
     car.batteryCap = CFG.energy.cap;
     car.aeroLock = race.mode !== 'timetrial';
-    if (!car.isPlayer && race.laps) {
-      const stops = planStops(race, race.laps, car.tyre.compound, car.compoundsUsed, 0, rnd);
-      car.strategy = { auto: true, stops, plan: [car.tyre.compound].concat(stops.map(x => x.compound)).join('-'), pending: null };
-    }
+    if (!car.isPlayer && race.laps) car.strategy = newStrategy(race, car);
     car._race = {
       prevS: car.s, dist, maxDist: dist,
       nextB: nextPoint(dist, 0, L), nextBi: 2, lineDist: 0,             // next timing line: the start/finish line
@@ -6235,6 +6458,7 @@ const Race = (() => {
       if (racing) { stuckCheck(G, race, car); trackLimitsStep(G, race, car, dt); histStep(race, car, rc); }
       rc.pvx = car.vx || 0; rc.pvz = car.vz || 0; rc.pbr = car.brake || 0;   // pre-contact state for the next step's collisions
     }
+    if (racing) for (let i = 0; i < cars.length; i++) { const rc = cars[i]._race; if (rc && (rc.tlPost || (rc.gb && rc.gb.length))) advStep(G, race, cars[i], dt); }
     updateOrder(G, race, racing && race.mode !== 'timetrial');
     if (race.leaderFinished && race.phase === 'racing' && race.mode !== 'timetrial') settlePenalties(G, race, false);
     if (race.mode !== 'timetrial') {
@@ -6412,9 +6636,11 @@ const Race = (() => {
   // A breach = all four wheels off (no part of any tyre on track or kerb; the pit lane counts as track). When the car
   // rejoins, the time it took is compared with its own pace (rc.tlK: EMA of speed / raceSpeed while on track) over the
   // same stretch (race.pen.tl): a gain > tl.gain s is a strike (TRACK LIMITS WARNING n/tl.warn; the strike after the last
-  // warning = a tl.sec penalty, then the count starts again); a gain > tl.cut s (a cut chicane) is a tl.sec penalty at once.
-  // Going off and losing time is no offence, nor is a breach within 1.5 s of a contact. Time trial: an advantage breach
-  // (the level's tl.gain) invalidates the lap. Penalties off: nothing (in any mode).
+  // warning = a tl.sec penalty, then the count starts again). Leaving the track and gaining an advantage (race.pen.adv,
+  // judged adv.rejoin s after the car is back): a place gained on a car that was ahead (or level) when it went off = GIVE
+  // THE PLACE BACK; else a gain > tl.cut s (a cut chicane) = GIVE THE TIME BACK; a gain > adv.big s = a penalty at once.
+  // One breach = one of those, never a strike as well. Going off and losing time is no offence, nor is a breach within
+  // 1.5 s of a contact. Time trial: an advantage breach (the level's tl.gain) invalidates the lap. Penalties off: nothing.
   function wheelsOff(track, car) {
     const i = car.idx >= 0 ? car.idx : Math.round(track.wrapS(car.s) / track.step) % track.N;
     if (Math.abs(car.d || 0) < track.halfW[i] - 1.2) return false;   // (cheap: nowhere near an edge)
@@ -6437,18 +6663,29 @@ const Race = (() => {
     if (!off) {
       const i = car.idx >= 0 ? car.idx : 0, vr = T.raceSpeed[i];
       if ((car.speed || 0) > 8 && vr > 1) rc.tlK = rc.tlK == null ? 0.95 : rc.tlK + (U.clamp(car.speed / vr, 0.5, 1.15) - rc.tlK) * Math.min(1, dt / 1.5);
-      if (rc.tlOff) { const x = rc.tlOff; rc.tlOff = null; tlJudge(G, race, car, x); }
+      if (rc.tlOff) { const x = rc.tlOff; rc.tlOff = null; x.tR = race.t; x.D1 = rc.dist; rc.tlPost = x; }   // back on: judged adv.rejoin s later (advStep)
       return;
     }
-    if (!rc.tlOff) rc.tlOff = { t0: race.t, D0: rc.dist, s0: car.s, k: U.clamp(rc.tlK || 0.95, 0.6, 1.1) };
+    rc.lastOffT = race.t;
+    if (rc.tlPost) { const x = rc.tlPost; rc.tlPost = null; tlJudge(G, race, car, x); }   // (off again within the window)
+    if (!rc.tlOff) {   // the cars just ahead (or level) as it leaves the track: a place on one of them gained off track
+      const ahead = [];
+      if (race.mode !== 'timetrial') for (const o of G.cars) {
+        const ro = o._race, dd = ro ? ro.dist - rc.dist : -1;
+        if (o !== car && dd > -0.5 && dd < 80 && !o.finished && !o.dnf && !o.inPitLane && !o.kinematic) ahead.push(o);
+      }
+      rc.tlOff = { t0: race.t, D0: rc.dist, s0: car.s, k: U.clamp(rc.tlK || 0.95, 0.6, 1.1), ahead };
+    }
   }
   function tlJudge(G, race, car, x) {
-    const rc = car._race, T = G.track, D1 = rc.dist, len = D1 - x.D0, tAct = race.t - x.t0;
-    if (!(len > 1) || len > 800 || (rc.touchT != null && race.t - rc.touchT < 1.5)) return;   // (backwards / knocked off)
+    const rc = car._race, T = G.track, D1 = x.D1 != null ? x.D1 : rc.dist, len = D1 - x.D0, tAct = (x.tR != null ? x.tR : race.t) - x.t0;
+    const tR = x.tR != null ? x.tR : race.t;
+    if (!(len > 1) || len > 800 || (rc.touchT != null && rc.touchT >= x.t0 - 1.5 && rc.touchT <= tR + 0.05)) return;   // (backwards / knocked off)
     const tl = race.pen.tl;
     let tRef = 0;
     for (let u = 0; u < len; u += 2) tRef += Math.min(2, len - u) / Math.max(8, T.raceSpeed[Math.round(T.wrapS(x.s0 + u) / T.step) % T.N] * x.k);
-    const gain = tRef - tAct;
+    const gain = tRef - tAct, adv = race.pen.adv;
+    if (race.mode !== 'timetrial' && adv && passedOff(G, race, car, x, adv).length) return;   // GIVE THE PLACE BACK, whatever the time (no strike then)
     if (gain <= tl.gain) return;
     const turn = turnLabel(T, x.s0 + len * 0.5), where = turn ? ' (' + turn + ')' : '';
     if (race.mode === 'timetrial') {
@@ -6456,7 +6693,11 @@ const Race = (() => {
       emit(G, { type: 'trackLimits', car, invalid: true, turn, gain });
       return;
     }
-    const cut = gain > tl.cut;
+    const cut = gain > tl.cut, open = rc.gb && rc.gb.length ? rc.gb : null;
+    // (an order still open covers this breach too: a time order already counts everything since it was given, a place
+    // order the advantage; no new order, no strike)
+    if (adv && open) return;
+    if (adv && cut && gain <= adv.big) { giveBack(G, race, car, { kind: 'time', need: gain, k: x.k, turn, win: adv.timeWin, sec: tl.sec }); return; }
     car.tlWarn = (car.tlWarn || 0) + (cut ? 0 : 1);
     if (!cut && car.tlWarn <= tl.warn) { emit(G, { type: 'trackLimits', car, n: car.tlWarn, max: tl.warn, turn, gain }); return; }
     if (!cut) car.tlWarn = 0;
@@ -6464,6 +6705,82 @@ const Race = (() => {
     const reason = (cut ? 'Corner cut' : 'Track limits') + where;
     emit(G, { type: 'penalty', car, sec: tl.sec, reason, detail: cut ? 'Gained ' + gain.toFixed(1) + ' s off track' : tl.warn + ' warnings used', kind: cut ? 'cut' : 'limits', turn, gain });
     if (car.isPlayer) note(race, tl.sec + ' S PENALTY', '#ffd12e', reason);
+  }
+
+  // ---------- leaving the track and gaining an advantage (race.pen.adv) ----------
+  // passedOff: the cars that were ahead of (or level with) car when it went off and that it is now ahead of by > adv.margin
+  // m -> one GIVE THE PLACE BACK order each (one incident: one penalty at most). Not owed to a car that went off / lost
+  // control itself in that time, is in the pit lane, or that car was already penalised for hitting.
+  function passedOff(G, race, car, x, adv) {
+    const rc = car._race, out = [];
+    for (const o of x.ahead || []) {
+      const ro = o._race;
+      if (!ro || o.finished || o.dnf || o.inPitLane || o.kinematic || ro.pit) continue;
+      if (ro.lastOffT != null && ro.lastOffT >= x.t0 - 0.5) continue;                 // (its own trip off the track)
+      if (lostControl(G.track, o) || rc.dist <= ro.dist + adv.margin) continue;
+      const I = race.inc && race.inc.get(Math.min(car.id, o.id) * 4096 + Math.max(car.id, o.id));
+      if (I && I.by === car && I.t >= x.t0 - 1) continue;                             // (penalised for the contact already)
+      out.push(o);
+    }
+    if (out.length) {
+      const id = (race.gbSeq = (race.gbSeq || 0) + 1), turn = turnLabel(G.track, x.s0 + Math.max(0, (x.D1 || rc.dist) - x.D0) * 0.5);
+      for (const o of out) giveBack(G, race, car, { kind: 'place', to: o, turn, win: adv.passWin, sec: adv.passSec, id });
+    }
+    return out;
+  }
+  // a give-back order: car.giveBack = the open one AI / HUD act on; events giveBack {car, kind, to, need, win, until, sec,
+  // turn, id} and later giveBackDone {car, kind, to, how: 'returned' | 'pitted' | 'retired' | 'mistake' | 'penalty', id}
+  function giveBack(G, race, car, o) {
+    const rc = car._race;
+    o.id = o.id || (race.gbSeq = (race.gbSeq || 0) + 1);
+    o.t0 = race.t; o.until = race.t + o.win; o.lost = 0; o.lastD = rc.dist;
+    (rc.gb || (rc.gb = [])).push(o);
+    car.giveBack = rc.gb.find(q => q.kind === 'place') || rc.gb[0];
+    emit(G, { type: 'giveBack', car, kind: o.kind, to: o.to || null, need: o.need || 0, win: o.win, until: o.until, sec: o.sec, turn: o.turn || '', id: o.id });
+    if (car.isPlayer) note(race, o.kind === 'place' ? 'GIVE THE PLACE BACK' : 'GIVE BACK ' + o.need.toFixed(1) + ' S', '#ffd12e',
+      (o.kind === 'place' ? 'TO ' + (o.to.number ? '#' + o.to.number + ' ' : '') + String(o.to.lastName || o.to.code || '').toUpperCase() : 'LEAVING THE TRACK') + ' · WITHIN ' + Math.round(o.win) + ' S');
+  }
+  // every step after the car loop (all race distances current): the deferred track-limits judgement, then the orders:
+  // a place is given back once the car is behind that car again (or that car pits / retires / goes off on its own and
+  // drops 30 m back); time once the car has lost (1 - adv.slack) x the gain against its own pace (a pit stop covers it).
+  // Still owed when the window closes (or at the flag) = the penalty, once per incident.
+  function advStep(G, race, car, dt) {
+    const rc = car._race, adv = race.pen && race.pen.adv;
+    if (rc.tlPost && (!adv || race.t - rc.tlPost.tR >= adv.rejoin)) { const x = rc.tlPost; rc.tlPost = null; tlJudge(G, race, car, x); }
+    if (!rc.gb || !rc.gb.length) return;
+    const T = G.track;
+    for (let j = rc.gb.length - 1; j >= 0; j--) {
+      const o = rc.gb[j];
+      let how = null;
+      if (o.kind === 'place') {
+        const Y = o.to, ry = Y._race;
+        if (!ry || Y.dnf) how = 'retired';
+        else if (Y.inPitLane || Y.kinematic || ry.pit) how = 'pitted';
+        else if (rc.dist < ry.dist - 0.3) how = 'returned';
+        else if (((ry.lastOffT != null && ry.lastOffT > o.t0) || lostControl(T, Y)) && rc.dist > ry.dist + 30) how = 'mistake';
+      } else {
+        const i = car.idx >= 0 ? car.idx : T.idxAt(car.s), dD = rc.dist - o.lastD;
+        o.lastD = rc.dist;
+        if (!car.finished) o.lost += dt - Math.max(0, dD) / Math.max(8, T.raceSpeed[i] * o.k);
+        if (car.inPitLane || rc.pit) how = 'pitted';
+        else if (o.lost >= o.need * (1 - (adv ? adv.slack : 0))) how = 'returned';
+      }
+      if (!how && (race.t >= o.until || car.finished || car.dnf)) {
+        if (car.dnf) how = 'retired';
+        else {
+          how = 'penalty';
+          car.penalty += o.sec;
+          if (car.finished) car.penPending = true;   // (owed at the flag: settled like any unserved penalty)
+          const where = o.turn ? ' (' + o.turn + ')' : '', Y = o.to;
+          const detail = o.kind === 'place' ? 'Place not given back to ' + (Y.number ? '#' + Y.number + ' ' : '') + (Y.lastName || Y.code || '') : 'Time not given back (' + o.need.toFixed(1) + ' s)';
+          emit(G, { type: 'penalty', car, sec: o.sec, reason: 'Leaving the track and gaining an advantage' + where, detail, kind: 'adv', other: Y || null, turn: o.turn || '' });
+          if (car.isPlayer) note(race, o.sec + ' S PENALTY', '#ffd12e', 'Leaving the track and gaining an advantage');
+          for (let q = rc.gb.length - 1; q >= 0; q--) if (q !== j && rc.gb[q].id === o.id) { const p = rc.gb[q]; rc.gb.splice(q, 1); if (q < j) j--; emit(G, { type: 'giveBackDone', car, kind: p.kind, to: p.to || null, how: 'penalty', id: p.id }); }
+        }
+      }
+      if (how) { rc.gb.splice(j, 1); emit(G, { type: 'giveBackDone', car, kind: o.kind, to: o.to || null, how, id: o.id }); }
+    }
+    car.giveBack = rc.gb.find(q => q.kind === 'place') || rc.gb[0] || null;
   }
 
   function startSequence(G, race, dt) {
@@ -6650,6 +6967,10 @@ const Race = (() => {
       const lap = Ghost.finishLap(race.ghostRec, tc - rc.lapStartT, car.lap >= 1 && !inv);
       if (lap) {
         lap.trackId = race.trackId; race.bestGhost = lap; race.ghostPlayer = Ghost.createPlayer(lap);
+        // the lap's times go with its ghost (saved together by main: Ghost.save): sectors as timed, tyre, wings, conditions
+        const hl = car.lapHist[car.lapHist.length - 1] || {};
+        lap.pb = { s: [car.sectors[0], car.sectors[1], car.sectors[2]], c: car.tyre.compound, fw: hl.fw, rw: hl.rw, cond: hl.cond, src: 'lap' };
+        race.pb = Object.assign({ time: lap.time, saved: false }, lap.pb, { s: lap.pb.s.slice() });
         if (lapEv) lapEv.ghost = lap;
       }
     }
@@ -7256,17 +7577,39 @@ const Race = (() => {
       const p = Ghost.sample(race.ghostPlayer, t), g = G.ghost || (G.ghost = { x: 0, z: 0, h: 0, visible: false });
       g.x = p.x; g.z = p.z; g.h = p.h;
       g.visible = t <= race.ghostPlayer.lap.time + 0.25;
-    } else if (G.ghost) G.ghost.visible = false;
+      // live delta (HUD, green / red): this lap's time against the ghost's at the same distance past the line -- 0 when
+      // driving exactly the ghost's line and speed (the lap it replays: the personal best, or a chased one in multiplayer)
+      car.delta = t - Ghost.timeAt(race.ghostPlayer.lap, G.track, car._race.dist - car._race.lineDist);
+    } else { if (G.ghost) G.ghost.visible = false; car.delta = null; }
   }
-  // main: after create, pass a stored best lap (Ghost.deserialize) for this track
-  function setGhost(G, lap) {
+  // main: after create, pass a stored best lap for this track (Ghost.load / Ghost.deserialize). Its times (lap.pb, else
+  // derived from the recording) become the player's bests from lap 1 (seedPB); opts.sessionBest false (multiplayer time
+  // trial): the purple session bests stay the room's
+  function setGhost(G, lap, opts) {
     const race = G.race;
     if (!race || !lap || !(lap.time > 0) || !(lap.n >= 2) || typeof Ghost === 'undefined') return false;
     if (lap.trackId && race.trackId && lap.trackId !== race.trackId) return false;
     if (race.bestGhost && race.bestGhost.time <= lap.time) return false;
     race.bestGhost = lap; race.ghostPlayer = Ghost.createPlayer(lap);
     if (race.ghostRec) race.ghostRec.bestTime = lap.time;
+    seedPB(G, race, lap, !opts || opts.sessionBest !== false);
     return true;
+  }
+  // a saved personal best: the BEST lap (HUD: PB) and the fastest lap to beat; its sectors are the player's own bests
+  // (green = faster than your best ever) and, in single player, where the saved lap is the session's other "car" (the
+  // ghost), the session bests too (purple = faster than every lap driven here) -- so nothing starts from zero again
+  function seedPB(G, race, lap, sessionBest) {
+    const P = G.player;
+    if (!P || race.mode !== 'timetrial') return;
+    const s = (lap.pb && lap.pb.s) || Ghost.splits(lap, G.track);
+    race.pb = Object.assign({ src: 'ghost' }, lap.pb, { time: lap.time, s: s ? s.slice() : null, saved: true });
+    if (!(P.bestLap > 0) || lap.time < P.bestLap) P.bestLap = lap.time;
+    if (!race.fastestLap || lap.time < race.fastestLap.time) race.fastestLap = { car: P, time: lap.time, lap: 0, saved: true };
+    if (s) for (let i = 0; i < 3; i++) {
+      if (!(P.bestSectors[i] > 0) || s[i] < P.bestSectors[i]) P.bestSectors[i] = s[i];
+      const sb = race.sessionBestSectors;
+      if (sessionBest && (!(sb[i] > 0) || s[i] < sb[i])) sb[i] = s[i];
+    }
   }
 
   // ---------- control ----------
@@ -7356,6 +7699,8 @@ const Race = (() => {
     confirmGrid: G => { const r = G.race; if (!r || !r.awaitConfirm) return false; r.awaitConfirm = null; r.phaseT = 0; if (r.phase === 'quali') r.t = 0; return true; },
     classify: G => (G.race && G.race.mode !== 'timetrial' ? classify(G, false) : null),   // provisional results
     lapsToCliff: (G, c) => lapsToCliff(G.race, c),
+    // an AI car's stops for the race as now planned (made + still planned, a stop under way included); null: no Race plan
+    plannedStops: car => { const st = car && car.strategy; if (!st || st.auto === false || !st.stops) return null; const left = st.stops.filter(x => !x.done).length; return (car.pitStops | 0) + left + (car.wantPit && !st.pending ? 1 : 0); },
     // dynamic weather: the engineer's current view for the player {pit, c1, j, gain} (null = no call)
     weatherCall: G => (G.race && G.race.wx ? G.race.wxPlayer || null : null),
     newChampionship, applyResults, standingsTable,
@@ -7373,13 +7718,24 @@ const Race = (() => {
 ;
 // ===== ghost.js
 // Apex GP — time-trial ghost: records the player's pose along a lap (every 0.05 s of lap time), replays the best
-// lap with angle-aware interpolation and (de)serialises it compactly for localStorage. Pure logic (runs in Node).
+// lap (smooth curve through the samples, angle-aware heading) and (de)serialises it compactly for localStorage. Pure logic (runs in Node).
 //
 //   rec = Ghost.createRecorder(bestTime?)   Ghost.record(rec, car, lapTime) every step (lapTime may start < 0)
 //   lap = Ghost.finishLap(rec, lapTime, valid = true)   -> lap data if it beat rec.bestTime, else null; starts next lap
-//   p = Ghost.createPlayer(lap); Ghost.sample(p, lapTime) -> {x, z, h} (reused object)
+//   p = Ghost.createPlayer(lap); Ghost.sample(p, lapTime) -> {x, z, h} (reused object; Catmull-Rom between samples)
 //   str = Ghost.serialize(lap); lap = Ghost.deserialize(str)   (null if invalid)
-// lap data: { v: 1, time, dt, n, x: Float32Array, z: Float32Array, h: Float32Array, trackId? }
+// lap data: { v: 1, time, dt, n, x: Float32Array, z: Float32Array, h: Float32Array, trackId?, pb? }
+//
+// Personal best (time trial): the saved ghost carries its lap's times, lap.pb = { s: [S1, S2, S3], c, fw, rw, cond, at,
+// src } (lap time = lap.time; c = tyre, fw / rw = wings, cond = 'dry'|'damp'|'light'|'heavy', at = ms epoch, src 'lap' =
+// timed by Race, 'ghost' = derived from the recording for a save from before the times were kept).
+//   Ghost.profile(lap, track) -> Float64Array: distance past the line of each sample (projected like a car, cached)
+//   Ghost.timeAt(lap, track, dist) -> lap time at which the ghost reached `dist` m past the line (the live delta)
+//   Ghost.splits(lap, track) -> [S1, S2, S3] from the recording
+//   Ghost.save(store, trackId, lap) / Ghost.load(store, trackId, track) / Ghost.clear(store, trackId?) on a
+//   localStorage-like store (getItem / setItem / removeItem / key / length) under KEY + trackId
+// Saved JSON: { v: 1, f: 2, track, t, dt, n, x0, z0, h0, d, pb: { s, c, fw, rw, cond, at, src } }. v stays 1 so older
+// builds still replay the ghost; f: 2 = with times (no f / no pb: an old save, upgraded on load).
 const Ghost = (() => {
   const DT = 0.05;
   const QXZ = 100, QH = 10000;          // quantisation: 1 cm, 1e-4 rad (delta-coded int16)
@@ -7450,13 +7806,21 @@ const Ghost = (() => {
     if (!n) return o;
     let f = t / L.dt;
     if (!(f > 0)) f = 0;
-    const i = Math.floor(f);
     p.done = t > L.time;
-    if (i >= n - 1) { o.x = L.x[n - 1]; o.z = L.z[n - 1]; o.h = U.wrapAngle(L.h[n - 1]); return o; }
-    const u = f - i;
-    o.x = L.x[i] + (L.x[i + 1] - L.x[i]) * u;
-    o.z = L.z[i] + (L.z[i + 1] - L.z[i]) * u;
-    o.h = U.wrapAngle(L.h[i] + U.wrapAngle(L.h[i + 1] - L.h[i]) * u);
+    return poseAt(L, f, o);
+  }
+  // pose at fractional sample f: position on a Catmull-Rom curve through the samples (smooth speed: a car braking or
+  // accelerating is replayed as it drove, not at a constant speed per 0.05 s), heading interpolated by angle
+  function poseAt(L, f, o) {
+    const n = L.n, X = L.x, Z = L.z, i = Math.floor(f);
+    if (i >= n - 1) { o.x = X[n - 1]; o.z = Z[n - 1]; o.h = U.wrapAngle(L.h[n - 1]); return o; }
+    const u = f - i, i2 = i + 1;
+    if (u <= 0) { o.x = X[i]; o.z = Z[i]; o.h = U.wrapAngle(L.h[i]); return o; }
+    const cr = (p0, p1, p2, p3) => p1 + 0.5 * u * (p2 - p0 + u * (2 * p0 - 5 * p1 + 4 * p2 - p3 + u * (3 * (p1 - p2) + p3 - p0)));
+    const x0 = i > 0 ? X[i - 1] : 2 * X[i] - X[i2], z0 = i > 0 ? Z[i - 1] : 2 * Z[i] - Z[i2];   // (ends: extrapolated)
+    const x3 = i2 + 1 < n ? X[i2 + 1] : 2 * X[i2] - X[i], z3 = i2 + 1 < n ? Z[i2 + 1] : 2 * Z[i2] - Z[i];
+    o.x = cr(x0, X[i], X[i2], x3); o.z = cr(z0, Z[i], Z[i2], z3);
+    o.h = U.wrapAngle(L.h[i] + U.wrapAngle(L.h[i2] - L.h[i]) * u);
     return o;
   }
 
@@ -7497,7 +7861,27 @@ const Ghost = (() => {
       qx += dx; qz += dz; qh += dh;          // deltas against the reconstruction: no drift
       put(dx); put(dz); put(dh);
     }
-    return JSON.stringify({ v: 1, track: lap.trackId || null, t: Math.round(lap.time * 1e4) / 1e4, dt: lap.dt || DT, n, x0, z0, h0, d: b64enc(bytes) });
+    const t = Math.round(lap.time * 1e4) / 1e4, rec = { v: 1, f: 2, track: lap.trackId || null, t, dt: lap.dt || DT, n, x0, z0, h0, d: b64enc(bytes) };
+    const pb = cleanPB(lap.pb, t);
+    if (pb) rec.pb = pb;
+    return JSON.stringify(rec);
+  }
+  // the times of a ghost's lap, rounded like its time (0.1 ms; S3 = the rest, so the sectors add up to the lap); null if junk
+  const r4 = v => Math.round(v * 1e4) / 1e4;
+  function cleanPB(pb, t) {
+    if (!pb || !Array.isArray(pb.s) || pb.s.length !== 3 || !(t > 0)) return null;
+    const s = pb.s.map(Number);
+    if (!s.every(x => x > 0 && isFinite(x)) || Math.abs(s[0] + s[1] + s[2] - t) > 0.05) return null;
+    const out = { s: [r4(s[0]), r4(s[1]), 0] };
+    out.s[2] = r4(t - out.s[0] - out.s[1]);
+    if (!(out.s[2] > 0)) return null;
+    if (typeof pb.c === 'string' && pb.c.length <= 2) out.c = pb.c;
+    if (pb.fw > 0 && pb.fw < 100) out.fw = pb.fw | 0;
+    if (pb.rw > 0 && pb.rw < 100) out.rw = pb.rw | 0;
+    if (typeof pb.cond === 'string' && pb.cond.length <= 8) out.cond = pb.cond;
+    if (pb.at > 0) out.at = Math.round(pb.at);
+    out.src = pb.src === 'ghost' ? 'ghost' : 'lap';
+    return out;
   }
   function deserialize(str) {
     try {
@@ -7507,6 +7891,8 @@ const Ghost = (() => {
       if (b.length < (n - 1) * 6) return null;
       const lap = { v: 1, time: o.t, dt: o.dt > 0 ? o.dt : DT, n, x: new Float32Array(n), z: new Float32Array(n), h: new Float32Array(n) };
       if (o.track) lap.trackId = o.track;
+      const pb = cleanPB(o.pb, o.t);
+      if (pb) lap.pb = pb;
       let qx = o.x0, qz = o.z0, qh = o.h0, p = 0;
       const get = () => { const v = b[p] | (b[p + 1] << 8); p += 2; return v >= 0x8000 ? v - 0x10000 : v; };
       lap.x[0] = qx / QXZ; lap.z[0] = qz / QXZ; lap.h[0] = qh / QH;
@@ -7518,7 +7904,91 @@ const Ghost = (() => {
     } catch (e) { return null; }
   }
 
-  return { DT, createRecorder, record, finishLap, startLap, createPlayer, sample, serialize, deserialize };
+  // ---------- where the ghost is along its lap ----------
+  // D[i] = distance past the line (m, unwrapped like Race's race distance) of sample i, its pose projected as a car's s
+  // is (track.project); never decreasing (a backwards wobble can't make a time ambiguous). Cached on the lap per track
+  // (one projection per sample, ~1 ms per lap). s along a bend is not linear in the pose, so between two samples timeAt
+  // projects PK points of the replayed curve (poseAt, as sample() shows it) -- only for the stretch the car is on.
+  const PK = 5, _pr = {}, _po = { x: 0, z: 0, h: 0 };
+  function prof(lap, track) {
+    const c = lap._prof;
+    if (c && c.track === track && c.n === lap.n) return c;
+    const n = lap.n, D = new Float64Array(n), A = new Float64Array(n), S = new Float64Array(n), I = new Int32Array(n);
+    let hint = -1, acc = 0;
+    for (let i = 0; i < n; i++) {
+      const p = track.project(lap.x[i], lap.z[i], hint, _pr);
+      hint = p.idx;
+      acc = i ? acc + track.deltaS(S[i - 1], p.s) : track.deltaS(0, p.s);
+      S[i] = p.s; A[i] = acc; I[i] = p.idx;
+      D[i] = i && acc < D[i - 1] ? D[i - 1] : acc;
+    }
+    return (lap._prof = { track, n, D, A, S, I, seg: -1, sd: new Float64Array(PK + 1) });
+  }
+  const profile = (lap, track) => prof(lap, track).D;
+  // lap time at which the ghost was `dist` m past the line (clamped to its recording). A car that drives exactly the
+  // ghost's line and speed is at that distance at that time: the live delta is then 0.
+  function timeAt(lap, track, dist) {
+    const c = prof(lap, track), D = c.D, n = lap.n, dt = lap.dt || DT;
+    if (!(dist > D[0])) return 0;
+    if (dist >= D[n - 1]) return (n - 1) * dt;
+    let lo = 0, hi = n - 1;   // D[lo] < dist <= D[hi]
+    while (hi - lo > 1) { const k = (lo + hi) >> 1; if (D[k] < dist) lo = k; else hi = k; }
+    const sd = c.sd;
+    if (c.seg !== lo) {   // this stretch's curve points (kept until the car moves on to the next one)
+      c.seg = lo; sd[0] = D[lo]; sd[PK] = D[hi];
+      for (let k = 1; k < PK; k++) {
+        const q = poseAt(lap, lo + k / PK, _po), p = track.project(q.x, q.z, c.I[lo], _pr);
+        const v = c.A[lo] + track.deltaS(c.S[lo], p.s);
+        sd[k] = v < sd[k - 1] ? sd[k - 1] : v > D[hi] ? D[hi] : v;
+      }
+    }
+    let k = 0;
+    while (k < PK - 1 && sd[k + 1] < dist) k++;
+    const span = sd[k + 1] - sd[k];
+    return (lo + (k + (span > 1e-9 ? U.clamp((dist - sd[k]) / span, 0, 1) : 1)) / PK) * dt;
+  }
+  // sector times from the recording (an old save without them): the ghost's times at the sector lines, S3 = the rest
+  function splits(lap, track) {
+    if (!lap || !(lap.time > 0) || !(lap.n >= 2) || !track || !track.sectorS) return null;
+    const a = timeAt(lap, track, track.sectorS[0]), b = timeAt(lap, track, track.sectorS[1]);
+    const s = [a, b - a, lap.time - b];
+    return s.every(x => x > 0) ? s : null;
+  }
+
+  // ---------- saved best laps (one per circuit) on a localStorage-like store ----------
+  const KEY = 'apexgp.ghost.';
+  function save(store, trackId, lap) {
+    if (!store || !trackId || !lap) return false;
+    if (lap.pb && !(lap.pb.at > 0)) lap.pb.at = Date.now();
+    try { store.setItem(KEY + trackId, serialize(lap)); return true; } catch (e) { return false; }
+  }
+  // the saved lap with its times (lap.pb); an old save (ghost only) gets them from its recording and is written back
+  function load(store, trackId, track) {
+    if (!store || !trackId) return null;
+    let str = null;
+    try { str = store.getItem(KEY + trackId); } catch (e) { return null; }
+    const lap = str ? deserialize(str) : null;
+    if (!lap || (lap.trackId && lap.trackId !== trackId)) return null;
+    if (!lap.pb && track) {
+      const s = splits(lap, track);
+      if (s) { lap.pb = cleanPB({ s, src: 'ghost' }, lap.time); if (lap.pb) save(store, trackId, lap); }
+    }
+    return lap;
+  }
+  // forget the saved best lap of one circuit (trackId) or of every circuit; returns how many were removed
+  function clear(store, trackId) {
+    if (!store) return 0;
+    const keys = [];
+    try {
+      if (trackId) { if (store.getItem(KEY + trackId) != null) keys.push(KEY + trackId); }
+      else for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k && k.startsWith(KEY)) keys.push(k); }
+      for (const k of keys) store.removeItem(k);
+    } catch (e) { /* ignore */ }
+    return keys.length;
+  }
+
+  return { DT, KEY, createRecorder, record, finishLap, startLap, createPlayer, sample, serialize, deserialize,
+    profile, timeAt, splits, save, load, clear };
 })();
 
 ;
