@@ -212,22 +212,39 @@ const CFG = {
 
   // AI tyre strategy (Race: planOptions / choosePlan). Every plan of up to 3 stops (4 only if nothing shorter covers the
   // race) is timed with the tyre model: a lap costs the compound's pace + its wear loss, a stop race.pitLossEst. Each car
-  // then picks one near the best, among the plans at most `cut` s slower: first how many stops (each at its best plan),
-  // then the compound mix, both weight exp(-extra perceived s / tau). perceived = model time - personality (-1..1, team
-  // trait + chance) x aggr s per stop (a car that likes fresh tyres sees stops cheaper, a track-position one dearer)
-  // + pitQ s per car already planning a stop on the same lap (the lane jams: 19 cars on one lap cost up to 14 s more).
-  // tau / cut = a fixed part + tauR / cutR x the race time planned (a few seconds weigh less over 25 laps than over 10):
-  // Extreme / Hard stay within ~1-3 s of the quickest plan, Medium / Easy gamble more (two-stops, a soft three-stop).
-  // Stop laps: a shift of up to `shift` laps costing <= `stag` s, onto the laps the fewest cars stop on.
+  // then picks one near the best, among the plans it sees at most `cut` s slower than the best it sees: first how many
+  // stops (each at its best plan), then the compound mix, both weight exp(-extra perceived s / tau). perceived = model
+  // time - personality (-1..1, team trait + chance) x aggr s per stop (a car that likes fresh tyres sees stops cheaper, a
+  // track-position one dearer) + pitQ s per car already planning a stop on the same lap (the lane jams: 19 cars on one
+  // lap cost up to 14 s more) - the grid gamble below. Never a plan more than capR x the race time off the quickest (a
+  // 5-lap race keeps its one stop). tau / cut = a fixed part + tauR / cutR x the race time planned (a few seconds weigh
+  // less over 25 laps than over 10): Extreme / Hard take plans up to 8 s off the best (mostly the best), Medium / Easy
+  // gamble more (two-stops, a soft three-stop). Stop laps: a shift of up to `shift` laps costing <= `stag` s, onto the
+  // laps the fewest cars stop on.
+  // grid: the plan is picked once the grid is set. x = (grid slot - 1) / (field - 1): risk 0..1 from x0 to x1 (smooth: the
+  // bottom third gambles, it has nothing to lose; x 0..1 from n0 to n1 race laps: no gambles in a sprint), front 1..0
+  // over the first f1. tau x (1 + tau risk) x (1 - ftau front), cut x (1 + cut risk) x (1 - fcut front); an off-sequence
+  // plan is worth risk x off x the pit loss s to the car (half a stop for a car at the back):
+  // a stop count other than the quickest plan's that much, a start tyre the quickest plan doesn't use x alt, a first stop
+  // >= 3 laps early / late (a long first stint, an early stop: shifts up to shift + risk x grid.shift laps) x stint.
   // Model, measured on solo AI races: the AI gains paceK of a compound's 1/sqrt(grip) step, racing wears wearK x nominal
   // (20 laps at Kotori, Extreme, normal wear: M-H 0, H-H +3.7 s, S-M-M +6.4 s, 3 stops +16.9 s; model +3.2 / +7.6 / +16.4)
+  // Undercut / overcut / cover between cars (Race: tryUndercut / reactDecide): uc = the chance per lap an eligible car
+  // makes the move (x 1 +- 0.4 personality), ue = the error (s) of its read of the gain (smarter teams read it better),
+  // ug = s behind the car ahead that counts as stuck, uw = s ahead of a car that pits within which a car may cover it
+  // (smarter teams look further). moves: gap / cover = their defaults, laps = its planned stop at most this many laps away
+  // (+2 on older / the same tyres), margin = s the fresh-tyre gain must beat the gap by, behind = s behind a car that pits
+  // within which a car reacts (overcut), over = s/lap of fresh-tyre deficit at most for an overcut, max = moves per
+  // car per race, q = cars already heading for the lane that rule a move out.
   strategy: {
-    paceK: 0.78, wearK: 1.08, shift: 3, pitQ: 0.35,
-    easy:     { tau: 2.5, tauR: 0.0045, cut: 9,   cutR: 0.012, aggr: 4.5, stag: 2.5 },
-    medium:   { tau: 2,   tauR: 0.0032, cut: 7,   cutR: 0.009, aggr: 3.5, stag: 2 },
-    adaptive: { tau: 1.6, tauR: 0.0022, cut: 5,   cutR: 0.006, aggr: 2.5, stag: 1.5 },
-    hard:     { tau: 1.2, tauR: 0.0014, cut: 3.5, cutR: 0.004, aggr: 1.5, stag: 1.2 },
-    extreme:  { tau: 0.9, tauR: 0.0007, cut: 2.5, cutR: 0.002, aggr: 1,   stag: 1 },
+    paceK: 0.78, wearK: 1.08, shift: 3, pitQ: 0.35, capR: 0.03,
+    easy:     { tau: 2.5, tauR: 0.0045, cut: 9,   cutR: 0.012, aggr: 4.5, stag: 2.5, uc: 0.12, ue: 0.8,  ug: 1.5, uw: 2 },
+    medium:   { tau: 2,   tauR: 0.0032, cut: 7,   cutR: 0.009, aggr: 3.5, stag: 2,   uc: 0.22, ue: 0.5,  ug: 2,   uw: 2.5 },
+    adaptive: { tau: 1.6, tauR: 0.0022, cut: 5,   cutR: 0.006, aggr: 2.5, stag: 1.5, uc: 0.35, ue: 0.4,  ug: 2.2, uw: 2.8 },
+    hard:     { tau: 2.2, tauR: 0.0003, cut: 8,   cutR: 0,     aggr: 2.5, stag: 1.2, uc: 0.55, ue: 0.25, ug: 2.5, uw: 3 },
+    extreme:  { tau: 1.8, tauR: 0.0001, cut: 8,   cutR: 0,     aggr: 2,   stag: 1,   uc: 0.8,  ue: 0.12, ug: 3.5, uw: 4 },
+    grid: { x0: 0.45, x1: 0.9, f1: 0.35, n0: 7, n1: 10, tau: 0.6, cut: 0.4, ftau: 0.35, fcut: 0.35, off: 0.55, alt: 0.4, stint: 0.35, shift: 3 },
+    moves: { gap: 2.5, laps: 4, margin: 0, cover: 3, behind: 2, over: 0.6, max: 2, q: 2 },
   },
 
   surface: [
@@ -5819,12 +5836,14 @@ const AI = (() => {
 //   car.wantPit      true = "box at the next opportunity". Race takes the car over (kinematic) ~55 m before the pit
 //                    entry, drives the lane, services it and releases it at the limiter-end line. Cleared after the stop.
 //   car.nextCompound 'S'|'M'|'H' to fit at that stop (null = Race picks one). Cleared after the stop.
-//   car.strategy     { auto, stops: [{lap, compound, done}], plan, aggr, key } default plan made by Race.create for AI
-//                    cars (0-3 stops picked near the quickest by difficulty + personality aggr, see CFG.strategy; key:
-//                    the car's own random stream). While auto !== false Race sets wantPit / nextCompound at the start
-//                    of lap `lap` (the car pits at the end of that lap), reacts to real tyre wear, keeps the rest of the
-//                    plan after a planned stop and re-plans after any other. Set auto = false (or replace the object)
-//                    to drive wantPit / nextCompound yourself.
+//   car.strategy     { auto, stops: [{lap, compound, done}], plan, aggr, key, risk, front } default plan made by Race.create
+//                    for AI cars once the grid is set (0-3 stops picked near the quickest by difficulty + personality
+//                    aggr + grid slot: the back of the grid (risk) gambles on off-sequence plans, the front rows stay
+//                    near the quickest, see CFG.strategy; key: the car's own random stream). While auto !== false Race
+//                    sets wantPit / nextCompound at the start of lap `lap` (the car pits at the end of that lap), reacts
+//                    to real tyre wear, keeps the rest of the plan after a planned stop and re-plans after any other, and
+//                    races the cars around it: undercut / overcut / cover (events stratMove / stratMoveEnd). Set auto =
+//                    false (or replace the object) to drive wantPit / nextCompound yourself.
 //   car.kinematic    true while Race moves the car in the pit lane (physics skips it; AI.drive output is ignored).
 // Dynamic weather (G.weather.dynamic, see weather.js): Race steps the weather while racing, AI cars decide weather
 // stops ~1 km before the pit entry (Weather.plan: expected lap time on each tyre over the laps left vs the stop,
@@ -5960,14 +5979,33 @@ const Race = (() => {
   // lasts at most maxL[c] laps (93 % of the nominal laps to the cliff: a set is changed by its cliff — the 3-lap sprint
   // runs mediums / hards with no stop, see CFG.tyre.minRefLaps); a stop costs race.pitLossEst. planOptions times every
   // compound mix of up to 3 stops (its best stint lengths); choosePlan picks one per car (near-best ones by chance:
-  // difficulty + the car's personality), orders it and staggers its stop laps.
+  // difficulty + the car's personality + its grid slot), orders it and staggers its stop laps.
   const SC = CFG.strategy || { paceK: 0.78, wearK: 1.08, shift: 3 };
+  const GR = SC.grid || {};
   const stratK = race => SC[race.difficulty] || SC.medium || { tau: 2.5, cut: 7, aggr: 3, stag: 2 };
   // the choice's spread for a plan over n laps: temperature tau / window cut (s) = a fixed part + a share of that race time
-  // (counted up to 40 min: long races don't gamble whole minutes)
-  function stratWin(race, n) {
-    const K = stratK(race), T = Math.min(2400, Math.max(0, n || 0) * race.lapTimeEst);
-    return { tau: K.tau + (K.tauR || 0) * T, cut: K.cut + (K.cutR || 0) * T, aggr: K.aggr, stag: K.stag };
+  // (counted up to 40 min: long races don't gamble whole minutes); cap = model s off the quickest plan at most (capR of the
+  // race time). st (a race-start pick): its grid slot (st.risk / st.front, gridRisk) widens / narrows them; off = the
+  // perceived s an off-sequence plan is worth to it (choosePlan / placements). The risk fades in below GR.n1 laps (none at
+  // GR.n0 or fewer: a sprint has no room for a stop more)
+  function stratWin(race, n, st) {
+    const K = stratK(race), T = Math.min(2400, Math.max(0, n || 0) * race.lapTimeEst), f = (st && st.front) || 0;
+    const r = ((st && st.risk) || 0) * (GR.n1 > GR.n0 ? U.clamp(((n || 0) - GR.n0) / (GR.n1 - GR.n0), 0, 1) : 1);   // (no gambles in a sprint)
+    return {
+      tau: (K.tau + (K.tauR || 0) * T) * (1 + r * (GR.tau || 0)) * (1 - f * (GR.ftau || 0)),
+      cut: (K.cut + (K.cutR || 0) * T) * (1 + r * (GR.cut || 0)) * (1 - f * (GR.fcut || 0)),
+      cap: SC.capR > 0 ? SC.capR * T : Infinity, aggr: K.aggr, stag: K.stag, risk: r, off: r * (GR.off || 0) * race.pitLossEst,
+    };
+  }
+  // the grid slot (car.grid of race.grid's field; x = (slot - 1) / (field - 1)) -> st.risk 0..1 (the back of the grid:
+  // GR.x0 .. GR.x1, smooth) and st.front 1..0 (the front rows: 0 .. GR.f1)
+  function gridRisk(race, car, st) {
+    const n = race.grid ? race.grid.length : 0;
+    st.risk = 0; st.front = 0;
+    if (!(n > 2) || !(car.grid >= 1)) return;
+    const x = (car.grid - 1) / (n - 1), x0 = GR.x0 != null ? GR.x0 : 0.45, x1 = GR.x1 != null ? GR.x1 : 0.9;
+    st.risk = U.smooth((x - x0) / Math.max(0.05, x1 - x0));
+    st.front = GR.f1 > 0 ? U.smooth(1 - x / GR.f1) : 0;
   }
   const PIT_Q = SC.pitQ != null ? SC.pitQ : 0.35;   // s per car already planning a stop on that lap (race._pitLoad)
   const MAX_STINTS = 4;   // (one more only when 4 can't cover the race: short high-wear races with the two-compound rule)
@@ -6038,33 +6076,41 @@ const Race = (() => {
     const key = (Math.floor(r * 4294967296) ^ 0x51f15e7) >>> 0, g = U.rng(key);
     return { key, draw: 0, aggr: U.clamp(0.45 * TEAM_STRAT[ti % TEAM_STRAT.length] + 1.1 * (g() - 0.5), -1, 1) };
   }
-  // pick a plan for N laps from `start` (null: free = the starting tyre too). mode 'pick': among the plans at most cut s
-  // off the quickest, first how many stops (each at its best perceived plan: a two-stop is not likelier for having more
-  // compound mixes), then the mix, then where its stops go, each at random with weight exp(-perceived extra s / tau);
-  // 'best': the best perceived one (mid-race). load (race start): race._pitLoad, the cars already planning a stop per lap
+  // pick a plan for N laps from `start` (null: free = the starting tyre too). mode 'pick': among the plans the car sees at
+  // most cut s off the best it sees (and at most cap model s off the quickest), first how many stops (each at its best
+  // perceived plan: a two-stop is not likelier for having more compound mixes), then the mix, then where its stops go,
+  // each at random with weight exp(-perceived extra s / tau). A car at the back of the grid (st.risk, stratWin) also sees
+  // an off-sequence plan K.off s cheaper: another stop count than the field's quickest plan (ref); placements: another
+  // start tyre, a long first stint / an early stop. 'best': the best perceived one (mid-race, no gambles). load (race
+  // start): race._pitLoad, the cars already planning a stop per lap
   // -> { seq, stops: [{lap, compound, done}], t, extra (model s off the quickest) } or null (nothing covers N laps)
   function choosePlan(race, st, N, start, used, lapOffset, mode, load) {
     if (!(N > 0)) return null;
-    const K = stratWin(race, N), opts = planOptions(race, N, start, used);
+    const pick = mode === 'pick', K = stratWin(race, N, pick ? st : null), opts = planOptions(race, N, start, used);
     if (!opts.length) return null;
-    const rr = stratRng(st), aggr = (st.aggr || 0) * K.aggr, pick = mode === 'pick', cand = [], v = [], pl = [];
+    const rr = stratRng(st), aggr = (st.aggr || 0) * K.aggr, cand = [], v = [], pl = [];
+    const ref = pick && K.off > 0 ? (start ? planOptions(race, N, null, used)[0] || opts[0] : opts[0]) : null;
+    // (model s past which no plan can come into the window: aggr per stop more at most, the gambles' bonus)
+    const lim = Math.min(K.cap, K.cut + Math.max(0, aggr) * MAX_STINTS + K.off * (1 + (GR.alt || 0) + (GR.stint || 0)));
     for (const o of opts) {
-      if (o.t - opts[0].t > K.cut + 1e-9) break;
-      const ps = pick ? placements(race, o, start, lapOffset, rr, K, load) : null;
+      if (o !== opts[0] && o.t - opts[0].t > lim + 1e-9) break;
+      const ps = pick ? placements(race, o, start, lapOffset, rr, K, load, ref) : null;
       let c = 0;
       if (ps) { c = Infinity; for (const x of ps) if (x.cost < c) c = x.cost; }
-      cand.push(o); pl.push(ps); v.push(o.t - aggr * o.stops + c);
+      cand.push(o); pl.push(ps); v.push(o.t - aggr * o.stops + c - (ref && o.stops !== ref.stops ? K.off : 0));
     }
     let i = 0;
     if (pick) {
-      const g = new Map();   // stops -> best perceived s
-      for (let j = 0; j < cand.length; j++) { const s = cand[j].stops; if (!g.has(s) || v[j] < g.get(s)) g.set(s, v[j]); }
-      const ks = [...g.keys()], vb = Math.min(...g.values()), k = ks[wPick(rr, ks.map(s => Math.exp(-(g.get(s) - vb) / K.tau)))];
+      let vb = Infinity;
+      for (const x of v) if (x < vb) vb = x;
+      const g = new Map();   // stops -> best perceived s (in the window)
+      for (let j = 0; j < cand.length; j++) { const s = cand[j].stops; if (v[j] - vb <= K.cut + 1e-9 && (!g.has(s) || v[j] < g.get(s))) g.set(s, v[j]); }
+      const ks = [...g.keys()], k = ks[wPick(rr, ks.map(s => Math.exp(-(g.get(s) - vb) / K.tau)))];
       const js = [];
-      for (let j = 0; j < cand.length; j++) if (cand[j].stops === k) js.push(j);
+      for (let j = 0; j < cand.length; j++) if (cand[j].stops === k && v[j] - vb <= K.cut + 1e-9) js.push(j);
       i = js[wPick(rr, js.map(j => Math.exp(-(v[j] - g.get(k)) / (K.tau * MIX_T))))];   // (the mix: a narrower spread)
     } else for (let j = 1; j < cand.length; j++) if (v[j] < v[i]) i = j;
-    const ps = pl[i] || placements(race, cand[i], start, lapOffset, rr, K, null);
+    const ps = pl[i] || placements(race, cand[i], start, lapOffset, rr, K, null, null);
     let cb = Infinity;
     for (const x of ps) if (x.cost < cb) cb = x.cost;
     const x = ps[wPick(rr, ps.map(q => Math.exp(-(q.cost - cb) / K.tau)))];
@@ -6075,13 +6121,18 @@ const Race = (() => {
   // where a mix's stops can go: each distinct order (start first) at its best stint lengths, plus up to 16 random shifts of
   // its stops by <= CFG.strategy.shift laps costing <= stag s more (so the field doesn't all box on one lap)
   // -> [{ seq, alloc, cost: s over the best lengths + PIT_Q per car already stopping on its stop laps (load, else 0) }]
-  function placements(race, o, start, lapOffset, rr, K, load) {
-    const T = stratTables(race), n = o.ms.length, out = [], seen = new Set(), sh = SC.shift || 3, tol = K.stag / race.lapTimeEst;
+  // ref (a gamble, choosePlan): - K.off x GR.alt for a start tyre ref doesn't use, - K.off x GR.stint for a first stop 3+
+  // laps off its best lap (half at 2); shifts up to risk x GR.shift laps further, costing up to that bonus more
+  function placements(race, o, start, lapOffset, rr, K, load, ref) {
+    const T = stratTables(race), n = o.ms.length, out = [], seen = new Set();
+    const bAlt = ref ? K.off * (GR.alt || 0) : 0, bSt = ref ? K.off * (GR.stint || 0) : 0;
+    const sh = (SC.shift || 3) + (ref ? Math.round(K.risk * (GR.shift || 0)) : 0), tol = (K.stag + bSt) / race.lapTimeEst;
     const c0 = seqTime(T, o.ms, o.alloc);
-    const add = (seq, a) => {
-      let q = 0, acc = lapOffset;
+    const add = (seq, a, base) => {
+      let q = 0, acc = lapOffset, b = 0;
       if (load) for (let i = 0; i < n - 1; i++) { acc += a[i]; q += load[acc] || 0; }
-      out.push({ seq, alloc: a, cost: (seqTime(T, seq, a) - c0) * race.lapTimeEst + PIT_Q * q });
+      if (ref) b = (ref.ms.indexOf(seq[0]) < 0 ? bAlt : 0) + (n > 1 ? bSt * U.clamp((Math.abs(a[0] - base[0]) - 1) / 2, 0, 1) : 0);
+      out.push({ seq, alloc: a, cost: (seqTime(T, seq, a) - c0) * race.lapTimeEst + PIT_Q * q - b });
     };
     const perm = (pre, rest) => {
       if (rest.length) { for (let i = 0; i < rest.length; i++) perm(pre.concat(rest[i]), rest.slice(0, i).concat(rest.slice(i + 1))); return; }
@@ -6089,11 +6140,11 @@ const Race = (() => {
       if ((start && seq[0] !== start) || seen.has(key)) return;
       seen.add(key);
       const sa = new Set([base.join()]);
-      add(seq, base);
+      add(seq, base, base);
       if (n > 1) for (let k = 0; k < 16; k++) {
         const a = base.slice();
         for (let i = 0; i < n - 1; i++) { const d = Math.floor(rr() * (2 * sh + 1)) - sh; a[i] += d; a[i + 1] -= d; }
-        if (!sa.has(a.join()) && seqTime(T, seq, a) <= c0 + tol) { sa.add(a.join()); add(seq, a); }   // (distinct ones: even odds)
+        if (!sa.has(a.join()) && seqTime(T, seq, a) <= c0 + tol) { sa.add(a.join()); add(seq, a, base); }   // (distinct ones: even odds)
       }
     };
     perm([], o.ms.map((c, i) => i));
@@ -6114,22 +6165,29 @@ const Race = (() => {
     for (let lap = Math.max(1, T.maxL[cur] || 0); lap < n; lap += Math.max(1, T.maxL[hc] || 0)) stops.push({ lap: off + lap, compound: hc, done: false });
     return { seq: [cur].concat(stops.map(x => x.compound)), stops };
   }
-  // AI starting tyre + race plan (one race.rnd() draw per car, as before; the rest from the car's own stream)
+  // AI starting tyre + a first plan before the grid is known (one race.rnd() draw per car, as before; the rest from the
+  // car's own stream): the tyre the car comes to the grid on; newStrategy picks the race plan once the grid is set
   function aiStartPlan(race, ti, rnd) {
     const r = rnd(), w = wetCompound(race), st = stratPersona(ti, r);
     let start = w;
     if (!w && !race.wearScale) start = r < 0.65 ? 'S' : 'M';   // (no wear: nothing to plan)
     else if (!w && !(race.laps > 0)) start = r < 0.22 ? 'S' : r < 0.8 ? 'M' : 'H';
-    else if (!w) { st.plan = addLoad(race, choosePlan(race, st, race.laps, null, [], 0, 'pick', race._pitLoad || (race._pitLoad = {}))); start = st.plan ? st.plan.seq[0] : 'M'; }
+    else if (!w) { st.plan = choosePlan(race, st, race.laps, null, [], 0, 'pick', null); start = st.plan ? st.plan.seq[0] : 'M'; }
     return { start, st };
   }
-  // car.strategy for an AI car (Race.create): the plan picked with its starting tyre, else one from the tyre it is on
+  // car.strategy for an AI car (setupGrid: the grid is set, car.grid known): the plan picked for its grid slot (gridRisk),
+  // its starting tyre too unless the conditions fixed that (a wet tyre, a weather call over the first pick's slick)
   function newStrategy(race, car) {
     const p = car._stratP || stratPersona(car.teamIndex | 0, U.rng((race.seed ^ Math.imul(car.id + 1, 0x2545f491)) >>> 0)());
     const st = { auto: true, stops: [], plan: car.tyre.compound, pending: null, aggr: p.aggr, key: p.key, draw: p.draw || 0 };
-    const cur = car.tyre.compound;
-    let pl = p.plan && p.plan.seq[0] === cur ? p.plan : null;
-    if (!pl && race.wearScale > 0) pl = addLoad(race, choosePlan(race, st, race.laps, cur, car.compoundsUsed, 0, 'pick', race._pitLoad || (race._pitLoad = {}))) || fallbackStops(race, race.laps, cur, 0);
+    gridRisk(race, car, st);
+    let cur = car.tyre.compound, pl = null;
+    if (race.wearScale > 0) {
+      const free = !!(p.plan && p.plan.seq[0] === cur && !isWetTyre(cur) && car.compoundsUsed.length <= 1);
+      pl = addLoad(race, choosePlan(race, st, race.laps, free ? null : cur, free ? [] : car.compoundsUsed, 0, 'pick', race._pitLoad || (race._pitLoad = {})));
+      if (pl && pl.seq[0] !== cur) { cur = pl.seq[0]; car.tyre.compound = cur; car.grip = COMPOUNDS[cur].grip; car.compoundsUsed = [cur]; }
+      if (!pl) pl = fallbackStops(race, race.laps, cur, 0);
+    }
     setPlan(st, cur, pl);
     return st;
   }
@@ -6176,9 +6234,11 @@ const Race = (() => {
   function strategyHook(G, race, car) {
     // a dynamic-weather race that turns wet is declared wet: the two-compound rule is off for everyone (HUD reads the flag)
     if (race.wx && race.twoCompoundActive && (race.wx.wet || 0) >= WET_DECLARED) { race.twoCompoundActive = false; race.wetDeclared = true; }
+    if (race.stratMoves && race.stratMoves.length) settleMoves(G, race);
     if (car.isPlayer || car.finished || !race.laps) return;
     const st = car.strategy, auto = !!st && st.auto !== false;
     if (car.lap >= race.laps) { if (auto) car.wantPit = false; return; }   // final lap: stay out
+    if (auto && !car.kinematic) stuckTrack(race, car, st);
     if (!auto || car.wantPit) return;
     const L = G.track.length;
     if (!race.wx && !tyreSuits(race, car.tyre.compound) && race.laps - car.lap >= 1) { car.wantPit = true; car.nextCompound = pickCompound(race, car, L, false); return; }
@@ -6196,7 +6256,156 @@ const Race = (() => {
       return;
     }
     if (ruleOpen(race, car) && car.lap >= race.laps - 1) { car.wantPit = true; car.nextCompound = null; return; }
+    // racing the cars around it: a stop near it last lap (cover / overcut), else an undercut on the car ahead
+    const rc = car._race, r = rc.react;
+    if (r && !car.kinematic && !rc.pit) { rc.react = null; if (race.t - r.t < 1.5 * race.lapTimeEst && reactDecide(G, race, car, r, L)) return; }
+    if (!car.kinematic && !rc.pit && tryUndercut(G, race, car, L)) return;
     if (next && toCliff > left + 0.2 && !ruleOpen(race, car)) for (const x of st.stops) x.done = true;
+  }
+
+  // ---------- undercut / overcut / cover between cars (CFG.strategy.moves; uc / ue / ug / uw per difficulty) ----------
+  // At each lap start a car notes the car ahead on the road within ug s (smarter teams look from further back; default
+  // MV.gap): st.sv = { id, n: lap starts running }. Undercut: behind the same car for a lap or more, its own planned stop
+  // within MV.laps laps (+2 on tyres as old or older), it boxes at the end of this lap when the fresh set's laps until the
+  // rival is likely to stop too (1-3: its own plan's stop lap, a lap more on the rival's younger set) vs the rival's set,
+  // + half its best-lap edge, beat the gap by MV.margin s (the team's read: +- ue), its out-lap is not in traffic and the
+  // rest of the plan still fits. Any stop (startPit) alerts the cars on the same lap around it (rc.react: decided at once
+  // when their own pit entry is >= 0.3 laps away, else at their next lap start): within uw s ahead and threatened
+  // (the stopper's fresh set would beat the gap by MV.margin before its planned stop, within MV.laps laps) -> cover (it
+  // boxes this lap); not really threatened (the fresh set gains < MV.over s/lap), ahead or within MV.behind s behind, in
+  // clear air with tyres that last -> overcut (the planned stop goes back 1-2 laps). Never: in a dynamic-weather race
+  // unless dry with no rain coming (weather calls stand above all this), on a tyre the conditions don't call for, a stop
+  // in the last 2 laps, owing a place / time (give-back), with MV.q cars already heading for the lane; MV.max moves per
+  // car. Events: stratMove { car, kind: 'undercut' | 'overcut' | 'cover', target, lap, gap, gain }, later stratMoveEnd
+  // { car, kind, target, ok: the mover ahead of the target once both have made those stops and are 400 m past the pit
+  // exit (or at the flag) }; race.stratMoves lists them.
+  const MV = Object.assign({ gap: 2.5, laps: 4, margin: 0, cover: 3, behind: 2, over: 0.6, max: 2, q: 2 }, SC.moves || {});
+  const lapS = (race, c, w) => { const k = COMPOUNDS[c] || COMPOUNDS.M; return (SC.paceK * (1 / Math.sqrt(k.grip) - 1) + lapLoss(k, w)) * race.lapTimeEst; };
+  const rateOf = (race, c) => { const k = COMPOUNDS[c] || COMPOUNDS.M; return SC.wearK * race.wearScale / (k.life * refLaps(race)); };
+  // s a fresh set of c gains over `car`'s set in its next k laps (that set from a lap and a half more worn than now)
+  function freshGain(race, car, c, L, k) {
+    const r = wearPerLap(race, car, L), rn = rateOf(race, c);
+    let g = 0;
+    for (let i = 0; i < (k || 1); i++) g += lapS(race, car.tyre.compound, car.tyre.wear + (1.5 + i) * r) - lapS(race, c, (0.5 + i) * rn);
+    return g;
+  }
+  const nextStop = st => { for (const x of st.stops) if (!x.done) return x; return null; };
+  function stuckTrack(race, car, st) {
+    const ug = stratK(race).ug, a = race.order[car.pos - 2];
+    const ok = a && !a.finished && !a.dnf && !a.kinematic && a.lap === car.lap && car.gapAhead <= (ug > 0 ? ug : MV.gap);
+    st.sv = ok ? { id: a.id, n: st.sv && st.sv.id === a.id ? st.sv.n + 1 : 1 } : null;
+  }
+  // a move at all: dry, wear on, its own plan, the race on, nothing owed, moves left
+  function movesOk(race, car) {
+    const st = car.strategy, W = race.wx;
+    if (!st || st.auto === false || car.isPlayer || car.finished || car.dnf || !race.wearScale || !race.laps || race.phase !== 'racing') return false;
+    if ((st.mv || 0) >= MV.max || car.giveBack || isWetTyre(car.tyre.compound)) return false;
+    if (W && ((W.wet || 0) > 0.03 || (W.rain || 0) >= 0.05 || (W.dynamic && Weather.rainIn && Weather.rainIn(W, 0.35, 4) != null))) return false;
+    return !wetCompound(race, car);
+  }
+  // cars heading for the pit lane (wantPit) or in it, other than a / b
+  function laneBusy(G, a, b) { let n = 0; for (const o of G.cars) if (o !== a && o !== b && !o.finished && !o.dnf && (o.wantPit || (o._race && o._race.pit))) n++; return n; }
+  // a car on the road about where `car` would rejoin from a stop now (pitLossEst s back, -1.5 .. +0.5 s): traffic
+  function rejoinTraffic(G, race, car, L) {
+    const D = car._race.dist;
+    for (const o of G.cars) {
+      if (o === car || o.finished || o.dnf || o.wantPit || o.kinematic || !o._race || o._race.pit) continue;
+      const t = ((((D - o._race.dist) % L) + L) % L) / L * race.lapTimeEst;   // s behind car on the road
+      if (t > race.pitLossEst - 1.5 && t < race.pitLossEst + 0.5) return o;
+    }
+    return null;
+  }
+  // the plan with its next stop `next` at the end of lap e: the rest of it still covers the laps after (keepPlan) -> its
+  // later stops, or null
+  function moveFits(race, car, next, e) {
+    const st = car.strategy, k = st.stops.indexOf(next), n = race.laps - e;
+    if (k < 0 || n < 2) return null;
+    const used = car.compoundsUsed.indexOf(next.compound) < 0 ? car.compoundsUsed.concat(next.compound) : car.compoundsUsed;
+    const pl = keepPlan(race, st.stops.slice(k + 1), n, e, next.compound, used, (st.margin || 0) + 2);
+    return pl ? pl.stops : null;
+  }
+  // laps the current set has left before its cliff (observed wear rate)
+  const lifeLeft = (race, car, L) => { const k = COMPOUNDS[car.tyre.compound] || COMPOUNDS.M, r = wearPerLap(race, car, L); return r > 0 ? (k.cliff - car.tyre.wear) / r : Infinity; };
+  function addMove(G, race, car, kind, target, gap, gain, pt) {
+    const st = car.strategy;
+    st.mv = (st.mv || 0) + 1;
+    // settled once both cars have made the stops it is about: the mover's next one, the target's next (or the one under way)
+    (race.stratMoves || (race.stratMoves = [])).push({ car, kind, target, lap: car.lap, gap, gain, ps: (car.pitStops | 0) + 1, pt, ok: null });
+    emit(G, { type: 'stratMove', car, kind, target, lap: car.lap, gap: Math.round(gap * 100) / 100, gain: Math.round(gain * 100) / 100 });
+  }
+  function settleMoves(G, race, all) {
+    // (back on track and up to speed: 400 m past the pit exit)
+    const out = c => !c.kinematic && !!c._race && !c._race.pit && !(c._race.dist - (c._race.lastPitExitDist != null ? c._race.lastPitExitDist : -1e9) < 400);
+    for (const m of race.stratMoves) {
+      if (m.ok != null) continue;
+      const a = m.car, b = m.target;
+      if (a.dnf || b.dnf) { m.ok = false; m.dropped = true; continue; }
+      const done = (a.pitStops | 0) >= m.ps && (b.pitStops | 0) >= m.pt && out(a) && out(b);
+      if (!done && !a.finished && !b.finished && !all) continue;
+      m.ok = done ? a._race.dist > b._race.dist : aheadOf(a, b);
+      emit(G, { type: 'stratMoveEnd', car: a, kind: m.kind, target: b, ok: m.ok });
+    }
+  }
+  // undercut the car ahead (strategyHook, at the start of the lap it would box at the end of)
+  function tryUndercut(G, race, car, L) {
+    const st = car.strategy, sv = st.sv;
+    if (!sv || sv.n < 2 || car.gapAhead < 0.3 || car.lap > race.laps - 2 || !movesOk(race, car)) return false;
+    const Y = G.cars[sv.id], next = nextStop(st);
+    if (!Y || Y.finished || Y.dnf || Y.wantPit || Y.kinematic || (Y._race && Y._race.pit) || (Y.giveBack && Y.giveBack.to === car)) return false;
+    if (!next || !tyreSuits(race, next.compound, car)) return false;
+    const dl = next.lap - car.lap, older = (car.tyre.laps | 0) >= (Y.tyre.laps | 0);
+    if (dl < 1 || dl > MV.laps + (older ? 2 : 0) || laneBusy(G, car, Y) >= MV.q) return false;
+    const K = stratK(race), rr = stratRng(st), gap = car.gapAhead;
+    const edge = Y.bestLap > 0 && car.bestLap > 0 ? 0.5 * U.clamp(Y.bestLap - car.bestLap, -1, 1) : 0;
+    const k = U.clamp(dl + ((Y.tyre.laps | 0) < (car.tyre.laps | 0) ? 1 : 0), 1, 3);   // laps until the rival boxes as well
+    const gain = freshGain(race, Y, next.compound, L, k) + edge + (K.ue || 0) * (2 * rr() - 1);
+    if (gain < gap + MV.margin || rr() >= (K.uc || 0) * (1 + 0.4 * (st.aggr || 0))) return false;
+    if (rejoinTraffic(G, race, car, L) || !moveFits(race, car, next, car.lap)) return false;
+    car.wantPit = true; car.nextCompound = next.compound; st.pending = next;
+    addMove(G, race, car, 'undercut', Y, gap, gain, (Y.pitStops | 0) + 1);
+    return true;
+  }
+  // a stop has started (startPit): the cars on the same lap within uw (MV.cover) s ahead / MV.behind s behind react
+  function stratReact(G, race, X) {
+    if (race.phase !== 'racing' || !race.laps || !race.wearScale || X.finished || !X._race) return;
+    const L = G.track.length, D = X._race.dist, uw = stratK(race).uw > 0 ? stratK(race).uw : MV.cover;
+    for (const Y of G.cars) {
+      const ry = Y._race, st = Y.strategy;
+      if (Y === X || !ry || Y.isPlayer || Y.finished || Y.dnf || Y.kinematic || ry.pit || !st || st.auto === false) continue;
+      const dd = ry.dist - D;
+      if (Math.abs(dd) > 0.5 * L) continue;
+      const g = dd >= 0 ? gapBetween(race, Y, X) : -gapBetween(race, X, Y);   // + = Y ahead
+      if (g > uw || g < -MV.behind) continue;
+      const r = { by: X.id, g, t: race.t, pt: (X.pitStops | 0) + 1 };
+      if (ry.nextEntry - ry.dist >= 0.3 * L) reactDecide(G, race, Y, r, L); else ry.react = r;
+    }
+  }
+  // Y's answer to X's stop (r: by, g = s Y was ahead of X (+) / behind (-), pt = X's stops once this one is made)
+  function reactDecide(G, race, Y, r, L) {
+    const X = G.cars[r.by], st = Y.strategy;
+    if (!X || X.dnf || Y.wantPit || !movesOk(race, Y)) return false;
+    const next = nextStop(st), e = Math.floor(Y._race.nextEntry / L) + 1;   // the lap at whose end Y can box
+    if (!next || e > race.laps - 2 || !tyreSuits(race, next.compound, Y)) return false;
+    const dl = next.lap - e, K = stratK(race), rr = stratRng(st), a = st.aggr || 0;
+    const xs = X._race && X._race.pit && X._race.pit.state === 'entry', xc = (xs ? (X.isPlayer ? race.playerPitCompound : X.nextCompound) : X.tyre.compound) || 'M';
+    const threat = freshGain(race, Y, xc, L) + (K.ue || 0) * (2 * rr() - 1);   // what X's fresh set gains on Y a lap
+    if (r.g > 0 && dl >= 1 && dl <= MV.laps && threat >= MV.over && threat * (dl + 1) >= r.g + MV.margin && laneBusy(G, Y, X) < MV.q) {
+      if (rr() >= (K.uc || 0) * (1 + 0.4 * a) || !moveFits(race, Y, next, e)) return false;
+      Y.wantPit = true; Y.nextCompound = next.compound; st.pending = next;
+      addMove(G, race, Y, 'cover', X, r.g, threat, r.pt);
+      return true;
+    }
+    // overcut: stay out 1-2 laps more in clear air, the set lasting
+    const ahead = race.order[Y.pos - 2], clear = !ahead || ahead === X || Y.gapAhead > 1.5 || ahead.lap !== Y.lap;
+    if (!(dl >= 0 && dl <= MV.laps && threat < MV.over && clear)) return false;
+    const d = 1 + (rr() < 0.5 ? 1 : 0), lap = next.lap + d;
+    if (lap > race.laps - 2 || lifeLeft(race, Y, L) < lap - Y.lap + 1.5 || rr() >= (K.uc || 0) * (1 - 0.4 * a)) return false;
+    const later = moveFits(race, Y, next, lap);
+    if (!later) return false;
+    next.lap = lap;
+    st.stops = st.stops.slice(0, st.stops.indexOf(next) + 1).concat(later);
+    addMove(G, race, Y, 'overcut', X, r.g, threat, r.pt);
+    return true;
   }
   // two-compound rule still to be satisfied (waived once intermediates / wets were used, or the race was declared wet)
   const ruleOpen = (race, car) => race.twoCompoundActive && !race.wetDeclared && car.compoundsUsed.length < 2 && !car.compoundsUsed.some(isWetTyre);
@@ -6392,6 +6601,7 @@ const Race = (() => {
     });
     race.order = grid.slice(); race.grid = grid.slice();
     race.t = 0; race.phaseT = 0; race.fastestLap = null; race.sessionBestSectors = [null, null, null];
+    race._pitLoad = {}; race.stratMoves = [];   // (the AI plans are picked now, the grid known: newStrategy)
     const cpCap = Math.ceil((Math.min(race.laps, 3) + 1) * L / CP) + 8;
     for (const car of G.cars) initCar(race, car, track, rnd, diff, tt ? 0 : cpCap);
   }
@@ -7236,6 +7446,7 @@ const Race = (() => {
     }
     endOvertake(car);
     car.overtakeNext = false; car.wantPit = false; car.nextCompound = null;
+    if (race.stratMoves && race.stratMoves.length) settleMoves(G, race);
     for (let i = 0; i < 3; i++) { car.lastSectors[i] = car.sectors[i]; car.lastSectorFlags[i] = car.sectorFlags[i]; }
     // position on the road at the flag (more laps first, then finish time + penalties already settled for the others;
     // this car's own unserved penalty is applied later by settlePenalties, as the cars behind finish)
@@ -7595,6 +7806,8 @@ const Race = (() => {
     }
     markInLap(rc);
     if (!manual) emit(G, { type: 'pitEntry', car });   // (the player's pitEntry fired on the entry road)
+    rc.react = null;
+    if (ps.stop) stratReact(G, race, car);   // (the cars around it may cover / stay out)
   }
 
   function laneLimit(G, car, ps) {   // keep a gap to a moving car ahead in the lane
