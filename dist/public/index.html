@@ -339,6 +339,9 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .agp-map { position: absolute; right: 1.6em; bottom: 1.4em; width: 17em; height: 17em;
   background: radial-gradient(closest-side, rgba(8, 10, 14, .55), rgba(8, 10, 14, .3) 70%, rgba(8, 10, 14, 0)); }
 .agp-map canvas { position: absolute; left: 0; top: 0; display: block; width: 100%; height: 100%; }   /* static track + dot overlay (exact px size set by hud.js) */
+.agp-map.is-zoom { background: none; }   /* Settings > Display > Minimap ZOOMED: hud.js draws its own round map (drawZoom) */
+.agp-map.is-off { display: none; }
+html:not(.agp-touch) .agp-map.is-zoom.is-mpb { bottom: max(1.4em, 38px); }   /* multiplayer: clear of the ping badge (net.js) under it */
 
 /* ---------------------------------------------------------------- where you are on the lap (bottom left) */
 /* "TURN T4" in a corner (white edge), "NEXT T5" on a straight (dimmer), "PIT LANE" (blue edge); a corner / straight name
@@ -62843,7 +62846,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-02 12:40';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-02 14:32';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -71412,6 +71415,7 @@ const HUD = (() => {
     DL.track = null;
     towerCars = null;
     cueHold = 0; cueIdle = 0; cueLast = '';   // (braking cue)
+    ZM.h = null;                              // (zoomed minimap: the heading snaps to the new session's car)
     gbOrd.clear();                            // (give-back orders)
     if (E.banners) { E.banners.textContent = ''; banners.length = 0; E.rc.textContent = ''; feed.length = 0; }
   }
@@ -71436,7 +71440,7 @@ const HUD = (() => {
     checkConfirm(G);
     if ((tTiming += dt) >= TIMING_DT) { tTiming = 0; updateTiming(G, car); updateTurn(G, car); }
     if ((tTower += dt) >= TOWER_DT) { tTower = 0; updateTower(G); }
-    updateMap(G);   // every frame: blit-free overlay of ~20 dots (static track lives on its own canvas)
+    updateMap(G, fdt);   // every frame: blit-free overlay of ~20 dots (full map: static track on its own canvas; zoomed: drawZoom)
     tickBanners(fdt);
   }
 
@@ -72001,12 +72005,24 @@ const HUD = (() => {
   // ---------- minimap: static track canvas (per layout) + car-dot overlay canvas (every frame) ----------
   // Crisp at devicePixelRatio: the backing store is an integer number of device pixels and the CSS box is set to
   // exactly that size / dpr, so there is no resampling. Relayout on resize / ResizeObserver / DPR change / new track.
-  const MAP = { cv: null, ctx: null, bg: null, track: null, w: 0, h: 0, dpr: 1, sc: 1, ox: 0, oz: 0, u: 1, dirty: true, idle: false, dprRaw: 0 };
+  // Settings > Display > Minimap (G.settings.minimap): 'full' = the whole circuit (north up), 'zoom' = heading-up close-up
+  // around the player (drawZoom), 'off' = hidden.
+  const MAP = { cv: null, ctx: null, bg: null, track: null, w: 0, h: 0, dpr: 1, sc: 1, ox: 0, oz: 0, u: 1, dirty: true, idle: false, dprRaw: 0, mode: 'full', nb: null, nbT: 0 };
   function mapLayout(tr) {
     const cv = MAP.cv, box = E.map, rect = box.getBoundingClientRect();
     if (rect.width < 8 || rect.height < 8) return false;
     const dpr = clamp(window.devicePixelRatio || 1, 1, 3);
     const w = Math.max(1, Math.floor(rect.width * dpr)), h = Math.max(1, Math.floor(rect.height * dpr));
+    if (MAP.mode === 'zoom') {   // heading-up: everything is drawn every frame on the overlay (the static canvas stays empty)
+      const cssW = (w / dpr) + 'px', cssH = (h / dpr) + 'px';
+      for (const c of [cv, MAP.bg]) { if (c.width !== w) c.width = w; if (c.height !== h) c.height = h; c.style.width = cssW; c.style.height = cssH; }
+      MAP.w = w; MAP.h = h; MAP.dpr = dpr; MAP.u = Math.min(w, h) / 100;
+      MAP.bg.getContext('2d').clearRect(0, 0, w, h);
+      if (ZM.track !== tr && !zoomCache(tr)) return false;
+      ZM.vig = null; ZM.font = '';   // (rim fade: rebuilt at the new size; a resized canvas resets its context state)
+      MAP.track = tr; MAP.dirty = false; MAP.idle = false;
+      return true;
+    }
     const pts = trackPoints(tr), pit = pitPoints(tr);
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const p of [pts, pit]) for (let i = 0; i < p.length; i += 2) { const x = p[i], z = p[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
@@ -72079,13 +72095,25 @@ const HUD = (() => {
     if (!p || typeof p.laneD !== 'function' || !isNum(p.entryS) || !isNum(p.exitS)) return [];
     try { return spanPoints(tr, p.entryS, p.exitS, s => p.laneD(s)); } catch (e) { return []; }
   }
-  function updateMap(G) {
+  function updateMap(G, dt) {
     const tr = G.track;
     if (!tr) return;
+    const mm = G.settings && G.settings.minimap, mode = mm === 'off' ? 'off' : mm === 'zoom' && tr.px && tr.nx && tr.N ? 'zoom' : 'full';
+    if (mode !== MAP.mode) {   // (Settings / pause menu changed it: relayout in the new mode)
+      MAP.mode = mode; MAP.dirty = true; ZM.h = null;
+      setC(E.map, 'is-off', mode === 'off'); setC(E.map, 'is-zoom', mode === 'zoom');
+    }
+    if (mode === 'off') return;
+    if (mode === 'zoom' && (MAP.nbT -= dt || 0.02) <= 0) {   // multiplayer: the ping badge (net.js, bottom right) is up -> lift the round map clear of it
+      MAP.nbT = 0.5;
+      const nb = MAP.nb || (MAP.nb = document.querySelector('.agp-net-badge'));
+      setC(E.map, 'is-mpb', !!nb && nb.isConnected && nb.style.display !== 'none');
+    }
     if ((window.devicePixelRatio || 1) !== MAP.dprRaw) { MAP.dprRaw = window.devicePixelRatio || 1; MAP.dirty = true; }   // zoom / monitor move
     if (MAP.dirty || MAP.track !== tr) { if (!mapLayout(tr)) return; }
     if (G.paused && MAP.idle) return;              // nothing moves while paused: keep the last frame
     MAP.idle = !!G.paused;
+    if (mode === 'zoom') { drawZoom(G, G.paused ? 0 : dt); return; }
     const g = MAP.ctx, u = MAP.u, sc = MAP.sc, ox = MAP.ox, oz = MAP.oz;
     g.clearRect(0, 0, MAP.w, MAP.h);
     const cars = G.cars || [], me = G.player;
@@ -72110,6 +72138,158 @@ const HUD = (() => {
       g.beginPath(); g.arc(X, Y, 2.7 * u, 0, 6.2832); g.fillStyle = '#ffffff'; g.fill();
       g.beginPath(); g.arc(X, Y, 1.75 * u, 0, 6.2832); g.fillStyle = teamColor(me.team); g.fill();
     }
+  }
+
+  // ---------- minimap, ZOOMED (heading-up): the player's car fixed in the centre pointing up, the circuit around it
+  // (ZOOM_R m from the centre to the rim) turning and sliding under it, clipped to the round map. The track (surface with
+  // its width + edges, pit lane, Straight-mode zones, sector / start-finish lines) is built once per circuit as Path2D in
+  // world metres, in ~100 m chunks with bounding boxes: each frame only the canvas transform changes and only the chunks
+  // near the car are filled / stroked. Cars are drawn at the frame's own time (G.renderLead, as the 3D scene: no step
+  // judder); the heading is lightly smoothed (ZOOM_TAU), so steering corrections don't shake the map.
+  const ZOOM_R = 160, ZOOM_TAU = 0.09, TAU = 6.283185307179586;
+  const ZM = { track: null, chunks: [], vis: [], pit: null, lhw: 5, zones: [], secT: null, sfT: null, vig: null, font: '',
+    h: null, k: 1, rot: 0, cx: 0, cz: 0, e: 0, f: 0 };
+  function zoomCache(tr) {
+    const N = tr.N, px = tr.px, pz = tr.pz, nx = tr.nx, nz = tr.nz, hwA = tr.halfW, step = tr.step || tr.length / N;
+    if (!N || !px || !pz || !nx || !nz || typeof Path2D === 'undefined') return false;
+    const hwOf = i => (hwA && hwA[i] > 0 ? hwA[i] : 6);
+    const st = Math.max(1, Math.round(4 / step)), idx = [];   // a vertex every ~4 m (sub-pixel at this zoom)
+    for (let i = 0; i < N; i += st) idx.push(i);
+    const M = idx.length, K = 24;
+    const box = () => ({ x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity });
+    const grow = (b, x, z) => { if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (z < b.z0) b.z0 = z; if (z > b.z1) b.z1 = z; };
+    // a ribbon over the sample indices `ids`: surface polygon (left edge out, right edge back) + its two edge lines
+    const ribbon = ids => {
+      const b = box(), L = [], R = [];
+      for (const i of ids) {
+        const hw = hwOf(i), ax = nx[i] * hw, az = nz[i] * hw;
+        L.push(px[i] - ax, pz[i] - az); R.push(px[i] + ax, pz[i] + az);
+        grow(b, px[i] - ax, pz[i] - az); grow(b, px[i] + ax, pz[i] + az);
+      }
+      const surf = new Path2D(), edge = new Path2D();
+      surf.moveTo(L[0], L[1]); edge.moveTo(L[0], L[1]);
+      for (let q = 2; q < L.length; q += 2) { surf.lineTo(L[q], L[q + 1]); edge.lineTo(L[q], L[q + 1]); }
+      for (let q = R.length - 2; q >= 0; q -= 2) surf.lineTo(R[q], R[q + 1]);
+      surf.closePath();
+      edge.moveTo(R[0], R[1]);
+      for (let q = 2; q < R.length; q += 2) edge.lineTo(R[q], R[q + 1]);
+      b.surf = surf; b.edge = edge;
+      return b;
+    };
+    // the lap in chunks of K vertices; each runs one vertex into the next (opaque fills: no seams between them)
+    const chunks = [];
+    for (let c = 0; c < M; c += K) { const ids = []; for (let q = c; q <= Math.min(c + K + 1, c + M); q++) ids.push(idx[q % M]); chunks.push(ribbon(ids)); }
+    const span = (s0, s1) => {
+      const i0 = ((Math.round(s0 / step) % N) + N) % N, i1 = ((Math.round(s1 / step) % N) + N) % N, n = (i1 - i0 + N) % N, ids = [];
+      for (let q = 0; q < n; q += st) ids.push((i0 + q) % N);
+      ids.push(i1);
+      return ids;
+    };
+    const zones = [];
+    for (const zn of tr.straightZones || []) { const ids = span(zn.s0, zn.s1); if (ids.length > 1) zones.push(ribbon(ids)); }
+    // pit lane: its centre line, drawn with the lane's width (stroke in metres)
+    let pit = null;
+    const pp = pitPoints(tr);
+    if (pp.length > 2) {
+      pit = box(); pit.path = new Path2D();
+      for (let q = 0; q < pp.length; q += 2) { q ? pit.path.lineTo(pp[q], pp[q + 1]) : pit.path.moveTo(pp[q], pp[q + 1]); grow(pit, pp[q], pp[q + 1]); }
+      ZM.lhw = (tr.pit && tr.pit.laneHalfW) || 5;
+      pit.x0 -= ZM.lhw; pit.x1 += ZM.lhw; pit.z0 -= ZM.lhw; pit.z1 += ZM.lhw;
+    }
+    // sector lines + start / finish: across the track, a little past both edges
+    const tick = (p, s) => { const i = ((Math.round(s / step) % N) + N) % N, e = hwOf(i) + 1.6; p.moveTo(px[i] - nx[i] * e, pz[i] - nz[i] * e); p.lineTo(px[i] + nx[i] * e, pz[i] + nz[i] * e); };
+    const secT = new Path2D(), sfT = new Path2D();
+    for (const s of tr.sectorS || []) tick(secT, s);
+    tick(sfT, 0);
+    Object.assign(ZM, { track: tr, chunks, zones, pit, secT, sfT, h: null });
+    return true;
+  }
+  function drawZoom(G, dt) {
+    const g = MAP.ctx, w = MAP.w, h = MAP.h, u = MAP.u, me = G.player, cars = G.cars || [];
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, w, h);
+    if (!me || !isNum(me.x) || !isNum(me.z)) return;
+    // the frame's own time: the physics state + its velocity x the step remainder (main.js leadPoses, the 3D scene's poses)
+    const lead = isNum(G.renderLead) && G.renderLead > 0 && G.renderLead < 0.1 ? G.renderLead : 0;
+    const lx = c => c.x + (isNum(c.vx) ? c.vx * lead : 0), lz = c => c.z + (isNum(c.vz) ? c.vz * lead : 0);
+    const cx = lx(me), cz = lz(me), ht = (isNum(me.h) ? me.h : 0) + (isNum(me.r) ? me.r * lead : 0);
+    if (!isNum(ZM.h)) ZM.h = ht;
+    else {
+      let d = ht - ZM.h; d -= Math.round(d / TAU) * TAU;
+      ZM.h = Math.abs(d) > 2.2 ? ht : ZM.h + d * (1 - Math.exp(-(dt || 0) / ZOOM_TAU));   // (a big jump: car reset / new session -> snap)
+      if (Math.abs(ZM.h) > 1e4) ZM.h -= Math.round(ZM.h / TAU) * TAU;
+    }
+    // world (x, z) -> canvas: rotate so the heading points up (-Y), k device px per metre, the car in the centre
+    const R = Math.min(w, h) / 2, k = R / ZOOM_R, rot = -Math.PI / 2 - ZM.h, a = Math.cos(rot) * k, b = Math.sin(rot) * k;
+    const e = w / 2 - (a * cx - b * cz), f = h / 2 - (b * cx + a * cz), U = u / k, X0 = w / 2, Y0 = h / 2;
+    ZM.k = k; ZM.rot = rot; ZM.cx = cx; ZM.cz = cz; ZM.e = e; ZM.f = f;
+    g.save();
+    g.beginPath(); g.arc(X0, Y0, R, 0, TAU);
+    g.fillStyle = 'rgba(9,11,16,0.84)'; g.fill();
+    g.clip();
+    g.setTransform(a, b, -b, a, e, f);
+    const vr = ZOOM_R + 20;   // cull: chunk boxes clear of the view square are skipped
+    const near = q => !(q.x1 < cx - vr || q.x0 > cx + vr || q.z1 < cz - vr || q.z0 > cz + vr);
+    // pit lane under the track: a faint edge, then its surface
+    const pl = ZM.pit;
+    if (pl && near(pl)) {
+      g.lineCap = 'butt'; g.lineJoin = 'round';
+      g.strokeStyle = 'rgba(170,185,205,0.62)'; g.lineWidth = 2 * ZM.lhw + 0.8 * U; g.stroke(pl.path);
+      g.strokeStyle = '#2d333d'; g.lineWidth = 2 * ZM.lhw; g.stroke(pl.path);
+    }
+    // track surface (opaque, so the overlapping chunk ends leave no seams), then its edges
+    const vis = ZM.vis; vis.length = 0;
+    g.fillStyle = '#464d59';
+    for (const c of ZM.chunks) if (near(c)) { vis.push(c); g.fill(c.surf); }
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = '#dde2ea'; g.lineWidth = 0.5 * U;
+    for (const c of vis) g.stroke(c.edge);
+    // Straight-mode zones: green tint + green edges (as the full map's green stretches)
+    g.fillStyle = 'rgba(25,224,106,0.24)'; g.strokeStyle = COL.green; g.lineWidth = 0.62 * U;
+    for (const zn of ZM.zones) if (near(zn)) { g.fill(zn.surf); g.stroke(zn.edge); }
+    // sector lines (yellow) + start / finish (white), dark casing
+    g.lineCap = 'butt';
+    g.strokeStyle = 'rgba(0,0,0,0.8)'; g.lineWidth = 1.7 * U; g.stroke(ZM.secT);
+    g.lineWidth = 2.2 * U; g.stroke(ZM.sfT);
+    g.strokeStyle = COL.yellow; g.lineWidth = 0.85 * U; g.stroke(ZM.secT);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 1.2 * U; g.stroke(ZM.sfT);
+    // rim fade (the track runs off softly under the edge)
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    if (!ZM.vig) { ZM.vig = g.createRadialGradient(X0, Y0, R * 0.72, X0, Y0, R); ZM.vig.addColorStop(0, 'rgba(9,11,16,0)'); ZM.vig.addColorStop(1, 'rgba(9,11,16,0.82)'); }
+    g.fillStyle = ZM.vig; g.fillRect(0, 0, w, h);
+    // other cars: two-tone team dots (as the full map), only those inside the circle
+    const lim = (R + 3 * u) * (R + 3 * u);
+    g.lineWidth = 0.55 * u; g.strokeStyle = 'rgba(0,0,0,0.85)';
+    for (let i = cars.length - 1; i >= 0; i--) {
+      const c = cars[i];
+      if (c === me || c.dnf || !isNum(c.x) || !isNum(c.z)) continue;
+      const x = lx(c), z = lz(c), X = a * x - b * z + e, Y = b * x + a * z + f;
+      if ((X - X0) * (X - X0) + (Y - Y0) * (Y - Y0) > lim) continue;
+      g.beginPath(); g.arc(X, Y, 1.9 * u, 0, TAU);
+      g.fillStyle = teamColor2(c.team); g.fill(); g.stroke();
+      g.beginPath(); g.arc(X, Y, 1.22 * u, 0, TAU);
+      g.fillStyle = teamColor(c.team); g.fill();
+    }
+    const gh = G.ghost;   // time trial: the ghost
+    if (gh && gh.visible !== false && isNum(gh.x) && isNum(gh.z)) {
+      const x = lx(gh), z = lz(gh), X = a * x - b * z + e, Y = b * x + a * z + f;
+      if ((X - X0) * (X - X0) + (Y - Y0) * (Y - Y0) <= lim) {
+        g.beginPath(); g.arc(X, Y, 2.6 * u, 0, TAU);
+        g.fillStyle = 'rgba(200,225,255,0.45)'; g.fill(); g.lineWidth = 0.5 * u; g.strokeStyle = 'rgba(255,255,255,0.7)'; g.stroke();
+      }
+    }
+    g.restore();
+    // rim + a small north cue (where the full map's "up" is)
+    g.beginPath(); g.arc(X0, Y0, R - 0.45 * u, 0, TAU);
+    g.lineWidth = 0.9 * u; g.strokeStyle = 'rgba(255,255,255,0.2)'; g.stroke();
+    const nX = X0 + Math.sin(rot) * (R - 4.2 * u), nY = Y0 - Math.cos(rot) * (R - 4.2 * u);
+    if (!ZM.font) { ZM.font = '700 ' + (3.4 * u).toFixed(1) + 'px Arial, Helvetica, sans-serif'; g.font = ZM.font; g.textAlign = 'center'; g.textBaseline = 'middle'; }
+    g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillText('N', nX, nY + 0.15 * u);
+    // the player: a fixed arrow in the centre, pointing up (white, team-colour core, dark casing)
+    const s = 4.6 * u, arrow = (q, dy) => { g.beginPath(); g.moveTo(X0, Y0 + dy - q); g.lineTo(X0 + 0.74 * q, Y0 + dy + 0.8 * q); g.lineTo(X0, Y0 + dy + 0.4 * q); g.lineTo(X0 - 0.74 * q, Y0 + dy + 0.8 * q); g.closePath(); };
+    g.lineJoin = 'round';
+    arrow(s, 0); g.lineWidth = 1.3 * u; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.stroke(); g.fillStyle = '#ffffff'; g.fill();
+    arrow(s * 0.5, 0.12 * s); g.fillStyle = teamColor(me.team); g.fill();
   }
 
   // ---------- dynamic weather: lap-based outlook widget (4 Hz) (team radio: engineer_ui.js callouts) ----------
@@ -72376,7 +72556,13 @@ const HUD = (() => {
     }
   }
 
-  return { init, update, setVisible, flash, onEvent, teamColor, teamColor2, teamBar };
+  // (tests) the minimap's mode + the zoomed map's last transform: world (x, z) -> canvas px X = a*x - b*z + e, Y = b*x + a*z + f
+  function mapInfo() {
+    const a = Math.cos(ZM.rot) * ZM.k, b = Math.sin(ZM.rot) * ZM.k;
+    return { mode: MAP.mode, w: MAP.w, h: MAP.h, dpr: MAP.dpr, u: MAP.u, viewR: ZOOM_R, heading: ZM.h, k: ZM.k, rot: ZM.rot, cx: ZM.cx, cz: ZM.cz, a, b, e: ZM.e, f: ZM.f };
+  }
+
+  return { init, update, setVisible, flash, onEvent, teamColor, teamColor2, teamBar, mapInfo };
 })();
 
 
@@ -72929,6 +73115,7 @@ const Menu = (() => {
     weatherStart: 'dry', weatherEnd: 'wet', weatherWhen: 'mid',   // weather 'custom'
     fieldSize: 10,   // drivers on the grid (quick race / a new championship)
     graphics: 'high', mirror: true, telemetry: true,   // telemetry: record the player's laps (Telemetry)
+    minimap: 'full',   // HUD minimap: 'full' (whole circuit) | 'zoom' (heading-up close-up around your car) | 'off'
     engineer: true, engVoice: true, engVisual: true, engVerbosity: 'normal', engVoiceVol: 1, engVoiceName: '',   // race engineer (engineer_ui.js)
     music: true, musicVolume: 0.7,   // menu / pause / results music (Music; scaled by the master volume)
     engineMenus: false,   // the car's sounds on the pre-race entry list / grid + time-trial garage (results: always silent)
@@ -72962,6 +73149,7 @@ const Menu = (() => {
     raceLine: [['off', 'OFF'], ['corners', 'CORNERS ONLY'], ['full', 'FULL LAP']],
     penaltyLevel: [['off', 'OFF'], ['lenient', 'LENIENT'], ['standard', 'STANDARD'], ['strict', 'STRICT']],   // race rules strictness (CFG.penalties)
     graphics: [['low', 'LOW'], ['medium', 'MEDIUM'], ['high', 'HIGH'], ['ultra', 'ULTRA']],
+    minimap: [['full', 'FULL TRACK'], ['zoom', 'ZOOMED · HEADING UP'], ['off', 'OFF']],   // (hud.js updateMap / drawZoom)
   };
   const clone = o => JSON.parse(JSON.stringify(o));
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -73095,6 +73283,7 @@ const Menu = (() => {
     s.touchCtl = pick(s.touchCtl, OPT.touchCtl, 'auto');
     for (const [k, d] of [['tiltSens', 0.5], ['tiltDead', 0.3], ['touchSize', 0.5]]) s[k] = isNum(+s[k]) ? Math.max(0, Math.min(1, +s[k])) : d;
     s.mirror = s.mirror !== false;
+    s.minimap = pick(s.minimap, OPT.minimap, 'full');
     s.telemetry = s.telemetry !== false;
     for (const k of ['engineer', 'engVoice', 'engVisual']) s[k] = s[k] !== false;   // race engineer
     s.engVerbosity = pick(s.engVerbosity, OPT.engVerb, 'normal');
@@ -73315,6 +73504,7 @@ const Menu = (() => {
       act: () => { const u = ENG_UI(); sfx('select'); const b = rowBtn('engTest'); const ok = u && u.test(Object.assign({}, gState() || {}, { settings: S })); if (b) { b.textContent = ok ? 'PLAYING…' : S.engVoice === false ? 'VOICE IS OFF' : 'NO VOICE ON THIS BROWSER'; setTimeout(() => { if (b) b.textContent = 'PLAY'; }, 2500); } } },
     { k: 'view', label: 'Default camera', type: 'cycle', opts: OPT.view, tab: 'display' },
     { k: 'mirror', label: 'Rear-view mirror', type: 'toggle', tab: 'display' },
+    { k: 'minimap', label: 'Minimap', type: 'cycle', opts: OPT.minimap, tab: 'display' },   // full circuit / zoomed heading-up / off
     { k: 'fullscreen', label: 'Fullscreen', type: 'button', text: 'ON / OFF', tab: 'display', act: () => { if (window.AGP_toggleFullscreen) window.AGP_toggleFullscreen(); } },
     { k: 'graphics', label: 'Graphics quality', type: 'cycle', opts: OPT.graphics, tab: 'graphics' },
     { k: 'volume', label: 'Master volume', type: 'slider', tab: 'audio' },
@@ -73478,6 +73668,7 @@ const Menu = (() => {
     { k: 'resume', label: 'Resume', type: 'action', act: () => { sfx('back'); if (H.onResume) H.onResume(); } },
     { k: 'restart', label: 'Restart race', type: 'action', act: () => { sfx('select'); if (H.onRestart) H.onRestart(); } },
     { k: 'view', label: 'Camera', type: 'cycle', opts: OPT.view },
+    { k: 'minimap', label: 'Minimap', type: 'cycle', opts: OPT.minimap },
     { k: 'assists.tc', label: 'Traction control', type: 'toggle' },
     { k: 'assists.abs', label: 'ABS', type: 'toggle' },
     { k: 'assists.brakeGuide', label: 'Braking guide', type: 'toggle' },
@@ -78110,6 +78301,7 @@ const Game = (() => {
     mode: 'race', trackId: 'vortex', laps: 5, difficulty: 'medium', teamIndex: 0, compound: 'A', view: 'chase',   // (A = AUTO start tyre)
     assists: { tc: true, abs: true, brakeGuide: true, kb: 'normal', steer: 'off', brake: 'off', line: 'off' }, tyreWear: 'normal', twoCompound: false, volume: 0.8,
     grid: 'choose', gridPos: 7, playerName: 'Player', playerNumber: 7, timeOfDay: 'day', weather: 'dry', penalties: true, graphics: 'high', mirror: true,
+    minimap: 'full',   // HUD minimap: 'full' | 'zoom' (heading-up, around the player) | 'off' (Settings > Display; hud.js)
     weatherStart: 'dry', weatherEnd: 'wet', weatherWhen: 'mid',   // weather 'custom': start / end conditions, change point
     fieldSize: 10,   // drivers on the grid (2..20, one car per team; quick race + a new championship, which keeps its field)
     music: true, musicVolume: 0.7,   // menu / pause / results music (music.js)
@@ -78695,6 +78887,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-02 12:40 -->
+<!-- Apex GP build 2026-10-02 14:32 -->
 </body>
 </html>
