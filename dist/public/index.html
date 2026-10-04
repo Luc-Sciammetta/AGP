@@ -64916,7 +64916,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-04 02:45';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-04 09:37';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -67841,7 +67841,7 @@ const NetCore = (() => {
 //   buildCarModel.debrisEnabled = false turns it off.
 //   Rain (not on ghosts): water beads on the bodywork, wings, halo and helmet / visor (livery + per-car carbon shader,
 //   one shared canvas bead texture): cover follows window.G.weather.rain (none in a tunnel), a glossy wet sheen
-//   follows rain / G.weather.wet; at speed beads streak backwards and thin out on exposed surfaces; dries over ~1 min.
+//   follows rain / G.weather.wet; at speed beads thin out gently on exposed surfaces (no moving streaks); dries over ~1 min.
 //   model.rain = { state, set(cover, sheen, speed) } (tests).
 // Materials: livery = MeshPhysicalMaterial (clearcoat) per team with a per-vertex part id (palette / canvas livery
 // projected in the shader / procedural helmet); carbon = shared physical material with canvas weave colour, normal
@@ -68822,7 +68822,7 @@ vec4 agpDropL(vec2 uv, float expo, float along) {
   vec3 t1 = texture(uDrop, uv).rgb;
   float m1 = smoothstep(0.0, 0.03, uRainA.x * (1.0 - sp * (0.35 + 0.6 * expo)) - t1.b);
   vec3 t2 = texture(uDrop, vec2(uv.x / (1.0 + 6.0 * sp) + uRainA.w, uv.y * 2.2 + 0.37)).rgb;
-  float m2 = along * (1.0 - m1) * smoothstep(0.0, 0.03, uRainA.x * sp * 0.55 - t2.b);
+  float m2 = 0.0 * along * t2.b;   // (no moving streaks: the scrolling layer flickered like old film; still beads only)
   return vec4(m1, m2, (t1.rg * 2.0 - 1.0) * m1 + (t2.rg * 2.0 - 1.0) * vec2(0.3, 1.0) * m2);
 }
 `;
@@ -69520,8 +69520,8 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
         RS.sheen += (sh - RS.sheen) * Math.min(1, dt / (sh > RS.sheen ? 4 : 25));
       }
       const spT = RS.spHold != null ? RS.spHold : clamp01(((car.speed || 0) - 6) / 55);
-      RS.sp += (spT - RS.sp) * (RS.spHold != null ? 1 : Math.min(1, dt * 2));
-      RS.w = (RS.w + dt * RS.sp * 1.6) % 1;
+      RS.sp += (spT - RS.sp) * (RS.spHold != null ? 1 : Math.min(1, dt * 0.4));   // (slow: beads thin out gently at speed, no popping)
+      RS.w = 0;
       RU.uRainA.value.set(RS.cover < 0.003 ? 0 : RS.cover, RS.sheen < 0.003 ? 0 : RS.sheen, RS.sp, RS.w);
     }
 
@@ -83839,6 +83839,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-04 02:45 -->
+<!-- Apex GP build 2026-10-04 09:37 -->
 </body>
 </html>
