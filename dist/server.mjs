@@ -2,6 +2,7 @@
 // Apex GP multiplayer server — dependency-free Node 22 (node:http + a minimal RFC 6455 WebSocket, ws.mjs).
 //
 //   node server/server.mjs [--port 8787] [--host 0.0.0.0] [--game path/to/apex-gp.html] [--src path/to/src] [--quiet]
+//   (tests: --qlen s,s,s --qbrk s = qualifying session / break lengths)
 //
 // Rooms have 6-digit join codes. The host picks the number of human places when creating the room (humanSlots, the
 // room is full at that many drivers) and, in the lobby, the circuit, laps, AI racers (aiCount; humans + AI up to 20),
@@ -32,7 +33,7 @@ const log = (...a) => { if (!QUIET) console.log(new Date().toISOString().slice(1
 const now = () => performance.now();
 
 // ---------------------------------------------------------------- game logic (same code as the browser)
-const LOGIC = ['util.js', 'names.js', 'config.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'ai.js', 'race.js', 'ghost.js', 'netcore.js'];
+const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'ai.js', 'race.js', 'quali.js', 'ghost.js', 'netcore.js'];
 function loadLogic() {
   const bundle = path.join(HERE, 'logic.js');
   let src;
@@ -41,21 +42,27 @@ function loadLogic() {
     const dir = ARG.src || process.env.AGP_SRC || path.join(HERE, '..', 'src');
     src = LOGIC.map(f => `// ===== ${f}\n` + fs.readFileSync(path.join(dir, f), 'utf8')).join('\n;\n');
   }
-  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'AI', 'Race', 'Ghost', 'NetCore'];
+  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'AI', 'Race', 'Quali', 'Ghost', 'NetCore'];
   return new Function(src + '\n;return {' + names.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : undefined`).join(',') + '};')();
 }
 const L = loadLogic();
-const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, AI, Race, Ghost, NetCore: N } = L;
+const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, AI, Race, Quali, Ghost, NetCore: N } = L;
+// a player's custom livery (src/livery.js): sanitised here (hex colours, name / code lengths, a known pattern), shown to
+// everyone (room players, race entry list, time-trial roster / leaderboard); the car keeps its team slot (p.team)
+const LV = L.Livery, cleanLivery = o => (o && LV ? LV.clean(o) : null);
 const TRACK_IDS = Object.keys(TRACK_DATA).filter(id => !TRACK_DATA[id].draft);
 const trackCache = {};
 const getTrack = id => trackCache[id] || (trackCache[id] = buildTrack(TRACK_DATA[id]));
 const STEP = 1 / CFG.physicsHz, STEPMS = 1000 / CFG.physicsHz;
 const IDLE = { throttle: 0, brake: 1, steer: 0, boost: false, aeroPress: false, hold: true };
 const MAX_ROOMS = +(process.env.AGP_MAX_ROOMS || 200), MAX_IN_ROOM = 20, RECONNECT_S = 60, LOAD_TIMEOUT = 25000, AFK_MS = 3000;
+const QGRID_WAIT = 12000;   // qualifying over: ms the lights wait for every racer's 'loaded' (the grid built, the result read)
 const EMO_TXT = new Map(N.EMOTES);   // quick emotes: key -> text (NetCore.EMOTES, the same list the page shows)
 // fast relay: a human car's state goes to the drivers near it the moment it arrives (the 30 Hz snapshot carries the AI
 // and far cars); --batch sends everything with the snapshots only (+0-33 ms)
 const FAST = !ARG.batch;
+// tests only: --qlen 60,90,30 (s per qualifying session) / --qbrk 60 (s per break) instead of the room's lengths
+const QLEN = typeof ARG.qlen === 'string' ? ARG.qlen.split(',').map(Number).filter(x => x >= 5) : null, QBRK = +ARG.qbrk > 0 ? +ARG.qbrk : null;
 
 // ---------------------------------------------------------------- game page
 function findGame() {
@@ -150,6 +157,7 @@ function applyMe(room, p, me) {
   if (me.name != null) { const n = N.cleanName(me.name); if (n !== p.name) { p.name = n; if (p.room === room) numberNames(room); } }
   if (me.team != null && room.phase === 'lobby') { const t = freeTeam(room, me.team | 0, p); if (t >= 0) p.team = t; }
   if (me.number != null) p.number = freeNumber(room, me.number | 0, p);
+  if (me.livery !== undefined && (room.phase === 'lobby' || !(room.sim && room.sim.has(p)))) p.livery = cleanLivery(me.livery);   // (null: the team's own; fixed while in a session)
   if (me.compound != null && (N.COMP.includes(me.compound) || me.compound === 'A')) p.compound = me.compound;   // ('A' = AUTO: suitCompound at the start)
   if (me.setups != null) p.setups = N.cleanSetups(me.setups, TRACK_IDS);   // (private: only this player's own car uses it)
   if (me.ready != null) p.ready = !!me.ready;
@@ -158,7 +166,7 @@ function roomMsg(room, p) {
   const sim = room.sim;
   return {
     t: 'room', code: room.code, phase: room.phase, host: room.host ? room.host.id : null, you: p.id, settings: room.settings, tracks: TRACK_IDS,
-    players: room.players.map(q => { const a = awayOf(room, q); return { id: q.id, name: dname(q), team: q.team, number: q.number, compound: q.compound, ready: q.ready, ping: q.ping | 0,
+    players: room.players.map(q => { const a = awayOf(room, q); return { id: q.id, name: dname(q), team: q.team, livery: q.livery || undefined, number: q.number, compound: q.compound, ready: q.ready, ping: q.ping | 0,
       conn: connected(q), away: a > 0, lobby: a === 2, host: q === room.host, inRace: !!(sim && sim.has(q)) }; }),   // (name: as shown, numbered when shared)
     race: sim && sim.brief ? sim.brief() : null,
   };
@@ -258,13 +266,22 @@ class RaceSim {
     for (let i = 0; i < rest.length && field.length < n; i++) field.push(rest[i]);
     field.sort((a, b) => a - b);
     const seed = this.seed = crypto.randomInt(1, 2 ** 31 - 1);
-    const G = this.G = { track, cars: [], player: null, race: null, world: null, events: [], weather: null, settings: { mode: 'race', penaltyLevel: S.penaltyLevel, penalties: S.penalties }, brains: new Map(), attract: false, time: 0, input: null };
+    // (qualifying: Quali.start reads its lengths / day from G.settings, after Race.create bound the race weather — the
+    // clients build the same quali weather the same way, netcore qualiPatch)
+    const G = this.G = { track, cars: [], player: null, race: null, world: null, events: [], weather: null, brains: new Map(), attract: false, time: 0, input: null,
+      settings: { mode: 'race', penaltyLevel: S.penaltyLevel, penalties: S.penalties, laps: S.laps, qualiLen: S.qualiLen, qualiCustom: S.qualiCustom, qualiDay: S.qualiDay } };
+    const qf = S.grid === 'qfull' && !!Quali;   // Q1 / Q2 / Q3 before the race (docs/QUALI_PLAN.md §7)
     G.weather = makeWeather(S, track, seed);
     const diffId = DIFFICULTY[S.difficulty] ? S.difficulty : 'medium';
     this.diff = DIFFICULTY[diffId];
     Race.create(G, { mode: 'race', laps: S.laps, difficulty: diffId, playerTeam: humans.length ? humans[0].team : field[0], playerCompound: 'M', tyreWear: S.tyreWear, twoCompound: S.twoCompound,
-      penalties: S.penalties, penaltyLevel: S.penaltyLevel, weather: S.weather, grid: 'random', seed, field, fieldSize: n });
+      penalties: S.penalties, penaltyLevel: S.penaltyLevel, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n });
     const race = this.race = G.race;
+    if (race.qs) {
+      race.qs.mp = true;   // (no garage speed-up; humans drive in at a session's end)
+      if (QLEN) race.qs.len = race.qs.len.map((x, i) => QLEN[Math.min(i, QLEN.length - 1)]);
+      if (QBRK) race.qs.brk = race.qs.brk.map(() => QBRK);
+    }
     G.player = null;
     const usedNum = new Set(humans.map(p => p.number)), usedCode = new Set();
     for (const car of G.cars) {
@@ -274,13 +291,14 @@ class RaceSim {
         // the names on screen from the shown name (numbered when two drivers typed the same: "Player 2" -> '' + 'Player 2'),
         // the 3-letter code from the typed one (two "Player": PLA and PLX below); fixed for the whole race
         const nm = splitName(p.name), dn = splitName(dname(p));
-        car.driver = { first: dn.first, last: dn.last, code: makeCode(nm.last, nm.first), number: p.number };
+        car.driver = { first: dn.first, last: dn.last, code: makeCode(nm.last, nm.first), number: p.number };   // (the tower code comes from the player's name, livery or not)
+        if (p.livery && LV) car.team = LV.team(p.livery);   // (same car: perf 1 = the AI's neutral pace when it drives a dropped player)
         car.code = car.driver.code; car.name = dn.last; car.number = p.number; car.firstName = dn.first; car.lastName = dn.last;
         car.net = { p, dname: dname(p), typed: nm, epoch: 1, auth: 'client', why: null, rep: null, prev: null, recvT: now(), afk: false, lobby: false, brain: null, bad: 0, stale: 0, n: 0, rep0: null, ex: 0, ez: 0, eh: 0 };
         car.pitManual = true;   // (Race: the player drives the pit entry road; the autopilot takes the car at the limiter line)
         car.strategy = { auto: false, stops: [], plan: '', pending: null }; car.wantPit = false; car.pitSpeedingChance = 0;
         const c = N.COMP.includes(p.compound) ? p.compound : suitCompound(race, 'M');   // (a picked tyre exactly; AUTO 'A': the one the conditions call for)
-        car.tyre.compound = c; car.tyre.wear = 0; car.compoundsUsed = [c]; car.grip = COMPOUNDS[c].grip;
+        car.tyre.compound = c; car.tyre.wear = 0; car.compoundsUsed = [c]; car.grip = COMPOUNDS[c].grip; car._startC = c;   // (_startC: the race start tyre after qualifying)
         if (CFG.setup && CFG.setup.apply) CFG.setup.apply(car, (p.setups && p.setups[S.trackId]) || null);   // the player's own wings (lobby setup)
         p.carId = car.id; p.loaded = false;
       } else G.brains.set(car, AI.create(car, this.diff, seed + car.id * 7919, G));
@@ -311,21 +329,26 @@ class RaceSim {
     this.t0 = now(); this.steps = 0; this.snapSeq = 0; this.snapT = this.t0; this.raceT = this.t0; this.infoT = this.t0; this.wxT = this.t0;
     this.phase = 'loading'; this.loadT0 = this.t0; this.sched = null; this.goSent = false; this.endT = null; this.evq = [];
     this.infoKey = new Map(); this.rKey = ''; this.results = null;
+    this.q = race.qs ? { seq: -1, idx: -1, st: '', sentT: 0, resT: 0, resKey: [], chkT: 0, gridT: null, grid: null } : null;   // qualifying: what was sent
     this._st = N.newState(); this._pr = {}; this._ex = {}; this._ex2 = {}; this._stN = N.newState();
     for (const p of humans) send(p, this.setupMsg(p));
     stats.races++;
     log(`room ${room.code}: race on ${track.id}, ${S.laps} laps, ${G.cars.length} cars (${humans.length} human), ${S.contact}`);
   }
   has(p) { return this.byPid.has(p.id); }
-  brief() { const lead = this.race.order[0]; return { mode: 'race', phase: this.race.phase, lap: lead ? Math.min(this.race.laps, Math.max(1, lead.lap | 0)) : 0, laps: this.race.laps, track: this.track.id }; }
+  brief() {
+    const lead = this.race.order[0], qs = this.race.qs, q = qs && qs.st !== 'done' ? (qs.st === 'break' ? 'BREAK' : qs.fmt.names[qs.idx]) : null;   // (q: the qualifying session running)
+    return { mode: 'race', phase: this.race.phase, lap: lead ? Math.min(this.race.laps, Math.max(1, lead.lap | 0)) : 0, laps: this.race.laps, track: this.track.id, q: q || undefined };
+  }
   setupMsg(p, resume) {
     const G = this.G, car = this.byPid.get(p.id);
     return {
       t: 'race', mode: 'race', seed: this.seed, settings: this.S, field: this.race.field.slice(), you: car ? car.id : -1, resume: !!resume,
       cars: G.cars.map(c => ({ id: c.id, team: c.teamIndex, pid: c.net ? c.net.p.id : null, name: c.net ? c.net.dname : null, first: c.firstName || '', last: c.lastName || c.name,
-        code: c.code, number: c.number, compound: c._race && c.compoundsUsed ? c.compoundsUsed[0] : c.tyre.compound, grid: c.grid })),
+        code: c.code, number: c.number, compound: c._race && c.compoundsUsed ? c.compoundsUsed[0] : c.tyre.compound, grid: c.grid, livery: (c.net && c.net.p.livery) || undefined })),
       epoch: car && car.net ? car.net.epoch : 0, sched: this.sched, t0: this.goSent ? this.raceT0 : null,
       mySetup: car && car.setup ? { fw: car.setup.fw, rw: car.setup.rw } : null,   // (only this player's own)
+      quali: this.race.qs ? { len: this.race.qs.len, brk: this.race.qs.brk, day: this.race.qs.day, key: this.race.qs.key, done: this.race.qs.st === 'done' } : null,   // (Q1 / Q2 / Q3: netcore qualiPatch)
     };
   }
   onJoin() {}
@@ -359,7 +382,41 @@ class RaceSim {
   onAway(p, m) {
     const car = this.byPid.get(p.id); if (!car || !car.net) return;
     if (m && m.lobby) car.net.lobby = true;   // (awayOf: the others see them in the lobby, their car as away)
-    if (!car.net.afk && this.race.phase === 'racing') { car.net.afk = true; log(`room ${this.room.code}: #${p.id} ${dname(p)} away -> AI drives`); }
+    if (!car.net.afk && (this.race.phase === 'racing' || this.race.phase === 'quali')) { car.net.afk = true; log(`room ${this.room.code}: #${p.id} ${dname(p)} away -> AI drives`); }   // (qualifying: on track the AI drives it in, a car in its garage stays)
+  }
+  // ---- qualifying (Quali; docs/QUALI_PLAN.md §7): GO OUT {c, fw, rw} (refused: {t: 'qgo', ok: false, why, wait}),
+  // RETURN TO GARAGE (in the garage at once, locked in for the drive back: car.q.lock), READY {v} in a break, host CONTINUE
+  onQ(p, m) {
+    const G = this.G, race = this.race, qs = race.qs, car = this.byPid.get(p.id);
+    if (!qs || race.phase !== 'quali' || qs.st === 'done' || this.phase !== 'run') return;
+    if (m.t === 'qcont') { if (this.room.host === p && qs.st === 'break') { Quali.cont(G); log(`room ${this.room.code}: host continued the break`); } return; }
+    if (!car || !car.net) return;
+    if (m.t === 'qready') { if (qs.st === 'break' && car.qOut < 0) { Quali.ready(G, p.id, m.v !== false); this.qReadyCheck(); } return; }
+    if (m.t === 'qgo') {
+      car.net.afk = false; car.net.lobby = false;   // (at the wheel)
+      const sel = { compound: N.COMP.includes(m.c) ? m.c : undefined, fw: m.fw != null ? +m.fw : undefined, rw: m.rw != null ? +m.rw : undefined };
+      if (!(sel.fw >= 1 && sel.fw <= 11)) delete sel.fw; if (!(sel.rw >= 1 && sel.rw <= 11)) delete sel.rw;
+      const r = Quali.goOut(G, car, sel);
+      if (!r.ok) send(p, { t: 'qgo', ok: false, why: r.why, wait: r.wait != null ? Math.round(r.wait * 10) / 10 : undefined });   // (the race starts on the last wings)
+      return;
+    }
+    if (m.t === 'qret') { const r = Quali.returnToGarage(G, car); if (r && r.ok) { car.wantPit = false; this.qSend(); } }
+  }
+  // a break ends when every human still in qualifying and online (not back in the lobby) is READY
+  qReadyCheck() {
+    const qs = this.race.qs;
+    if (!qs || qs.st !== 'break') return;
+    const want = this.G.cars.filter(c => c.net && c.qOut < 0 && this.online(c));
+    if (want.length && want.every(c => qs.ready[c.net.p.id])) { Quali.cont(this.G); log(`room ${this.room.code}: everyone ready, next session`); }
+  }
+  online(car) { const n = car.net; return !!n && connected(n.p) && n.p.room === this.room && !n.left && !n.lobby; }
+  // reset ghost (rewind agent; Physics.ghost*): the player reset to the track -> a ghost for everyone until up to speed
+  // (contact skipped in Physics.collide, never judged, AI cars drive through it); 'rg' {id, on} tells every client
+  onReset(p) {
+    const car = this.byPid.get(p.id);
+    if (!car || car.kinematic || car.finished || this.race.phase !== 'racing') return;
+    if (!car.ghosted) sendAll(this.room, { t: 'rg', id: car.id, on: 1 });
+    Physics.ghostStart(car);
   }
   // tyre choice made in the pit lane (after the limiter line the server drives: no STATE packets carry it then)
   onPitc(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c)) { car.nextCompound = m.c; car.wxStop = true; } }
@@ -395,10 +452,10 @@ class RaceSim {
     car.speed = Math.hypot(car.vx, car.vz); car.vLong = car.vx * ch + car.vz * sh; car.vLat = -car.vx * sh + car.vz * ch;
     car.surface = track.surface(car.s, car.d);
     car.offTrack = car.surface === SURF.GRASS || car.surface === SURF.GRAVEL || car.surface === SURF.RUNOFF;
-    if ((race.phase === 'racing') && !n.afk && tNow - n.recvT > AFK_MS) { n.afk = true; log(`room ${this.room.code}: #${n.p.id} ${n.dname} idle -> AI drives`); }
+    if ((race.phase === 'racing' || race.phase === 'quali') && !n.afk && tNow - n.recvT > AFK_MS) { n.afk = true; log(`room ${this.room.code}: #${n.p.id} ${n.dname} idle -> AI drives`); }
   }
   step(tNow) {
-    const G = this.G, race = this.race, dt = STEP, cars = G.cars, pre = race.phase === 'grid' || race.phase === 'lights';
+    const G = this.G, race = this.race, dt = STEP, cars = G.cars, pre = race.phase === 'grid' || race.phase === 'lights', gm = Physics.ghostAny(cars);   // (gm: reset ghosts, the AI drives through them)
     for (let i = 0; i < cars.length; i++) {
       const car = cars[i], n = car.net;
       if (n) {
@@ -406,26 +463,29 @@ class RaceSim {
         const want = car.kinematic ? 'pit' : !on || n.afk ? 'ai' : null;
         if (want && n.auth === 'client') { n.auth = 'server'; n.why = want; n.epoch = (n.epoch % 255) + 1; this.ctl(car); }
         else if (want && n.why !== want) { n.why = want; this.ctl(car); }
-        else if (!want && n.auth === 'server') { n.auth = 'client'; n.why = null; n.epoch = (n.epoch % 255) + 1; n.rep = null; n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; this.ctl(car, tNow - STEPMS); }
+        else if (!want && n.auth === 'server') { n.auth = 'client'; n.why = null; n.epoch = (n.epoch % 255) + 1; n.rep = null; n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; if (race.qs) car.wantPit = false; this.ctl(car, tNow - STEPMS); }
         if (n.auth === 'client') { this.netPose(car, n, tNow, dt); continue; }
         if (car.kinematic) continue;
+        if (race.phase === 'quali' && race.qs) car.wantPit = true;   // (qualifying: away / offline on track -> the AI drives it to its garage)
         let inp = Race.controlOverride(G, car);
         if (!inp && pre) inp = IDLE;
-        if (!inp) { if (!n.brain) n.brain = AI.create(car, this.diff, this.seed + car.id * 131, G); inp = AI.drive(n.brain, car, G, dt); }
+        if (!inp) { if (!n.brain) n.brain = AI.create(car, this.diff, this.seed + car.id * 131, G); if (gm) Physics.ghostMask(cars, true, car); inp = AI.drive(n.brain, car, G, dt); if (gm) Physics.ghostMask(cars, false); }
         Physics.step(car, inp, dt, G.world);
         continue;
       }
       let inp = Race.controlOverride(G, car);
       if (!inp && pre && !(race.releaseEarly && race.releaseEarly.has(car))) inp = IDLE;
-      if (!inp) { const b = G.brains.get(car); inp = b ? AI.drive(b, car, G, dt) : IDLE; }
+      if (!inp) { const b = G.brains.get(car); if (gm) Physics.ghostMask(cars, true, car); inp = b ? AI.drive(b, car, G, dt) : IDLE; if (gm) Physics.ghostMask(cars, false); }
       Physics.step(car, inp, dt, G.world);
     }
     // ghosting: human cars touch nobody (AI cars still race each other); contact: everyone collides
     if (this.ghost) for (const c of cars) if (c.net && !c.kinematic) { c._gk = true; c.kinematic = true; }
     Physics.collide(cars, dt, G.events);
     if (this.ghost) for (const c of cars) if (c._gk) { c._gk = false; c.kinematic = false; }
+    if (gm) for (const c of cars) if (c.ghosted && !Physics.ghostStep(c, cars, this.track, dt)) sendAll(this.room, { t: 'rg', id: c.id, on: 0 });   // (reset ghost over)
     const wasRacing = race.phase === 'racing';
     Race.update(G, dt);
+    if (this.q) this.qStep(tNow);   // (qualifying: nobody left in it -> the rest simulated; everyone READY in a break)
     G.time += dt;
     if (!wasRacing && race.phase === 'racing' && !this.goSent) {   // lights out: the race clock's zero on the server clock
       this.goSent = true; this.raceT0 = tNow - race.t * 1000;
@@ -434,10 +494,85 @@ class RaceSim {
     for (let i = 0; i < G.events.length; i++) {
       const ev = G.events[i];
       if (ev.type === 'raceEnd') this.onRaceEnd(tNow);
+      if (this.q && ev.type[0] === 'q') this.qEvent(ev, tNow);
       const o = N.packEvent(ev);
       if (o) this.evq.push(o);
     }
     G.events.length = 0;
+  }
+  // the lights: step k runs at t0 + k * STEPMS, so Race's phase clock matches this schedule (after loading, or once the
+  // grid after qualifying is loaded)
+  startLights(t) {
+    const race = this.race, R = CFG.race, g = t;
+    if (race.awaitConfirm) Race.confirmGrid(this.G);
+    this.t0 = t; this.steps = 0;
+    this.sched = { grid: g, lights: [0, 1, 2, 3, 4].map(k => g + (R.lightsDelay + k * R.lightsInterval) * 1000), out: g + (R.lightsDelay + 4 * R.lightsInterval + race.holdT) * 1000 };
+    for (const car of this.G.cars) if (car.net) car.net.recvT = t;
+    sendAll(this.room, { t: 'sched', sched: this.sched });
+    this.room.phase = 'race'; this.room.urgent = true;
+  }
+  // ---- qualifying (Quali runs in Race.update; clients mirror it: 'qs' state + clock stamp, 'qres' session rows,
+  // 'qgrid' the grid; car fields in 'info')
+  qStep(tNow) {
+    const G = this.G, race = this.race, qs = race.qs;
+    if (race.phase !== 'quali' || !qs || qs.st === 'done' || race.awaitConfirm || tNow - this.q.chkT < 100) return;
+    this.q.chkT = tNow;
+    if (!Quali.humansIn(G, c => this.online(c))) {   // every online human knocked out / gone: the rest at once (events sim: true)
+      log(`room ${this.room.code}: no human left in ${qs.st === 'break' ? 'qualifying' : qs.fmt.names[qs.idx]}, the rest simulated`);
+      Quali.simulateRest(G);
+      return;
+    }
+    if (qs.st === 'break') this.qReadyCheck();
+  }
+  qEvent(ev, tNow) {
+    const G = this.G, car = ev.car;
+    if (ev.type === 'qEnd') { this.qSendRes(ev.idx, true); this.qSend(); }
+    else if (ev.type === 'qBest') this.qSendRes(this.race.qs.idx);   // (a new time on every client's board at once; laps counted: qTick)
+    else if (ev.type === 'qElim' && car && car.net && car.q && car.q.st !== 'garage' && car.q.st !== 'parked') Quali.returnToGarage(G, car);   // (knocked out: a spectator, the car in its garage)
+    else if (ev.type === 'qDone') {
+      for (const c of G.cars) { if (c.net) c.net.brain = null; else G.brains.set(c, AI.create(c, this.diff, this.seed + c.id * 7919, G)); }   // (race brains: launch from the grid)
+      for (const p of this.humans) p.loaded = false;
+      this.qSend();
+      const qs = this.race.qs, r3 = v => (v == null ? null : Math.round(v * 1000) / 1000);
+      this.q.grid = { t: 'qgrid', cars: G.cars.map(c => ({ id: c.id, grid: c.grid, compound: c.tyre.compound })), pen: qs.pen, warn: qs.warn, imp: qs.imp,
+        final: (qs.final || []).map(r => ({ id: r.id, pos: r.pos, grid: r.grid, q: r.q.map(r3), pen: r.pen, why: r.why })) };
+      sendAll(this.room, this.q.grid);
+      this.q.gridT = tNow;
+      log(`room ${this.room.code}: qualifying over, pole ${G.race.order[0] ? G.race.order[0].code : '?'}`);
+    }
+  }
+  qMsg() {
+    const qs = this.race.qs, m = Quali.stateMsg(this.G);
+    return { t: 'qs', i: m.i, st: m.st, qt: m.t, clock: m.clock, ts: Math.round((this.t0 + this.steps * STEPMS) * 10) / 10, flagAt: m.flagAt, g: m.g, f: m.f, inS: m.inS, out: m.out,
+      ready: m.ready, pen: m.pen, warn: m.warn, seq: m.seq, sbs: qs.sbs, best: qs.best, imp: qs.imp };
+  }
+  qSend(only) {
+    const m = this.qMsg();
+    if (only) return send(only, m);
+    this.q.seq = this.race.qs.seq; this.q.sentT = now();
+    sendAll(this.room, m);
+  }
+  // a session's rows (ms, sent when they change: a new best, a lap counted)
+  qSendRes(idx, force, only) {
+    const r = Quali.resMsg(this.G, idx), r3 = v => (v == null ? null : Math.round(v * 1000) / 1000);
+    if (!r) return;
+    const rows = r.rows.map(x => ({ id: x.id, best: r3(x.best), s: (x.s || []).map(r3), at: x.at == null ? null : Math.round(x.at * 10) / 10, c: x.c, laps: x.laps, del: x.del }));
+    const m = { t: 'qres', i: idx, rows, out: r.out }, k = JSON.stringify(m);
+    if (only) return send(only, m);
+    if (!force && this.q.resKey[idx] === k) return;
+    this.q.resKey[idx] = k;
+    sendAll(this.room, m);
+  }
+  qTick(t) {
+    const qs = this.race.qs, q = this.q;
+    if (this.phase !== 'run') return;
+    if (qs.st !== 'done') {
+      if (qs.seq !== q.seq || t - q.sentT >= 1000) this.qSend();
+      if (t - q.resT >= 400) { q.resT = t; this.qSendRes(qs.idx); }
+    } else if (q.gridT != null && !this.sched) {   // the grid: the lights once every racer has it (or after QGRID_WAIT)
+      const all = this.G.cars.every(c => !c.net || c.net.p.loaded || !this.online(c));
+      if (all || t - q.gridT > QGRID_WAIT) this.startLights(t);
+    }
   }
   onRaceEnd(tNow) {
     if (this.results) return;
@@ -472,22 +607,24 @@ class RaceSim {
     if (this.phase === 'loading') {   // wait for every racing client to build the circuit, then start the lights
       const all = this.humans.every(p => p.loaded || !connected(p) || p.room !== this.room);
       if (!all && t - this.loadT0 < LOAD_TIMEOUT) return;
-      this.phase = 'run'; Race.confirmGrid(this.G);
-      this.t0 = t; this.steps = 0;
-      const R = CFG.race, g = t;   // step k runs at t0 + k * STEPMS, so Race's phase clock matches this schedule
-      this.sched = { grid: g, lights: [0, 1, 2, 3, 4].map(k => g + (R.lightsDelay + k * R.lightsInterval) * 1000), out: g + (R.lightsDelay + 4 * R.lightsInterval + race.holdT) * 1000 };
-      for (const car of this.G.cars) if (car.net) car.net.recvT = t;
-      sendAll(this.room, { t: 'sched', sched: this.sched });
-      this.room.phase = 'race'; this.room.urgent = true;
+      this.phase = 'run';
+      if (race.qs) {   // qualifying first: Q1 green now (the clock runs from this step on), no lights
+        Race.confirmGrid(this.G); this.t0 = t; this.steps = 0;
+        for (const car of this.G.cars) if (car.net) car.net.recvT = t;
+        this.room.phase = 'race'; this.room.urgent = true;
+        log(`room ${this.room.code}: qualifying ${race.qs.fmt.names.join(' ')} (${race.qs.len.map(x => Math.round(x / 60)).join(' / ')} min)`);
+      } else this.startLights(t);
     }
     const want = Math.floor((t - this.t0) / STEPMS);
     let k = 0;
     while (this.steps < want && k < 24) { this.steps++; this.step(this.t0 + this.steps * STEPMS); k++; }
     if (this.steps < want) { this.lag = (this.lag || 0) + (want - this.steps); this.steps = want; }
     this.flush();
+    if (this.q) this.qTick(t);
     if (t - this.snapT >= 1000 / N.HZ.snap) { this.snapT = Math.max(this.snapT + 1000 / N.HZ.snap, t - 100); this.snapshots(t); }
     if (t - this.raceT >= 1000 / N.HZ.race) { this.raceT = Math.max(this.raceT + 1000 / N.HZ.race, t - 200); this.raceBlock(); this.info(); }
-    if (race.wx && t - this.wxT >= 1000) { this.wxT = t; const W = race.wx; sendAll(this.room, { t: 'wx', x: W.x, wet: W.wet, rain: W.rain, trend: W.trend }); }
+    const W = race.qs && race.qs.st !== 'done' && race.phase === 'quali' ? race.qs.W : race.wx;   // (qualifying: its own weather, time clock wt)
+    if (W && W.dynamic && t - this.wxT >= 1000) { this.wxT = t; sendAll(this.room, { t: 'wx', x: W.x, wet: W.wet, rain: W.rain, trend: W.trend, wt: W.clock === 'time' ? Math.round(W.t * 100) / 100 : undefined }); }
     if (this.endT != null && t - this.endT > 45000) this.stop();   // cool-down laps done
   }
   snapshots(t) {
@@ -548,6 +685,8 @@ class RaceSim {
     car.net.left = false; car.net.afk = false; car.net.lobby = false;
     send(p, this.setupMsg(p, true));
     const k = new Map(this.infoKey); this.info(true, p); this.infoKey = k;
+    if (this.q && this.race.qs.st !== 'done') { this.qSend(p); for (let i = 0; i <= this.race.qs.idx; i++) this.qSendRes(i, true, p); }   // (qualifying: the whole picture)
+    if (car.net.auth === 'server') this.ctl(car);   // (the server has the car — garage / pit lane / AI: a fresh page follows it)
     if (this.results) send(p, this.resFor(p));
   }
 }
@@ -576,7 +715,7 @@ class TTSim {
       let id = this.slots.findIndex(x => !x);
       if (id < 0) id = this.slots.length;
       if (id >= 40) return null;
-      e = { id, p, rep: null, recvT: 0, prog: 0, lastS: null, best: null, bestS: null, laps: 0, last: null, ghost: null, ghostT: null, active: true };
+      e = { id, p, rep: null, recvT: 0, prog: 0, lastS: null, best: null, bestS: null, bs: null, laps: 0, last: null, ghost: null, ghostT: null, active: true };
       this.slots[id] = e; this.ent.set(p.id, e);
     }
     e.active = true; e.away = false;
@@ -590,9 +729,9 @@ class TTSim {
     const e = this.ent.get(p.id);
     const su = p.setups && p.setups[this.S.trackId];
     return { t: 'race', mode: 'timetrial', seed: this.seed, settings: this.S, you: e ? e.id : -1, players: this.rosterList(), mySetup: su ? { fw: su.fw, rw: su.rw } : null,
-      cars: [{ id: e ? e.id : 0, team: p.team, pid: p.id, name: dname(p), number: p.number, compound: p.compound, grid: 1 }] };
+      cars: [{ id: e ? e.id : 0, team: p.team, pid: p.id, name: dname(p), number: p.number, compound: p.compound, grid: 1, livery: p.livery || undefined }] };
   }
-  rosterList() { return this.slots.filter(Boolean).map(e => ({ id: e.id, pid: e.p.id, name: dname(e.p), team: e.p.team, number: e.p.number, active: e.active && connected(e.p) })); }
+  rosterList() { return this.slots.filter(Boolean).map(e => ({ id: e.id, pid: e.p.id, name: dname(e.p), team: e.p.team, livery: e.p.livery || undefined, number: e.p.number, active: e.active && connected(e.p) })); }
   roster() { sendAll(this.room, { t: 'roster', players: this.rosterList() }); }
   onJoin() {}
   onLeave(p) { const e = this.ent.get(p.id); if (e) { e.active = false; this.roster(); } }
@@ -623,6 +762,8 @@ class TTSim {
     e.prog = 0;
     if (!ok) return;
     e.laps++; e.last = time;
+    // [UF sectors] each sector's best of every valid lap (not only the best lap's): everyone's purple sectors follow it
+    if (sec) { const b = e.bs || (e.bs = [null, null, null]); for (let k = 0; k < 3; k++) if (sec[k] > 0 && !(b[k] > 0 && b[k] <= sec[k])) b[k] = sec[k]; }
     if (e.best == null || time < e.best) { e.best = time; e.bestS = sec; e.ghost = null; e.ghostT = time; }
     this.leaderboard();
   }
@@ -636,11 +777,11 @@ class TTSim {
   getGhost(p, m) {
     const e = [...this.ent.values()].find(x => x.p.id === (m.pid | 0));
     if (!e || !e.ghost) return send(p, { t: 'ghost', pid: m.pid | 0, data: null });
-    send(p, { t: 'ghost', pid: e.p.id, name: dname(e.p), team: e.p.team, time: e.best, data: e.ghost });
+    send(p, { t: 'ghost', pid: e.p.id, name: dname(e.p), team: e.p.team, livery: e.p.livery || undefined, time: e.best, data: e.ghost });
   }
   leaderboard(force) {
     const rows = [...this.ent.values()].filter(e => e.best != null).sort((a, b) => a.best - b.best)
-      .map(e => ({ pid: e.p.id, id: e.id, name: dname(e.p), team: e.p.team, number: e.p.number, best: e.best, s: e.bestS, laps: e.laps, ghost: !!e.ghost }));
+      .map(e => ({ pid: e.p.id, id: e.id, name: dname(e.p), team: e.p.team, livery: e.p.livery || undefined, number: e.p.number, best: e.best, s: e.bestS, bs: e.bs || undefined, laps: e.laps, ghost: !!e.ghost }));
     const k = JSON.stringify(rows);
     if (!force && k === this.lbKey) return;
     this.lbKey = k;
@@ -722,6 +863,8 @@ function onText(p, raw) {
     case 'reclaim': if (sim) sim.onReclaim(p); break;
     case 'away': if (sim && sim.onAway) sim.onAway(p, m); break;   // (m.lobby: went back to the lobby)
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
+    case 'rst': if (sim && sim.onReset) sim.onReset(p); break;   // (reset ghost: the player pressed R)
+    case 'qgo': case 'qret': case 'qready': case 'qcont': if (sim && sim.onQ) sim.onQ(p, m); break;   // (qualifying)
     case 'lap': if (sim && sim.onLap) sim.onLap(p, m); break;
     case 'ghost': if (sim && sim.onGhost) sim.onGhost(p, m); break;
     case 'getghost': if (sim && sim.getGhost) sim.getGhost(p, m); break;
@@ -750,7 +893,7 @@ function onConnection(ws) {
         if (p.room) { p.room.urgent = true; if (p.room.sim && p.room.sim.resume) p.room.sim.resume(p); else if (p.room.sim && p.room.sim.mode === 'timetrial' && p.room.sim.has(p)) p.room.sim.add(p); }
         log(`#${p.id} ${dname(p)} reconnected`);
       } else {
-        p = { id: nextPid++, token: crypto.randomBytes(12).toString('hex'), name: N.cleanName(m.name), ws, room: null, team: -1, number: 7, compound: 'A', ready: false, ping: 0, discT: null, carId: null };
+        p = { id: nextPid++, token: crypto.randomBytes(12).toString('hex'), name: N.cleanName(m.name), ws, room: null, team: -1, livery: null, number: 7, compound: 'A', ready: false, ping: 0, discT: null, carId: null };
         byToken.set(p.token, p);
         ws.send(JSON.stringify({ t: 'welcome', id: p.id, token: p.token, s: now(), resumed: false }));
       }
