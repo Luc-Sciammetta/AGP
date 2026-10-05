@@ -64,6 +64,17 @@ const NAMES = {
     'Tobias', 'Tomas', 'Tristan', 'Ugo', 'Valentin', 'Vasco', 'Viktor', 'Vincenzo', 'Wiktor', 'Xavier', 'Yannick',
     'Yusuf', 'Zane', 'Zeno', 'Zoltan', 'Amara', 'Beatriz', 'Chiara', 'Elena', 'Freya', 'Ines', 'Isla', 'Kira',
     'Leila', 'Maya', 'Noor', 'Sofia', 'Yuki', 'Zara',
+    'Abel', 'Ada', 'Adele', 'Ahmed', 'Aiko', 'Ali', 'Anika', 'Astrid', 'Bao', 'Camila',
+    'Caspar', 'Chidi', 'Ciaran', 'Clara', 'Elif', 'Elio', 'Emeka', 'Esme', 'Ezra', 'Farah',
+    'Giulia', 'Hamza', 'Hana', 'Ilse', 'Imani', 'Isak', 'Jonas', 'Lena', 'Liang', 'Lucia',
+    'Matilde', 'Mika', 'Naveen', 'Nico', 'Nils', 'Odile', 'Priya', 'Rafael', 'Rei', 'Rhys',
+    'Rocco', 'Rosa', 'Saskia', 'Selin', 'Tariq', 'Teo', 'Thea', 'Uma', 'Vera', 'Wren',
+    'Yara', 'Zoe', 'Joon', 'Thiago', 'Amaru',
+    'Aarne', 'Abebe', 'Adaeze', 'Agnes', 'Alaric', 'Alma', 'Ambrose', 'Anouk', 'Ansel', 'Arlo',
+    'Ayla', 'Bodhi', 'Bram', 'Brigid', 'Cassius', 'Celeste', 'Cosimo', 'Dagny', 'Delphine', 'Eliska',
+    'Fenna', 'Galen', 'Greta', 'Halvard', 'Ilona', 'Ismael', 'Jarek', 'Jovan', 'Juno', 'Kasimir',
+    'Kirra', 'Leif', 'Linnea', 'Lior', 'Magnus', 'Maren', 'Marlo', 'Nilo', 'Oriana', 'Orrin',
+    'Sabine', 'Tamsin', 'Ulrik', 'Vesna', 'Wilhelmina',
   ],
   last: [
     'Abara', 'Achterberg', 'Adeyemi', 'Albescu', 'Almeida', 'Amberg', 'Andersen', 'Arrieta', 'Asano', 'Aurel',
@@ -82,6 +93,27 @@ const NAMES = {
     'Stavros', 'Strand', 'Suarez', 'Szabo', 'Takeda', 'Tanaka', 'Tavares', 'Thorsen', 'Toledo', 'Trevisan', 'Uchida',
     'Urquhart', 'Valdez', 'Vance', 'Varela', 'Vasquez', 'Vesely', 'Villanova', 'Voss', 'Wakefield', 'Weber',
     'Whitlock', 'Wojcik', 'Yamaguchi', 'Yildiz', 'Zamora', 'Zanetti', 'Zeller', 'Zielinski', 'Ziegler',
+    'Aalto', 'Abbasi', 'Acosta', 'Adler', 'Agarwal', 'Ahn', 'Aksoy', 'Alcantara', 'Amato', 'Andrade',
+    'Arbeloa', 'Arslan', 'Asante', 'Aubert', 'Avila', 'Baptiste', 'Barbosa', 'Barzani', 'Bauer', 'Becker',
+    'Benedetti', 'Berg', 'Bertolini', 'Bjork', 'Boateng', 'Bonnet', 'Borg', 'Brodsky', 'Bryce', 'Caballero',
+    'Cardoso', 'Castellano', 'Chandra', 'Chavez', 'Cicek', 'Conti', 'Cruz', 'Dahl', 'Dalton', 'Daniels',
+    'Demirci', 'Dias', 'Dlamini', 'Dorsey', 'Dufresne', 'Eckert', 'Eklof', 'Elmas', 'Engel', 'Escobar',
+    'Esteves', 'Farouk', 'Fiala', 'Fischer', 'Fonseca', 'Fournier', 'Fujita', 'Galan', 'Gallo', 'Gashi',
+    'Goncalves', 'Gunnarsson', 'Haugen', 'Hendricks', 'Hoffmann', 'Holm', 'Horvat', 'Ishida', 'Ivanov', 'Jakobsen',
+    'Janssen', 'Juarez', 'Kagame', 'Kaplan', 'Karlsson', 'Kasprzak', 'Kato', 'Keller', 'Kimura', 'Kiraly',
+    'Koenig', 'Kovacs', 'Kraus', 'Kurt', 'Lachance', 'Lambert', 'Landry', 'Laurent', 'Lindgren', 'Lopes',
+    'Lund', 'Machado', 'Maier', 'Marin', 'Mazur', 'Meier', 'Mendes', 'Moretti', 'Mori', 'Mukherjee',
+    'Nakamura', 'Nemeth', 'Nilsson', 'Nkosi', 'Nowak', 'Obi', 'Oduya', 'Okafor', 'Olsen', 'Ortega',
+    'Ozturk', 'Palmer', 'Popescu', 'Quintero', 'Rahman', 'Ramos', 'Rasmussen', 'Ribeiro', 'Romano', 'Rossetti',
+    'Ruiz', 'Sahin', 'Salazar', 'Santos', 'Sato', 'Schmid', 'Silva', 'Sorensen', 'Steiner', 'Suzuki',
+    'Toth', 'Torres', 'Ueda', 'Uribe', 'Valentini', 'Varga', 'Vidal', 'Vogel', 'Volkov', 'Wagner',
+    'Weiss', 'Winter', 'Wolff', 'Yamada', 'Yoon', 'Zoric', 'Abernathy', 'Brightwell', 'Dunmore', 'Everly',
+    'Fairbanks', 'Galloway', 'Hargrove', 'Ingram', 'Jessop', 'Kingsley', 'Lockwood', 'Merriweather', 'Northcott', 'Oakley',
+    'Pemberton', 'Quayle', 'Radcliffe', 'Stanhope', 'Thornbury',
+    'Ashdown', 'Blackwood', 'Carrow', 'Davenport', 'Eastwood', 'Grimsby', 'Iverson', 'Langford', 'Okonjo', 'Pellegrini',
+    'Quarles', 'Rourke', 'Sinclair', 'Tremaine', 'Underhill', 'Vanterpool', 'Zahradnik', 'Ashworth', 'Beckford', 'Cranford',
+    'Delvecchio', 'Ellingsen', 'Fairweather', 'Grantham', 'Hollister', 'Ikeda', 'Jauregui', 'Kilbride', 'Lindholm', 'Marchand',
+    'Nordstrom', 'Ostrowski', 'Prescott', 'Ravensworth', 'Tillman',
   ],
 };
 
@@ -725,6 +757,16 @@ const Livery = (() => {
 //   runoff: {straight, outside, inside (m beyond the edge/kerb), style: 'park' | 'street'}.
 //   runoffZones (optional): [{from, to, side (-1 left / 1 right / 0 both), surf: 'gravel' | 'paved' | 'grass'}] overrides
 //   the automatic run-off surface on that stretch (outside of fast bends = gravel, of slow ones = paved, else grass).
+//   Optional w (m beyond the asphalt edge): the barrier moves out to there (paved by default; ~8 m taper beyond the ends,
+//   max over overlapping zones, never past another part of the track or the inside of a tight bend). Street circuits
+//   only use zones with w.
+//   escapes (optional): [{at, side (outside: -1 left / 1 right), len (m), w (m)}] straight-on escape roads: a w wide
+//   paved rectangle from the corner entry `at` along the approach direction, len m long; barriers on `side` enclose it.
+//   openAreas (optional): [{from, to, side}] one open paved bay enclosed by the `side` track edge from..to and a straight
+//   barrier (the chord) between the barrier points at from and to; cars may cross it onto the other part of the track
+//   (an off-track gain like any other: track limits / cut). Replaces run-off zones on that side there.
+//   crown (optional): [{from, to, slope}] road crown (camber): the surface falls `slope` per metre from the centreline to
+//   each edge (2 % = 0.02, ~12 cm at a 6 m half width), faded in / out over 30 m; elevAt and physics include it.
 //
 // theme (all hex strings unless noted), passed through to track.theme:
 //   sky, skyTop (zenith), fog, sun, grass, ground (far terrain), runoff (paved run-off), gravel, asphalt, line (edge
@@ -746,6 +788,10 @@ const Livery = (() => {
 //   floors of the scattered buildings (default 3); mesas: bool (flat-topped buttes in the distant hills, colours from
 //   theme.hill / theme.hillDark); grassSeating: [{at, side, dist (m beyond the barrier), len}] spectator banks;
 //   speedTrap: {at} roadside sensor post (the only start / finish line is `start`: timing, chequers, gantry)
+//   town circuits (traced from a layout drawing; s = metres from the line, d = metres right (+) / left (-), see render3d.js):
+//   areas: [{from, to, side (0 = both), kind: 'forest' | 'town' | 'commercial'}] land beyond the walls; streets: polylines
+//   of [s, d] (side streets, closed at the walls); pond: ring of [s, d]; grandstands may carry dist (m beyond the barrier);
+//   standStyle: 'temporary' (steel stands)
 // climate (dynamic weather, read by weather.js): {when (race date / the real place), wetDay (chance of a >= 1 mm day
 //   then), rain (share of races with any rain), start (share of those raining at the lights)}; sources in weather.js.
 const TRACK_DATA = {
@@ -1454,6 +1500,124 @@ const TRACK_DATA = {
       marshalPosts: true, lights: false,
     },
   },
+  kettle: {
+    id: 'kettle',
+    name: 'Kettle Pond Street Circuit',
+    country: 'USA (fictional, Massachusetts)',
+    character: 'street',
+    // setup screen: the engineer's opening line (the street default says "no real straights"; this one has two long ones)
+    engineerWhy: ['Two long straights, but walls everywhere in between', 'The downhill straight wants low drag, the town corners want grip',
+      'Top speed counts on the two straights, but the walls punish a loose car'],
+    width: 12, heading0: -5.1, transition: 16,
+    segs: [[544],[591,-1.4],[468],[110,-29.4],[64],[85,51.4],[35],[16,-90.2],[246],[901,8.4],[128],[171,19.6],[9],[95,-62],[77],[110,45],[39],[100,-50],[14],[109,28.1],[37],[90,-50],[4],[83,45.4],[135],[22,-151.8],[1231],[20,90],[61],[60,-55.4],[31],[73,73.3],[136],[18,-116.8],[71],[15,-88],[7],[37,84.3],[26],[49,60.3],[51],[76,-88.8],[76],[117,12.2],[11],[16,-94.9]],
+    close: [26, 2],
+    start: [0,499],
+    zones: [{ s0: -382, s1: 196 }, { s0: 2077, s1: 3037 }],
+    turns: [[3,28],[5,38],[7,13],[13,51],[15,43],[17,44],[21,39],[25,29],[27,16],[29,29],[31,47],[33,18],[35,11],[37,27],[39,26],[41,59],[45,13]],
+    sectors: [[15, 83], 3037],   // sector 3 = the end of the downhill Straight-mode zone (one line for both)
+    detect: [42,42],
+    pit: { side: 1, entry: [0,118], exit: [2,138], blendIn: 90, blendOut: 90, boxSpacing: 14 },
+    widths: [{ from: [7, -12], to: [7, 37], w: 13 }, { from: [25, -15], to: [25, 73], w: 15 }, { from: [27, -12], to: [27, 43], w: 13 }],
+    elevation: [[[0, 0], 0], [[5, 0], 0.5], [[7, 30], 1.5], [[10, 0], 6], [[13, 50], 11], [[15, 45], 14], [[17, 45], 17], [[21, 78], 20], [[25, 0], 20], [[26, 60], 19.5], [[26, 1144], 1.5], [[27, 18], 0.5], [[33, 0], 0]],
+    crown: [{ from: [7, 13], to: [21, 78], slope: 0.02 }],
+    runoff: { straight: 1.5, outside: 2.5, inside: 1.2, style: 'street' },
+    // the drawing's light-gray run-off: paved aprons beside the track (w = metres beyond the edge) + straight-on escape roads
+    runoffZones: [
+      { from: [7, 20], to: [8, 45], side: 1, surf: 'paved', w: 9 },        // T3 exit, outside strip
+      { from: [25, -110], to: [25, 0], side: 1, surf: 'paved', w: 20 },    // T8 approach, outside
+      { from: [25, 0], to: [25, 58], side: 1, surf: 'paved', w: 12 },   // round the T8 hairpin
+      { from: [27, 20], to: [28, 40], side: -1, surf: 'paved', w: 10 },    // T9 exit, outside strip
+      { from: [33, -25], to: [34, 20], side: 1, surf: 'paved', w: 28 },    // round the T12 hairpin
+      { from: [34, 0], to: [35, 15], side: 1, surf: 'paved', w: 16 },      // outside T13
+      { from: [41, 59], to: [42, 40], side: 1, surf: 'paved', w: 30 },   // outside T16
+      { from: [45, -10], to: [45, 26], side: 1, surf: 'paved', w: 35 },   // outside T17
+    ],
+    openAreas: [{ from: [33, -70], to: [38, 10], side: -1 }],   // the paved bay inside T12 / T13 / T14 (one wall: the chord, as drawn)
+    escapes: [   // straight on from the corner entry: {at, side (outside), len (m from at), w}
+      { at: [7, 0], side: 1, len: 55, w: 14 },     // T3
+      { at: [25, 0], side: 1, len: 60, w: 16 },    // T8, up to the wall at the top
+      { at: [27, 0], side: -1, len: 60, w: 15 },   // T9, down the hill
+    ],
+    climate: { when: 'early November (Massachusetts)', wetDay: 0.33, rain: 0.23, start: 0.5 },   // frontal rain: often already falling at the lights
+    lapRecordHint: '1:20',
+    description: 'Closed-off streets in a small Massachusetts town in late autumn: walls inches away, a gentle climb through the crowned esses past white clapboard houses to the hairpin at the top of the hill, then a 1.2 km plunge back down through the maple woods to the Turn 9 stop and a tight, flat twist through town onto the main street.',
+    theme: {
+      sky: '#b9cadb', skyTop: '#5b84b4', fog: '#cfd4d6', sun: '#ffe3bd', grass: '#7f8a4c', ground: '#6e6a4f',
+      runoff: '#8d9094', gravel: '#bfae8e', asphalt: '#36383c', line: '#f2f2f2', kerbA: '#d22630', kerbB: '#f2f2f2',
+      barrier: '#cfd0cc', tyreWall: '#222326', water: '#41617a', building: '#ece7db', timeOfDay: 'day', palette: 'day', street: true,
+      hill: '#86735a', hillDark: '#4d4a3b',   // distant wooded hills in late autumn
+      sunElevation: 0.42, fogNear: 500, fogFar: 3200,   // low November sun
+    },
+    // scenery traced from the layout drawing (tools/tracks_ref/kettle_layout.jpg, generator tools/tracks_ref/kettle_fit/scen2.mjs):
+    // s = metres from the line, d = metres right (+) / left (-) of the racing direction
+    scenery: {
+      pitBuilding: { from: [0, 284], to: [0, 562] },
+      grandstands: [
+        { at: 1810, side: 1, len: 95, rows: 8, dist: 40 },
+        { at: 1602, side: 1, len: 86, rows: 8, dist: 21 },
+        { at: 2643, side: 1, len: 190, rows: 10, dist: 21 },
+        { at: 3583, side: 1, len: 75, rows: 8, dist: 5 },
+        { at: 3370, side: 1, len: 112, rows: 8, dist: 28 },
+        { at: 3154, side: -1, len: 88, rows: 8, dist: 26 },
+        { at: 3749, side: 1, len: 110, rows: 8, dist: 21 },
+        { at: 401, side: -1, len: 81, rows: 8, dist: 21 },
+        { at: 3890, side: -1, len: 40, rows: 8, dist: 28 },
+        { at: 4101, side: 1, len: 55, rows: 8, dist: 23 },
+      ],
+      areas: [   // land beside the track: 'forest' (autumn woods), 'town' (single-family houses), 'commercial' (side 0 = both)
+        { from: 0, to: 220, side: -1, kind: 'town' },
+        { from: 220, to: 400, side: -1, kind: 'forest' },
+        { from: 400, to: 640, side: -1, kind: 'town' },
+        { from: 640, to: 1760, side: -1, kind: 'forest' },
+        { from: 1760, to: 1960, side: -1, kind: 'town' },
+        { from: 1960, to: 2040, side: -1, kind: 'forest' },
+        { from: 2040, to: 2100, side: -1, kind: 'town' },
+        { from: 2100, to: 2920, side: -1, kind: 'forest' },
+        { from: 2920, to: 3240, side: -1, kind: 'town' },
+        { from: 3240, to: 3500, side: -1, kind: 'forest' },
+        { from: 3500, to: 3780, side: -1, kind: 'town' },
+        { from: 3780, to: 4500, side: -1, kind: 'forest' },
+        { from: 4500, to: 4667, side: -1, kind: 'town' },
+        { from: 0, to: 300, side: 1, kind: 'town' },
+        { from: 300, to: 440, side: 1, kind: 'forest' },
+        { from: 440, to: 1480, side: 1, kind: 'town' },
+        { from: 1480, to: 1620, side: 1, kind: 'forest' },
+        { from: 1620, to: 2140, side: 1, kind: 'town' },
+        { from: 2140, to: 3220, side: 1, kind: 'forest' },
+        { from: 3220, to: 3280, side: 1, kind: 'town' },
+        { from: 3280, to: 3340, side: 1, kind: 'forest' },
+        { from: 3340, to: 3520, side: 1, kind: 'town' },
+        { from: 3520, to: 3760, side: 1, kind: 'forest' },
+        { from: 3760, to: 4100, side: 1, kind: 'town' },
+        { from: 4100, to: 4440, side: 1, kind: 'forest' },
+        { from: 4440, to: 4667, side: 1, kind: 'town' },
+        { from: 4367, to: 420, side: 0, kind: 'commercial' },
+        { from: 3038, to: 3288, side: 0, kind: 'commercial' },
+      ],
+      pond: [[2443,542],[2463,539],[2483,539],[2498,554],[2508,569],[2523,576],[2545,586],[2561,604],[2549,626],[2536,643],[2523,656],[2510,667],[2495,675],[2481,706],[2457,705],[2441,684],[2435,660],[2431,644],[2421,634],[2403,622],[2386,601],[2392,580],[2409,564],[2423,549]],   // the kettle pond west of the downhill straight: ring of [s, d]
+      streets: [   // side streets (hand-traced from the drawing): polylines of [s, d]; an end on a wall gets a gate, map-edge ends run on 250 m
+        [[1886,327.8],[1951,205.6],[2008,204],[2068,192.6],[2128,181.2],[2189,165.8]],
+        [[1958,202.9],[1960,145.4],[1956,82.2],[1954,34.5],[1951,8.6]],
+        [[1746,23.1],[1750,92.5],[1596,409.5]],
+        [[2195,-7.5],[2193,-58.8],[2209,-89.5],[2238,-100.5],[2290,-100.7]],
+        [[1433,10],[1431,341]],
+        [[2688,454.4],[2671,387.3],[2668,286.3],[2672,194],[2678,123.4],[2688,40.1]],
+        [[2682,-7.6],[2634,-76.8],[2543,-162.6],[1263,-155.4],[1291,-65],[1307,-9.2]],
+        [[1101,9.9],[1126,306.5]],
+        [[671,7.6],[746,425.3]],
+        [[896,-76],[913,-8.2]],
+        [[3149,-54.5],[3141,-87.8],[3149,-149.4],[180,-171],[220,-129.3],[302,-73.3],[319,-21.5],[324,-8.6]],
+        [[502,138.8],[522,457]],
+        [[3204,-65],[3204,-127],[4615,-64.4],[4611,-7.5]],
+        [[156,13.9],[151,87.2],[172,146.6],[163,182.5],[134,202.7],[89,229.9],[54,275.1],[4617,552.9]],
+        [[255,10],[255,22.5],[257,75.1],[262,111.2],[276,165.3],[285,209.8],[289,245.5],[289,287.3]],
+        [[4376,19.5],[4366,53.1],[4350,77.6],[4327,103.5],[4292,134.6],[4256,157.7],[4209,182.3],[4157,375.2]],
+      ],
+      standStyle: 'temporary',   // grandstands: open steel scaffold stands (render3d)
+      trees: 0.9, buildings: 0.7, hills: 0.4,
+      marshalPosts: true, lights: false,
+    },
+  },
 };
 
 ;
@@ -1479,6 +1643,22 @@ const TRACK_DATA = {
 //   pit.wallThick (pit wall thickness, m), pit.blendIn / pit.blendOut (m).
 //   sample/toWorld/project/corridor accept an optional last `out` object to avoid allocations in hot paths.
 //   wallL/wallR are barrier lines (car centre must stay inside by its own half width — physics' job).
+//   track.escapes -> [{s, side, len, w, x0, z0, x1, z1, tx, tz, corners}] escape roads (data.escapes): straight-on
+//        rectangles from the corner entry s along the approach direction (tx, tz); (x0, z0) / (x1, z1) = centre of the
+//        start / far end, w wide, corners = 4 [x, z] (start-left, start-right, end-right, end-left; left/right of the axis).
+//        The barriers on `side` already enclose them (paved run-off): renderers only add the surface and the tyre wall at
+//        the far end. len may be shorter than the data's if another part of the track is in the way (builder warning).
+//        [] when the circuit has none.
+//   track.openAreas -> [{s0, s1, side, poly, chord, chordN}] open paved bays (data.openAreas): the area enclosed by the
+//        `side` asphalt edge from s0 to s1 (wraps) and one straight barrier, the chord. poly = closed outline [[x, z], ...]
+//        (edge points s0..s1 every sample, then chord[1], chord[0]); chord = [[x0, z0], [x1, z1]] from the barrier point at
+//        s0 to the one at s1 (the normal barrier line there); chordN = its unit normal pointing into the bay. On `side`
+//        over s0..s1 wallL / wallR reach across the bay along each normal (to the chord or another part of the track's
+//        edge + 1 m) and cross each other: renderers draw no barrier there, only the chord. corridor() / surface() treat
+//        any point inside poly as open, paved run-off; physics treats the chord as a wall segment. inOpenArea(s, d) ->
+//        index or -1. [] when the circuit has none.
+//   track.crown -> Float32Array (N) road crown slope per sample (data.crown) or null; crownAt(s) -> slope (0 = flat);
+//        crownGrad(s, d) -> dHeight/dd of the crown (physics: gravity towards the nearer edge); elevAt includes it.
 const buildTrack = (() => {
   const TAU = Math.PI * 2, DEG = Math.PI / 180;
   const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -1812,6 +1992,22 @@ const buildTrack = (() => {
       }
     }
 
+    // ---- road crown: data.crown = [{from, to, slope}] -> per-sample slope (rise per metre from each edge to the centre),
+    // faded in / out over 30 m inside the zone ends. Height below the centreline: k (sqrt(d^2 + CROWN_C^2) - CROWN_C) for
+    // |d| <= halfW (flat beyond the edge), so the top is rounded over ~1 m and elevAt(s, 0) stays elev(s).
+    const CROWN_C = 0.5, crown = new Float32Array(N);
+    let hasCrown = false;
+    if (Array.isArray(data.crown)) for (const cz of data.crown) {
+      const a = atS(cz.from), len = wrap(atS(cz.to) - a), fd = Math.min(30, len / 3), k = +cz.slope || 0;
+      if (!(k > 0 && len > 0)) continue;
+      for (let i = 0; i < N; i++) {
+        const u = wrap(i * step - a);
+        if (u > len) continue;
+        const v = k * Math.min(sstep(u / fd), sstep((len - u) / fd));
+        if (v > crown[i]) { crown[i] = v; hasCrown = true; }
+      }
+    }
+
     // ---- kerbs: both sides where |curv| is meaningful, extended before/after ----
     const kerbK = data.kerbCurv || 1 / 380;
     const absK = new Float64Array(N);
@@ -1911,15 +2107,30 @@ const buildTrack = (() => {
       }
     }
     // optional per-stretch run-off surface: data.runoffZones = [{from, to, side: -1 | 1 | 0 (both), surf: 'gravel' |
-    // 'paved' | 'grass'}] (e.g. a drawing's gravel trap on a slow corner, which the rule above paves)
+    // 'paved' | 'grass', w?}] (e.g. a drawing's gravel trap on a slow corner, which the rule above paves). With w (m beyond
+    // the asphalt edge, any style; street tracks ignore zones without it) the barrier on that side moves out to halfW + w
+    // over from..to (~8 m sstep taper beyond each end, max over overlapping zones; the Voronoi clamp below still keeps it
+    // off other parts of the track and the inside of tight bends), surface = surf (default paved).
     if (Array.isArray(data.runoffZones)) for (const rz of data.runoffZones) {
-      const surf = { gravel: S_.GRAVEL, paved: S_.RUNOFF, grass: S_.GRASS }[rz.surf];
-      if (surf == null || ro.style === 'street') continue;
-      const a = atS(rz.from), len = wrap(atS(rz.to) - a);
+      const wide = rz.w > 0;
+      const surf = { gravel: S_.GRAVEL, paved: S_.RUNOFF, grass: S_.GRASS }[rz.surf] ?? (wide ? S_.RUNOFF : null);
+      if (surf == null || (ro.style === 'street' && !wide)) continue;
+      const a = atS(rz.from), len = wrap(atS(rz.to) - a), TP = 8;
       for (let i = 0; i < N; i++) {
-        if (wrap(i * step - a) > len) continue;
-        if (rz.side !== 1) runoffL[i] = surf;
-        if (rz.side !== -1) runoffR[i] = surf;
+        const u = wrap(i * step - a);
+        let t = 1;
+        if (u > len) {   // outside the zone: taper within TP m of either end
+          const e = Math.min(u - len, L - u);
+          if (!wide || e >= TP) continue;
+          t = sstep(1 - e / TP);
+        } else {
+          if (rz.side !== 1) runoffL[i] = surf;
+          if (rz.side !== -1) runoffR[i] = surf;
+        }
+        if (!wide) continue;
+        const need = halfW[i] + rz.w;
+        if (rz.side !== 1 && need > baseL[i]) baseL[i] = lerp(baseL[i], need, t);
+        if (rz.side !== -1 && need > baseR[i]) baseR[i] = lerp(baseR[i], need, t);
       }
     }
 
@@ -1988,11 +2199,56 @@ const buildTrack = (() => {
     for (let t = 0; t < NB; t++) boxS.push(wrap(boxMid + ((NB - 1) / 2 - t) * boxSp));
     if (boxSp < 10) warn.push(`pit boxes cramped (${boxSp.toFixed(1)} m spacing)`);
 
+    // ---- escape roads: data.escapes = [{at, side, len, w}] -> straight-on rectangles from the corner entry ----
+    // Rectangle: starts at s(at) on the approach line (the tangent at s(at) - (transition / 2 + 1) m, extended to s(at)),
+    // runs len m along it, w wide centred on that line. Each sample's `side` normal ray is cast against it (sub-rays over
+    // +-1 sample, so the linearly interpolated corridor encloses it); where a ray crosses it the barrier moves out to the
+    // far side + 0.5 m (escL / escR, applied after wall smoothing, still Voronoi-clamped). Only samples from the approach
+    // to len m past s(at) count (the corner's own fan of normals).
+    const escapes = [], escL = new Float64Array(N), escR = new Float64Array(N);
+    if (Array.isArray(data.escapes)) for (const e of data.escapes) {
+      if (!(e && e.len > 0 && e.w > 0 && (e.side === 1 || e.side === -1))) { warn.push('bad escape spec'); continue; }
+      const sa = atS(e.at), sgI = Array.isArray(e.at) ? e.at[0] : -1;
+      const tr = sgI >= 0 && data.segs[sgI] && data.segs[sgI][2] != null ? data.segs[sgI][2] : (data.transition || 30);
+      const back = tr / 2 + 1, ib = Math.round(wrap(sa - back) / step) % N;
+      const ax = tx[ib], az = tz[ib], bnx = -az, bnz = ax;   // approach axis + its right normal
+      const ox = px[ib] + ax * back, oz = pz[ib] + az * back, hw2 = e.w / 2;
+      const esc = {
+        s: sa, side: e.side, len: e.len, w: e.w, x0: ox, z0: oz, x1: ox + ax * e.len, z1: oz + az * e.len, tx: ax, tz: az,
+      };
+      escapes.push(esc);
+      const out = e.side > 0 ? escR : escL;
+      const i0 = Math.floor(wrap(sa - back - 2 * step) / step), nI = Math.ceil((back + e.len + 4 * step) / step);
+      for (let q = 0; q <= nI; q++) {
+        const i = (i0 + q) % N;
+        let need = 0;
+        for (let k = -4; k <= 4; k++) {   // sub-rays at s_i + k * step / 4
+          const f = i + k / 4, i1 = ((Math.floor(f) % N) + N) % N, i2 = (i1 + 1) % N, u = f - Math.floor(f);
+          const cx = lerp(px[i1], px[i2], u), cz = lerp(pz[i1], pz[i2], u);
+          let rx = lerp(nx[i1], nx[i2], u), rz = lerp(nz[i1], nz[i2], u);
+          const m = Math.hypot(rx, rz) * e.side; rx /= m; rz /= m;
+          // ray (cx, cz) + t (rx, rz) in the rectangle frame: x along the axis [0, len], y along its normal [-w/2, w/2]
+          const x0 = (cx - ox) * ax + (cz - oz) * az, y0 = (cx - ox) * bnx + (cz - oz) * bnz;
+          const dx = rx * ax + rz * az, dy = rx * bnx + rz * bnz;
+          let tA = 0, tB = 1e9;
+          for (const [p0, dp, lo0, hi0] of [[x0, dx, 0, e.len], [y0, dy, -hw2, hw2]]) {
+            if (Math.abs(dp) < 1e-9) { if (p0 < lo0 || p0 > hi0) { tB = -1; break; } continue; }
+            let ta = (lo0 - p0) / dp, tb = (hi0 - p0) / dp;
+            if (ta > tb) { const tt = ta; ta = tb; tb = tt; }
+            if (ta > tA) tA = ta; if (tb < tB) tB = tb;
+          }
+          if (tB >= tA && tB > need) need = tB;
+        }
+        if (need > halfW[i]) out[i] = Math.max(out[i], need + 0.5);
+        if (need > halfW[i] + KERB_W) (e.side > 0 ? runoffR : runoffL)[i] = S_.RUNOFF;   // the escape road is paved
+      }
+    }
+
     // ---- barriers: clamp so different parts of the track never share space (Voronoi of centreline) ----
     const gap = data.wallGapMin || 2.0;
     const tL = new Float64Array(N).fill(1e9), tR = new Float64Array(N).fill(1e9);
     let maxBase = 0;
-    for (let i = 0; i < N; i++) maxBase = Math.max(maxBase, baseL[i], baseR[i]);
+    for (let i = 0; i < N; i++) maxBase = Math.max(maxBase, baseL[i], baseR[i], escL[i], escR[i]);
     const reach = 2 * (maxBase + gap), reach2 = reach * reach;
     // uniform grid of centreline samples (cell = reach) -> only nearby samples are tested
     const gx0 = Math.min(...px) - 1, gz0 = Math.min(...pz) - 1;
@@ -2029,6 +2285,84 @@ const buildTrack = (() => {
     const fr = Math.max(1, Math.round(6 / step));
     wl = blur(winFilter(wl, fr, fr, false), fr);
     wr = blur(winFilter(wr, fr, fr, false), fr);
+    // escape roads: pushed after the smoothing (sharp-edged bays), within the same Voronoi limit
+    if (escapes.length) for (let i = 0; i < N; i++) {
+      if (escL[i] > wl[i]) wl[i] = Math.max(wl[i], Math.min(escL[i], tL[i] - gap / 2));
+      if (escR[i] > wr[i]) wr[i] = Math.max(wr[i], Math.min(escR[i], tR[i] - gap / 2));
+    }
+    // ---- open areas: data.openAreas = [{from, to, side}] -> one paved bay enclosed by the `side` asphalt edge from..to and
+    // a straight chord (its only wall) between the barrier points at from and to (the normal barrier line there). On that
+    // side every sample's barrier goes out along its normal to where the ray leaves the bay: the chord, or another part of
+    // the track's edge (+1 m into that asphalt: cars may cross the bay onto it). No Voronoi clamp: these barriers cross
+    // each other (the corridor still holds: a point is judged at its nearest sample, whose ray reaches it). projLim keeps
+    // project()'s local search honest there (past the Voronoi limit -> full search).
+    const openAreas = [], limBay = [];   // limBay: [i, side, limit] project() overrides (see projLim)
+    const hwAt = s => { const f = wrap(s) / step, i1 = Math.floor(f) % N; return lerp(halfW[i1], halfW[(i1 + 1) % N], f - Math.floor(f)); };
+    if (Array.isArray(data.openAreas)) for (const oa of data.openAreas) {
+      if (!(oa && (oa.side === 1 || oa.side === -1))) { warn.push('bad openArea spec'); continue; }
+      const sd = oa.side, a = atS(oa.from), len = wrap(atS(oa.to) - a), W = sd < 0 ? wl : wr;
+      const at = (s, d) => {   // world point at (s, d) from the sample arrays (+ the barrier offset there when d == null)
+        const f = wrap(s) / step, i1 = Math.floor(f) % N, i2 = (i1 + 1) % N, u = f - Math.floor(f);
+        let rx = lerp(nx[i1], nx[i2], u), rz = lerp(nz[i1], nz[i2], u); const m = Math.hypot(rx, rz); rx /= m; rz /= m;
+        const dd = d != null ? d : sd * lerp(W[i1], W[i2], u);
+        return [lerp(px[i1], px[i2], u) + dd * rx, lerp(pz[i1], pz[i2], u) + dd * rz];
+      };
+      const c0 = at(a, null), c1 = at(a + len, null);
+      // boundary segments a ray may leave the bay through: the chord + every asphalt edge segment of the track
+      const EX = new Float64Array(2 * N), EZ = new Float64Array(2 * N);
+      for (let i = 0; i < N; i++) for (let q = 0; q < 2; q++) { const d = (q ? 1 : -1) * halfW[i]; EX[q * N + i] = px[i] + d * nx[i]; EZ[q * N + i] = pz[i] + d * nz[i]; }
+      const hit = (ox, oz, dx, dz, x0, z0, x1, z1) => {   // ray parameter t where it crosses segment (x0,z0)-(x1,z1), or -1
+        const ex = x1 - x0, ez = z1 - z0, den = dx * ez - dz * ex;
+        if (Math.abs(den) < 1e-12) return -1;
+        const wx = x0 - ox, wz = z0 - oz, t = (wx * ez - wz * ex) / den, v = (wx * dz - wz * dx) / den;
+        return v >= 0 && v <= 1 ? t : -1;
+      };
+      const qs = sd < 0 ? 0 : 1;
+      for (let i = 0; i < N; i++) {
+        if (wrap(i * step - a) > len) continue;
+        const ox = px[i], oz = pz[i], dx = sd * nx[i], dz = sd * nz[i], t0 = halfW[i] + 0.05;
+        let tB = hit(ox, oz, dx, dz, c0[0], c0[1], c1[0], c1[1]), tE = 1e9;
+        if (tB < t0) tB = 1e9;
+        for (let q = 0; q < 2; q++) for (let k = 0; k < N; k++) {
+          if (q === qs) { const dk = ((k - i) % N + N) % N; if (dk <= 3 || dk >= N - 4) continue; }   // (its own edge crossing)
+          const k2 = (k + 1) % N, t = hit(ox, oz, dx, dz, EX[q * N + k], EZ[q * N + k], EX[q * N + k2], EZ[q * N + k2]);
+          if (t > t0 && t < tE) tE = t;
+        }
+        const ex = Math.min(tB, tE + 1.0), nw = W[i];
+        if (ex < 1e8 && ex > W[i]) W[i] = ex;
+        if (sd < 0) runoffL[i] = S_.RUNOFF; else runoffR[i] = S_.RUNOFF;
+        // project(): accept a local search result here only inside the Voronoi limit (else the full search decides)
+        limBay.push([i, sd, Math.min(W[i], Math.max(nw, sd < 0 ? tL[i] : tR[i]))]);
+      }
+      const poly = [];
+      for (let u = 0; u < len; u += step) poly.push(at(a + u, sd * hwAt(a + u)));
+      poly.push(at(a + len, sd * hwAt(a + len)), c1, c0);
+      // chordN: unit normal of the chord pointing into the bay (physics: the chord is a wall segment)
+      const cl = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) || 1, cN = [-(c1[1] - c0[1]) / cl, (c1[0] - c0[0]) / cl];
+      const mid = at(a + len / 2, sd * hwAt(a + len / 2)), toMid = (mid[0] - c0[0]) * cN[0] + (mid[1] - c0[1]) * cN[1];
+      if (toMid < 0) { cN[0] = -cN[0]; cN[1] = -cN[1]; }
+      openAreas.push({ s0: a, s1: wrap(a + len), side: sd, poly, chord: [c0, c1], chordN: cN });
+    }
+    // point-in-bay test data: polygon arrays, bounding box, the s window whose samples a bay point can project to
+    const OAX = openAreas.map(o => {
+      const xs = o.poly.map(p => p[0]), zs = o.poly.map(p => p[1]);
+      return { X: Float64Array.from(xs), Z: Float64Array.from(zs), x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs),
+        w0: wrap(o.s0 - 80), wl: wrap(o.s1 - o.s0) + 160 };
+    });
+    const inBay = (s, x, z) => {   // index of the open area containing world (x, z) (s = its projected s), or -1
+      for (let k = 0; k < OAX.length; k++) {
+        const q = OAX[k];
+        if (wrap(s - q.w0) > q.wl || x < q.x0 || x > q.x1 || z < q.z0 || z > q.z1) continue;
+        let c = false;
+        for (let m = 0, n = q.X.length - 1; m < q.X.length; n = m++) {
+          if ((q.Z[m] > z) !== (q.Z[n] > z) && x < (q.X[n] - q.X[m]) * (z - q.Z[m]) / (q.Z[n] - q.Z[m]) + q.X[m]) c = !c;
+        }
+        if (c) return k;
+      }
+      return -1;
+    };
+    const _bp = {};
+    const inBaySD = (s, d) => { if (!OAX.length) return -1; T.toWorld(s, d, _bp); return inBay(s, _bp.x, _bp.z); };
     const wallL = new Float32Array(N), wallR = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       wallL[i] = -wl[i]; wallR[i] = wr[i];
@@ -2036,6 +2370,10 @@ const buildTrack = (() => {
         if (!warn.some(w => w.startsWith('barrier squeezed'))) warn.push(`barrier squeezed onto asphalt near s=${(i * step).toFixed(0)}`);
       }
     }
+    // project()'s local-search acceptance radius per sample: the farther barrier + 4 m (open areas: their Voronoi limit)
+    const projLim = new Float64Array(N);
+    for (let i = 0; i < N; i++) projLim[i] = Math.max(wallR[i], -wallL[i]) + 4;
+    for (const [i, sd, lim] of limBay) projLim[i] = Math.max(sd < 0 ? wallR[i] : -wallL[i], lim) + 4;
     // pit lane clearance check
     for (let i = 0; i < N; i++) {
       const s = i * step;
@@ -2161,6 +2499,7 @@ const buildTrack = (() => {
       length: L, N, step,
       px, pz, tx, tz, nx, nz, curv, halfW, wallL, wallR, raceLine, raceSpeed, kerbL, kerbR, runoffL, runoffR,
       elev, grade, bank, elevRange: elevRange(),
+      crown: hasCrown ? crown : null, crownC: CROWN_C, escapes, openAreas,
       sectorS, straightZones, overtakeDetectS,
       pit: {
         side: pitSide, entryS, exitS, laneD, laneHalfW, wallD, wallS0, wallS1,
@@ -2222,7 +2561,7 @@ const buildTrack = (() => {
             const da = d2(a), db = d2(b);
             if (da < di && da <= db) { i = a; di = da; } else if (db < di) { i = b; di = db; } else break;
           }
-          const lim = Math.max(wallR[i], -wallL[i]) + 4;
+          const lim = projLim[i];
           if (di <= lim * lim) { best = i; bd = di; }
         }
         if (best < 0) {
@@ -2249,7 +2588,7 @@ const buildTrack = (() => {
         s = wrap(s);
         const i = idxAt(s), a = d < 0 ? -d : d, side = d < 0 ? -1 : 1;
         const w = side > 0 ? wallR[i] : -wallL[i];
-        if (a >= w) return S_.WALL;
+        if (a >= w && !(OAX.length && a > halfW[i] && inBaySD(s, d) >= 0)) return S_.WALL;
         if (side === pitSide && inPitRange(s)) {
           if (inWallSec(s) && Math.abs(d - wallD) <= wallThick / 2) return S_.WALL;
           const ld = laneD(s);
@@ -2259,8 +2598,10 @@ const buildTrack = (() => {
         if (a <= halfW[i]) return S_.TRACK;
         if (a <= halfW[i] + KERB_W && (side > 0 ? kerbR[i] : kerbL[i])) return S_.KERB;
         if (side === pitSide && inPitRange(s)) return S_.RUNOFF;
+        if (OAX.length && a >= w) return S_.RUNOFF;   // (an open area beyond this sample's barrier: paved)
         return side > 0 ? runoffR[i] : runoffL[i];
       },
+      inOpenArea(s, d) { return inBaySD(wrap(s), d); },   // index into track.openAreas of the bay containing (s, d), or -1
       inPitArea(s, d) {
         s = wrap(s);
         if (!inPitRange(s) || d * pitSide <= halfW[idxAt(s)]) return false;
@@ -2284,14 +2625,40 @@ const buildTrack = (() => {
           return out;
         }
         out.min = wL; out.max = wR; out.pit = T.inPitArea(s, d);
+        // inside an open area: no barrier on that side (its chord is a wall segment: track.openAreas[k].chord, physics)
+        if (OAX.length && (d < 0 ? -d : d) > halfW[i] && inBaySD(s, d) >= 0) { if (d < 0) out.min = -1e4; else out.max = 1e4; }
         return out;
       },
       // surface height at (s, d): centreline elevation + banking (outside of a right-hander, d < 0, is higher for bank > 0)
+      // - road crown (highest on the centreline, falling crownAt(s) per metre towards each edge, flat beyond the edges)
       elevAt(s, d = 0) {
         s = wrap(s);
         const f = s / step, i = Math.floor(f) % N, j = (i + 1) % N, u = f - Math.floor(f);
         const b = bank[i] + (bank[j] - bank[i]) * u;
-        return elev[i] + (elev[j] - elev[i]) * u - d * Math.tan(b);
+        let y = elev[i] + (elev[j] - elev[i]) * u - d * Math.tan(b);
+        if (hasCrown && (crown[i] || crown[j])) {
+          const k = crown[i] + (crown[j] - crown[i]) * u, hw = halfW[i] + (halfW[j] - halfW[i]) * u;
+          const a = d < 0 ? (d < -hw ? hw : -d) : (d > hw ? hw : d);
+          y -= k * (Math.sqrt(a * a + CROWN_C * CROWN_C) - CROWN_C);
+        }
+        return y;
+      },
+      // crown slope at s (0 = flat road; data.crown), and the crown's lateral gradient dHeight/dd at (s, d): -k at the
+      // right edge, +k at the left, 0 on the centreline and beyond the edges (physics: gravity towards the nearer edge)
+      crownAt(s) {
+        if (!hasCrown) return 0;
+        s = wrap(s);
+        const f = s / step, i = Math.floor(f) % N, j = (i + 1) % N, u = f - Math.floor(f);
+        return crown[i] + (crown[j] - crown[i]) * u;
+      },
+      crownGrad(s, d) {
+        if (!hasCrown) return 0;
+        s = wrap(s);
+        const f = s / step, i = Math.floor(f) % N, j = (i + 1) % N, u = f - Math.floor(f);
+        if (!crown[i] && !crown[j]) return 0;
+        const k = crown[i] + (crown[j] - crown[i]) * u, hw = halfW[i] + (halfW[j] - halfW[i]) * u;
+        if (d > hw || d < -hw) return 0;
+        return -k * d / Math.sqrt(d * d + CROWN_C * CROWN_C);
       },
       zoneAt(s) { return inZone(wrap(s)); },
       sectorAt(s) { s = wrap(s); return s < sectorS[0] ? 0 : s < sectorS[1] ? 1 : 2; },
@@ -2310,6 +2677,25 @@ const buildTrack = (() => {
         return out;
       },
     };
+
+    // escape roads: keep only the length that is really inside the barriers (the Voronoi clamp may stop it short of
+    // another part of the track), then the corners for the renderers
+    for (const esc of escapes) {
+      const o = {}, c = {}, nX = -esc.tz, nZ = esc.tx;
+      let ok = esc.len, hint = idxAt(esc.s);
+      for (let x = 0.5; x <= esc.len && ok === esc.len; x += 1) {
+        for (let q = 0; q <= 8; q++) {
+          const y = (q / 8 - 0.5) * (esc.w - 0.6);
+          T.project(esc.x0 + esc.tx * x + nX * y, esc.z0 + esc.tz * x + nZ * y, hint, o); hint = o.idx;
+          T.corridor(o.s, o.d, c);
+          if (!(o.d > c.min + 0.05 && o.d < c.max - 0.05)) { ok = Math.max(0, x - 1); break; }
+        }
+      }
+      if (ok < esc.len - 0.5) { warn.push(`escape at s=${esc.s.toFixed(0)} cut to ${ok.toFixed(0)} m (barrier limit)`); esc.len = ok; }
+      esc.x1 = esc.x0 + esc.tx * esc.len; esc.z1 = esc.z0 + esc.tz * esc.len;
+      const h = esc.w / 2;
+      esc.corners = [[esc.x0 - nX * h, esc.z0 - nZ * h], [esc.x0 + nX * h, esc.z0 + nZ * h], [esc.x1 + nX * h, esc.z1 + nZ * h], [esc.x1 - nX * h, esc.z1 - nZ * h]];
+    }
 
     function elevRange() {
       let lo = Infinity, hi = -Infinity, climb = 0, gMax = 0;
@@ -3564,11 +3950,13 @@ const Physics = (() => {
   // latCap x the cornering limit caps the envelope off the corner points; u = points at >= u of the cornering limit are the
   // plan's corner speeds to make (it corners at 0.93). Fast sweepers (latV m/s, cornering >= latNow, latPlan m/s into the
   // plan's braking zone): the line within latLook s must stay <= latT of the limit, braking share latBrk (latW less per
-  // unit of slide). ramp = s lost to the keyboard brake ramp (0 -> 1 in 0.1 s) + a reaction allowance, margin (m, +
+  // unit of slide); a kink whose line runs (< latStr of the limit) straight for latGap m before the next corner, with no
+  // corner speed to make up to there, is taken flat: the next corner is braked for in a straight line, latSkip m earlier.
+  // ramp = s lost to the keyboard brake ramp (0 -> 1 in 0.1 s) + a reaction allowance, margin (m, +
   // marginW x the tyre's slide out of its window), aero = s more per unit of open Straight mode (it closes on braking,
   // 0.25 s). lead = s the BRAKE cue builds up over; a corner that coasting (drag + rolling) makes within liftT s of lifting
   // is a LIFT (cue liftLead s before its point); drops under minDrop m/s get no cue.
-  const CUE = { K: 1.02, lat: 1.2, cE: 0.5, cpl: 0.5, latCap: 1.15, latT: 0.7, latV: 80, latLook: 2.0, latNow: 0.45, latPlan: 10, latBrk: 0.55, latW: 0.3, u: 0.88, ramp: 0.09, margin: 4, marginW: 6, aero: 0.12, lead: 1.5, liftT: 1.1, liftLead: 0.7, minDrop: 2.5 };
+  const CUE = { K: 1.02, lat: 1.2, cE: 0.5, cpl: 0.5, latCap: 1.15, latT: 0.7, latV: 80, latLook: 2.0, latNow: 0.45, latPlan: 10, latBrk: 0.55, latW: 0.3, latStr: 0.25, latGap: 16, latSkip: 14, u: 0.88, ramp: 0.09, margin: 4, marginW: 6, aero: 0.12, lead: 1.5, liftT: 1.1, liftLead: 0.7, minDrop: 2.5 };
   // latest-braking envelope (planInfo, P.vb): the fastest the car may be at each sample when the brake key goes down there
   // and still, braking flat out (CUE), be no faster than the plan's speed at every point ahead where the plan is at its
   // cornering limit. Faster than vb = past the braking point: the line turns red there and the HUD cue says BRAKE.
@@ -3582,11 +3970,11 @@ const Physics = (() => {
     const lat = u => CFG.perf.latAccel(u, g, a.clK) * (1 - 0.5 * WET.latF * ws) * (1 - 0.5 * (WET.hyF + WET.hyR) * hyF(u)), rr = C.rollingResist * CFG.g;
     const cE = u => CUE.cE + (1 - CUE.cE) * CUE.cpl * Math.min(1, WET.cpl * ws + WET.cplH * hyF(u));
     const dragA = u => 0.5 * CFG.rho * C.cdA * a.cdK * u * u / C.mass + rr;
-    const vb = new Float32Array(N), cap = new Float32Array(N);
+    const vb = new Float32Array(N), cap = new Float32Array(N), lim = P.lim = new Uint8Array(N);   // (lim: brakeCue's sweepers)
     let i0 = 0;
     for (let i = 0; i < N; i++) {
       const k = Math.abs(kl[i]);
-      if (v[i] * v[i] * k >= CUE.u * lat(v[i])) cap[i] = v[i];   // a corner speed to make
+      if (v[i] * v[i] * k >= CUE.u * lat(v[i])) { cap[i] = v[i]; lim[i] = 1; }   // a corner speed to make
       else {   // else no faster than the car can corner there at all (CUE.latCap x the cornering limit on the line's curvature)
         let lo = v[i], hi = 120;
         if (hi * hi * k <= lat(hi) * CUE.latCap) lo = hi;
@@ -3638,15 +4026,31 @@ const Physics = (() => {
     // more than CUE.latT of the cornering limit at the car's speed -> brake for that point (braking share CUE.latBrk)
     const Lp = CFG.setup._lap && CFG.setup._lap.get(T), kl = Lp && Lp.k && Lp.k.length === N ? Lp.k : null;
     const latV = CFG.perf.latAccel(v, P.grip, P.clK) * (1 - 0.5 * WET.latF * (P.ws || 0));
+    let skip = false;
     if (kl && v > CUE.latV && v * v * Math.abs(kl[i0]) >= CUE.latNow * latV && vp[i0] < v - CUE.latPlan) {   // (already in the plan's braking zone)
       const lt = latV * CUE.latT * (1 - CUE.latW * (P.ws || 0)), nL = Math.ceil(v * CUE.latLook / st), bd = CFG.perf.brakeDecel(v, P.grip) * CUE.K * CUE.latBrk * (1 - CUE.latW * (P.ws || 0));
-      for (let n = 0; n <= nL; n++) {   // (every point of the sweeper ahead: it keeps tightening)
+      // a kink, not a sweeper: up to a CUE.latGap m (nearly) straight bit the line asks for no corner speed to make (P.lim,
+      // the plan only braking there for the corner after it): taken flat, and the corner after the straight bit is braked
+      // for in a straight line (full share) - the braking point is the envelope's or that, CUE.latSkip m earlier (the
+      // braking starts with the car still loaded up in the kink). Kettle Pond T1 (250 km/h) -> T2 (144 km/h, 30 m on)
+      // was ~95 m early. A sweeper with a corner speed to make in it, or no straight bit: as before
+      const gapN = Math.max(1, Math.round(CUE.latGap / st)), lStr = CUE.latStr * latV, Lm = P.lim;
+      let nG = -1, run = 0, cor = !Lm;
+      for (let n = 0; n <= nL && nG < 0; n++) {
         const j = (i0 + n) % N, k = Math.abs(kl[j]);
-        if (v * v * k <= lt) continue;
-        const va = Math.sqrt(lt / k), x = x0 + n * st - (v * v - va * va) / (2 * bd) - v * CUE.ramp - CUE.margin;
+        if (v * v * k < lStr) { if (++run >= gapN) nG = n; } else run = 0;
+        if (v * v * k > lt && Lm && Lm[j]) cor = true;
+      }
+      const kink = nG >= 0 && !cor, bdk = kink ? bd / CUE.latBrk : bd;
+      for (let n = kink ? nG : 0; n <= nL; n++) {   // (every point of the sweeper ahead: it keeps tightening)
+        const j = (i0 + n) % N, k = Math.abs(kl[j]);
+        if (v * v * k <= lt || (kink && !Lm[j])) continue;
+        const va = Math.sqrt(lt / k), x = x0 + n * st - (v * v - va * va) / (2 * bdk) - v * CUE.ramp - CUE.margin;
         if (xB == null || x < xB) { xB = Math.max(0, x); jB = j; }
       }
+      skip = kink;
     }
+    if (skip && xB != null) xB = Math.max(0, xB - CUE.latSkip);
     if (xB == null) return out;
     // the corner behind it: its first cornering-limited point (the speed to make) and the slowest plan speed of the corner
     let vS = null, xS = 0, vT = Infinity, xT = xB;
@@ -4084,6 +4488,12 @@ const Physics = (() => {
       if (gr) FxL -= C.mass * CFG.g * gr * cosRel;
     }
     let FyL = FyFc + FyR - (Fdrag + resist) * vLat * invSp;
+    // road crown (track.crown, e.g. a 2 % street camber): gravity along the surface towards the nearer edge, smooth across
+    // the centreline (track.crownGrad = dHeight/dd, 0 off the asphalt and on uncrowned tracks)
+    if (track.crown) {
+      const cg = track.crownGrad(car.s, car.d);
+      if (cg) { const Fc = -C.mass * CFG.g * cg; FxL += Fc * sinRel; FyL += Fc * cosRel; }
+    }
     let tau = A * FyFc - B * FyR;
     // rough ground (grass / gravel): small random yaw twitches that grow with speed
     const wob = (wobF + wobR) * 0.5;
@@ -4135,6 +4545,17 @@ const Physics = (() => {
     const half = Math.min(C.width * 0.5 * c2 + C.length * 0.5 * s2, C.length * 0.5);
     if (p2.d > cor.max - half) hitWall(car, p2.d - (cor.max - half), track.nx[t2], track.nz[t2], 1, track, t2);
     else if (p2.d < cor.min + half) hitWall(car, (cor.min + half) - p2.d, track.nx[t2], track.nz[t2], -1, track, t2);
+    // open areas (track.openAreas: paved bays with no barrier along the track there): the chord is a wall segment
+    const OA = track.openAreas;
+    if (OA && OA.length) for (let k = 0; k < OA.length; k++) {
+      const o = OA[k], a = o.chord[0], b = o.chord[1], ex = b[0] - a[0], ez = b[1] - a[1], l2 = ex * ex + ez * ez;
+      const u = ((car.x - a[0]) * ex + (car.z - a[1]) * ez) / l2;
+      if (u < 0 || u > 1) continue;
+      const nX = o.chordN[0], nZ = o.chordN[1], dist = (car.x - a[0]) * nX + (car.z - a[1]) * nZ;   // + = bay side
+      const il = 1 / Math.sqrt(l2), cc = Math.abs((Math.cos(car.h) * ex + Math.sin(car.h) * ez) * il), ss = Math.sqrt(Math.max(0, 1 - cc * cc));
+      const hc = Math.min(C.width * 0.5 * cc + C.length * 0.5 * ss, C.length * 0.5);
+      if (dist < hc && dist > -hc - 1.5) hitWall(car, hc - dist, nX, nZ, -1, track, t2, ex * il, ez * il);
+    }
 
     // --- derived outputs
     const nch = Math.cos(car.h), nsh = Math.sin(car.h);
@@ -4178,7 +4599,7 @@ const Physics = (() => {
     gearbox(car, thr, dt, world.events);
   }
 
-  function hitWall(car, pen, nx, nz, side, track, ti) {
+  function hitWall(car, pen, nx, nz, side, track, ti, wtx, wtz) {   // (wtx, wtz: the wall's direction, default the track's)
     car.x -= side * nx * pen;
     car.z -= side * nz * pen;
     const vn = (car.vx * nx + car.vz * nz) * side;      // speed into the wall
@@ -4187,7 +4608,7 @@ const Physics = (() => {
       car.vx -= (1 + e) * vn * side * nx;
       car.vz -= (1 + e) * vn * side * nz;
       // scrape friction along the wall
-      const tx = track.tx[ti], tz = track.tz[ti];
+      const tx = wtx != null ? wtx : track.tx[ti], tz = wtx != null ? wtz : track.tz[ti];
       const vt = car.vx * tx + car.vz * tz;
       const dv = Math.min(Math.abs(vt), 0.45 * (1 + e) * vn);
       car.vx -= Math.sign(vt) * dv * tx;
@@ -4450,6 +4871,7 @@ const AI = (() => {
     kxGain: 0.02,    // ... only in corners where the lap model gains more than this (s) over the kerb line
     kxV: 99,         // ... and whose apex (reference profile) is slower than this (m/s; 99 = any)
     kxG: 0,          // (tuning) grip assumed for a wheel past the kerb, if higher than the surface's (0 = the surface's)
+    hotX: 1,         // hot pit exits (exitRoad E.hot): merge judged by time, track cars leave the merging car room (0: off)
   };
 
   // scratch for the look-ahead (drive() is synchronous)
@@ -4672,6 +5094,14 @@ const AI = (() => {
       const inn = Math.abs(ld) - lhw, m = (sd < 0 ? track.kerbL[i] : track.kerbR[i]) ? track.halfW[i] + KW : track.halfW[i] - 0.24;
       if (!(inn >= m || inn >= Math.max(0.15, sd * track.raceLine[i] + 1.4))) { E.wl = u; break; }
     }
+    // hot: a short exit road (< 100 m past the limiter-end line) whose lane runs onto the racing line where the track is
+    // flat out (Kettle Pond, before T1: cars come off it at ~170 km/h into 320 km/h traffic and were hit from behind) ->
+    // merge judged by time (mergeClear), and track cars leave a car on it room (racecraft)
+    E.hot = false;
+    if (E.len < 100) for (let u = E.wl; u <= E.len && !E.hot; u += st) {
+      const s = wrap(E.s0 + u), i = Math.round(s / st) % N, ld = pit.laneD(s);
+      if (ld != null && Math.abs(ld - track.raceLine[i]) < SEP + 0.5 && track.raceSpeed[i] > 75) E.hot = true;
+    }
     return E;
   }
   // lateral d of the exit road at s (Race's fast lane: beside the dashed line, easing into the lane centre as it merges)
@@ -4835,6 +5265,8 @@ const AI = (() => {
       kL: track.kerbL, kR: track.kerbR, roL: track.runoffL, roR: track.runoffR,
       wl: track.wallL, wr: track.wallR, px: track.px, pz: track.pz, nx: track.nx, nz: track.nz, hw: track.halfW, kc: track.curv,
       pit: pit ? { side: pit.side || 1, entryS: pit.entryS, exitS: pit.exitS } : null, exit,
+      // street escape roads / wide paved aprons (track.escapes): barrier-aware off-track rejoin and recovery (apron* below)
+      apron: !!(track.escapes && track.escapes.length),
     };
     if (!A.lkX) A.lkX = lineX ? lineCurv(lineX) : A.lkK;
     track._ai = A;
@@ -4995,6 +5427,8 @@ const AI = (() => {
     serrano: { hard: 1.0091, medium: 0.9676, easy: 0.8994 },
     leman: { hard: 0.9945, medium: 0.9789, easy: 0.9217 },
     dorado: { hard: 1.0007, medium: 0.9936, easy: 0.9717 },
+    // (new circuits: Easy / Medium / Hard at the other circuits' mean lap ratio to the ai_vs_ref reference / to Extreme)
+    kettle: { hard: 1.0274, medium: 1.0229, easy: 0.9702 },
     _: { easy: 0.9619, medium: 0.9927, hard: 1.0026 },
   };
   const vsOf = (id, did) => { const t = VS[id] || VS._; return (t && t[did]) || 1; };
@@ -5112,14 +5546,23 @@ const AI = (() => {
     if (b.launch && (race && race.t - b.startT > 25 || (car.lap || 0) > 1)) b.launch = false;
     const startPh = !!b.launch && !finished;
 
+    // nose against a barrier out on a wide apron / in an escape road (A.apron): it scraped along it at walking pace, the
+    // wall killing every turn away from it -> recovery (back off it first)
+    if (A.apron && b.rec === 0 && v < 5 && !startPh && Math.abs(car.d) > A.hw[idx] + 1 && !track.inPitArea(car.s, car.d)) {
+      b.pinT = rayFree(track, car, 1, 4) < 0.6 + v * 0.4 ? (b.pinT || 0) + dt : 0;
+      if (b.pinT > 0.4) { b.rec = 3; b.recT = 0; b.recFwd = 0; b.pinT = 0; }
+    } else b.pinT = 0;
     // ----- recovery state machine -----
+    // (out on a wide apron / in a bay, A.apron: judged against the heading recovery aims for, aprRel - a car crossing a bay
+    // straight toward the track is no spin, and recovery must not hand back a car it would take straight back)
+    const cosRec = A.apron ? Math.cos(aprRel(track, A, car, idx, rel)) : cosRel;
     if (b.rec === 0) {
-      if (v > 5 && cosRel < 0.2) b.rec = 2;                          // spinning / going backwards fast
-      else if (v < 4 && (cosRel < 0.35 || b.stuckT > 1.3)) { b.rec = 3; b.recT = 0; b.recFwd = b.stuckT > 1.3 ? 0 : 1; }
+      if (v > 5 && cosRec < 0.2) b.rec = 2;                          // spinning / going backwards fast
+      else if (v < 4 && (cosRec < 0.35 || b.stuckT > 1.3)) { b.rec = 3; b.recT = 0; b.recFwd = b.stuckT > 1.3 ? 0 : 1; }
     }
     if (b.rec === 2) {
       inp.throttle = 0; inp.brake = 1; inp.steer = 0;
-      if (v < 4) { b.rec = cosRel < 0.5 ? 3 : 0; b.recT = 0; b.recFwd = 1; }
+      if (v < 4) { b.rec = cosRec < 0.5 ? 3 : 0; b.recT = 0; b.recFwd = 1; }
       return inp;
     }
     // beached (gravel) or otherwise going nowhere for a long time: put the car back on track (like the player's R)
@@ -5483,12 +5926,26 @@ const AI = (() => {
         k.dHold = k.side > 0 ? Math.max(car.d, o.d - SEP - 0.9) : Math.min(car.d, o.d + SEP + 0.9);
         k.comm = comm && !(ads < LEN + 1.5 || (ds < 0 && ds > -30 && -closing * 1.2 > ads - LEN));
       }
+      // a slower AI car leaving a hot pit exit ahead (A.exit.hot): its lane runs onto my line -> it gets room like a car
+      // alongside: my path a car's width clear of where it will be (the end of its lane, or further in), from 160 m back,
+      // until it has merged (ds -1: no dropping back for it, the collision check below still brakes if there is no room)
+      if (o.aiPitOut && A.exit && A.exit.hot && P.hotX && !b.pitOut && ds > 0 && ds < 160 && closing > 3 && b.nCons < 5) {
+        const EX = A.exit, ue = exitU(A, o.s);
+        if (ue > -5) {
+          const sE = EX.s0 + EX.len, dX = EX.side > 0 ? Math.min(o.d, EX.dEnd) : Math.max(o.d, EX.dEnd), lnE = lineAt(A, sE, b.kw);
+          if (Math.abs(dX - (lnE + b.off)) < SEP + 0.3) {
+            const k = b.cons[b.nCons++];
+            k.rel = dX - lnE; k.relMe = car.d - lineAt(A, car.s, b.kw); k.dd = o.d - car.d; k.side = EX.side; k.xMax = ds + 40;
+            k.ds = -1; k.v = o.speed; k.dHold = EX.side * 99; k.comm = false;
+          }
+        }
+      }
       // (an AI car still on the pit exit road behind its white line is nobody to attack, defend against or yield to)
       const inLane = o.aiPitRoad && behindLine(A, o.s, o.d);
       if (ds > 0 && ds < ahDs && !inLane) { ah = o; ahDs = ds; }
       if (ds < 0 && ds > bhDs && !inLane) { bh = o; bhDs = ds; }
       // (not the car I am unlapping, nor the one I just unlapped: half a lap without blue flags for it)
-      if (ds < 0 && ds > (qm ? -160 : -80) && ((!qm && o.raceDist != null && o.raceDist > myRD + L * 0.5) || (qm && o.qPush && !car.qPush) || (finished && !o.finished && o.speed > v + 2)) && ds > lapDs && !inLane
+      if (ds < 0 && ds > (qm ? -320 : -80) && ((!qm && o.raceDist != null && o.raceDist > myRD + L * 0.5) || (qm && o.qPush && !car.qPush) || (finished && !o.finished && o.speed > v + 2)) && ds > lapDs && !inLane
         && o !== b.ulTgt && !(o === b.ulDone && myRD - b.ulDoneD < L * 0.5)) { lapper = o; lapDs = ds; }
       // blue flags: a car ahead a lap or more up on me (not on its cool-down lap, not in the pit lane) is not raced (the attack
       // below) and is followed (clr below); one stopped / spinning (lapStop) is just a car to get round
@@ -5559,6 +6016,7 @@ const AI = (() => {
     b.absSide = 0;
     b.pitIn = false;
     const onRoad = b.pitOut && pitOutStep(b, car, G, A, v);   // on the pit exit road: off the track by design
+    car.aiPitOut = !!b.pitOut;   // (read by the other AI cars: a hot pit exit's merging car, below)
 
     // off-track rejoin: absolute target moving back onto the asphalt
     // (past the edge by more than its own line goes: the two-wheels-off line runs up to the kerb's outer edge by design)
@@ -5573,6 +6031,15 @@ const AI = (() => {
       if (bh && bhDs > -70 && Math.abs(bh.d - sd * (hw - 2)) < 4 && bh.speed > v + 3) traffic = true;
       b.absDT = traffic ? sd * (hw + 0.8) : sd * (hw - 2);
       b.absRate = 1.6; b.free = true; wT = 1; b.wRate = 3;
+      // wide paved run-off / escape road (A.apron): the target never further out than the car is (a barrier that pushed it
+      // in must not pull it back out); while > 2 m beyond the edge, head for just outside it at a ~15 deg rejoin angle
+      // (lateral rate 0.27 v; 1.6 m/s took ~15 s back from 25 m out), then the normal merge (traffic rule above)
+      if (A.apron && !track.inPitArea(car.s, car.d)) {
+        if (sd * b.absD > sd * car.d) b.absD = car.d;
+        // (an open bay, track.openAreas: ~50 deg, straight across it - its chord, the barrier, runs at a steep angle to the
+        // track: at 15 deg the path ran into it and the car scraped along it at ~10 km/h)
+        if (ad > hw + 2) { b.absDT = sd * (hw + 1); b.absRate = track.openAreas.length && track.inOpenArea(car.s, car.d) >= 0 ? clamp(v * 1.2, 2, 14) : clamp(v * 0.27, 1.6, 7); }
+      }
       // (all four wheels past the kerb: ease off while crossing back — a rejoin that cuts across the inside of the next
       // corner must not gain time, Race's track-limits rule counts that as a strike)
       // (just over the kerb: rejoin without lifting)
@@ -5591,7 +6058,7 @@ const AI = (() => {
 
     // blue flags: move off the line on straights and lift a little for a car lapping us
     b.yieldOn = false;
-    if (lapper && (!finished || !lapper.finished) && (-lapDs - LEN) / Math.max(v, 10) < (finished ? 2 : qm ? 2.5 : 1.2) && !b.pitIn && !b.pitOut) {
+    if (lapper && (!finished || !lapper.finished) && (-lapDs - LEN) / Math.max(v, 10) < (finished ? 2 : qm ? 4.5 : 1.2) && !b.pitIn && !b.pitOut) {
       b.yieldOn = true;
       if (onStr) {
         const ln = lineAt(A, car.s, b.kw);
@@ -5904,10 +6371,12 @@ const AI = (() => {
   // (cars ahead are for the normal following / collision logic)
   function mergeClear(car, G, A, v, d0, d1) {
     const L = A.L, sg = d1 > d0 ? 1 : -1, e0 = d0 + sg * 1.3, e1 = d1 + sg * 2.3, lo = Math.min(e0, e1), hi = Math.max(e0, e1);
+    // (on a hot exit's road: clear of anyone who would close up before the move across is done, + 1.2 s; else 2 s of closing)
+    const E = A.exit, tW = E && E.hot && P.hotX && exitU(A, car.s) < E.len + 30 ? Math.max(2, Math.abs(d1 - d0) / PO_RATE + 1.2) : 2;
     for (const o of G.cars) {
       if (o === car || o.kinematic || o.dnf) continue;
       let ds = o.s - car.s; if (ds > L / 2) ds -= L; else if (ds < -L / 2) ds += L;
-      if (ds > LEN + 2 || ds < -(LEN + 1 + Math.max(0, o.speed - v) * 2)) continue;
+      if (ds > LEN + 2 || ds < -(LEN + 1 + Math.max(0, o.speed - v) * tW)) continue;
       if (o.d > lo && o.d < hi) return false;
     }
     return true;
@@ -5976,23 +6445,70 @@ const AI = (() => {
     inp.boost = !finished && inp.throttle > b.pow - 0.05 && v > 10 && v < vMax && soc > reserve && !car.offTrack && (b.vT > v + 1 || car.overtake) && !car.pitLimiter;
   }
 
+  // free run (m) of the car centre along its heading (dir 1) / backwards (dir -1) before it comes within half a car width
+  // + 0.3 m of a barrier: ray-marched (0.75 m steps, up to max) through the drivable corridor (escape roads are bays in it)
+  const _rp = { s: 0, d: 0, idx: -1 }, _rco = { min: 0, max: 0, pit: false };
+  function rayFree(track, car, dir, max) {
+    const ch = Math.cos(car.h) * dir, sh = Math.sin(car.h) * dir, m = C.width / 2 + 0.3;
+    // open areas (track.openAreas): the corridor is open inside a bay, its chord is the barrier -> where the centre comes
+    // within m of the chord line, if that point is on the chord (+-2 m)
+    const OA = track.openAreas;
+    if (OA && OA.length) for (let k = 0; k < OA.length; k++) {
+      const o = OA[k], a = o.chord[0], c = o.chord[1], nX = o.chordN[0], nZ = o.chordN[1];
+      const d0 = (car.x - a[0]) * nX + (car.z - a[1]) * nZ, app = -(ch * nX + sh * nZ);   // (bay side +; closing rate)
+      if (d0 < -m || app <= 1e-3) continue;
+      const x = (d0 - m) / app;
+      if (x >= max) continue;
+      const ex = c[0] - a[0], ez = c[1] - a[1], l = Math.hypot(ex, ez), u = ((car.x + ch * x - a[0]) * ex + (car.z + sh * x - a[1]) * ez) / l;
+      if (u > -2 && u < l + 2) max = Math.max(0, x);
+    }
+    let hint = car.idx;
+    for (let x = 0.75; x <= max; x += 0.75) {
+      const p = track.project(car.x + ch * x, car.z + sh * x, hint, _rp); hint = p.idx;
+      const c = track.corridor(p.s, p.d, _rco);
+      if (p.d < c.min + m || p.d > c.max - m) return x - 0.75;
+    }
+    return max;
+  }
+  // heading error against the heading recovery aims for off the asphalt on a circuit with escape roads / aprons (A.apron):
+  // ~20 deg toward the track; deep in an open bay (track.openAreas) up to ~60 deg, straight across it (its chord converges
+  // on the track at a steep angle: at 20 deg the car ran along it). Elsewhere (on the asphalt, the pit lane): rel itself
+  function aprRel(track, A, car, i, rel) {
+    const ad = Math.abs(car.d), hw = A.hw[i];
+    if (!A.apron || ad <= hw + 1 || track.inPitArea(car.s, car.d)) return rel;
+    const k = track.openAreas.length && track.inOpenArea(car.s, car.d) >= 0 ? clamp((ad - hw) * 0.05, 0.35, 1.05) : 0.35;
+    return wrapA(rel + (car.d > 0 ? k : -k));
+  }
   // ---------- recovery: U-turn forward at full lock, reverse with opposite lock when a wall is close ----------
   function recover(b, car, G, A, rel, dt) {
     const inp = b.inp, track = G.track;
     b.recT += dt; b.recTot = (b.recTot || 0) + dt;
-    const cr = Math.cos(rel), sr = Math.sin(rel), i = car.idx, v = car.speed;
+    const i = car.idx, v = car.speed;
+    // circuits with escape roads / wide aprons (A.apron), off the asphalt: turn to a heading ~20 deg toward the track (not
+    // along it, then a second turn), barrier distances along the heading from the real corridor (rayFree: the d-based
+    // estimate assumed a barrier 1 m beyond a car out on a 30 m apron -> forward / reverse every 0.4 s), done only with
+    // room ahead to drive on
+    const apr = A.apron && Math.abs(car.d) > A.hw[i] + 1 && !track.inPitArea(car.s, car.d);   // (not the pit lane)
+    if (apr) rel = aprRel(track, A, car, i, rel);
+    const cr = Math.cos(rel), sr = Math.sin(rel);
+    const fwdFree = apr ? rayFree(track, car, 1, 30) : 99;
     inp.boost = false;
-    if (cr > 0.85 && (b.recFwd === 1 || v < 1)) { b.recSg = 0; b.rec = 0; b.stuckT = 0; b.recT = 0; b.recTot = 0; b.off = b.offT = car.d - lineAt(A, car.s, b.kw); b.w = b.wT = 0; return inp; }
+    if (cr > 0.85 && (b.recFwd === 1 || v < 1) && fwdFree > 4 + v * 0.5) { b.recSg = 0; b.rec = 0; b.stuckT = 0; b.recT = 0; b.recTot = 0; b.off = b.offT = car.d - lineAt(A, car.s, b.kw); b.w = b.wT = 0; return inp; }
     // turn direction latched (rel flips sign around ±180°); facing backwards: arc toward the side with more room
-    if (!b.recSg) b.recSg = cr > -0.5 ? (rel > 0 ? 1 : -1) : (car.d < 0 ? 1 : -1);
+    if (!b.recSg) b.recSg = cr > -0.5 || apr ? (rel > 0 ? 1 : -1) : (car.d < 0 ? 1 : -1);   // (apron / bay: the shorter way round)
     const sg = b.recSg;
     if (cr > -0.2) b.recSg = rel > 0 ? 1 : -1;
     // distance to the usable edge (asphalt + a little run-off, never beyond the barrier) ahead / behind
-    const hw = A.hw[i] + 2.5, eR = Math.min(track.wallR[i] - 0.5, Math.max(hw, car.d + 1)), eL = Math.max(track.wallL[i] + 0.5, Math.min(-hw, car.d - 1));
-    const wallAhead = sr > 0.05 ? (eR - car.d) / sr : sr < -0.05 ? (car.d - eL) / -sr : 99;
-    const wallBehind = sr > 0.05 ? (car.d - eL) / sr : sr < -0.05 ? (eR - car.d) / -sr : 99;
+    let wallAhead, wallBehind;
+    if (apr) { wallAhead = fwdFree; wallBehind = rayFree(track, car, -1, 12); }
+    else {
+      const hw = A.hw[i] + 2.5, eR = Math.min(track.wallR[i] - 0.5, Math.max(hw, car.d + 1)), eL = Math.max(track.wallL[i] + 0.5, Math.min(-hw, car.d - 1));
+      wallAhead = sr > 0.05 ? (eR - car.d) / sr : sr < -0.05 ? (car.d - eL) / -sr : 99;
+      wallBehind = sr > 0.05 ? (car.d - eL) / sr : sr < -0.05 ? (eR - car.d) / -sr : 99;
+    }
     if (b.recFwd === 1) {
-      inp.reverse = false; inp.steer = -sg * Math.min(car.offTrack ? 0.6 : 0.85, Math.abs(rel) * 1.5);
+      // (full lock on paved run-off: its grip is the track's)
+      inp.reverse = false; inp.steer = -sg * Math.min(car.offTrack && !(apr && car.surface === SURF.RUNOFF) ? 0.6 : 0.85, Math.abs(rel) * 1.5);
       inp.throttle = v < 5 ? 1 : v < 7 ? 0.25 : 0; inp.brake = v > 8 ? 0.5 : 0;
       if (b.recT > 0.4 && ((wallAhead < 2.5 + v * 0.35 && cr < 0.6) || (v < 0.6 && b.recT > 1.2))) { b.recFwd = 0; b.recT = 0; }
     } else {
@@ -6064,6 +6580,7 @@ const AI = (() => {
     serrano: [1.0599, 1.0444, 1.0290, 1.0121, 1, 0.9872, 0.9693, 0.9604],
     leman: [1.0531, 1.0384, 1.0247, 1.0079, 1, 0.9889, 0.9715, 0.9617],
     dorado: [1.0569, 1.0421, 1.0279, 1.0126, 1, 0.9903, 0.9791, 0.9766],
+    kettle: [1.0628, 1.0463, 1.0304, 1.0090, 1, 0.9864, 0.9677, 0.9621],
   };
   // fixed difficulties on the k scale (k = extreme's k x extreme lap / difficulty lap; the mean of six team cars), v3:
   // Easy / Medium / Hard keep their lap times (VS), Extreme is quicker, the E_REF reference lap moved (REF_MIG[3])
@@ -6075,11 +6592,13 @@ const AI = (() => {
     serrano: { easy: 0.7180, medium: 0.8386, hard: 0.9143, extreme: 1.0361 },
     leman: { easy: 0.7081, medium: 0.8331, hard: 0.9094, extreme: 1.0385 },
     dorado: { easy: 0.7117, medium: 0.8372, hard: 0.9176, extreme: 1.0227 },
+    kettle: { easy: 0.7204, medium: 0.8414, hard: 0.9242, extreme: 1.0384 },
     _: { easy: 0.7158, medium: 0.8378, hard: 0.9186, extreme: 1.0342 },
   };
   // braking share cap of the limit envelope per circuit: Cerro Dorado's long heavy stops into hairpins (T1 from 340 km/h,
-  // T7 downhill) left Extreme's 1.05 share ~15 km/h behind its plan at turn-in (wide on the exits); 1.02 = clean + quicker
-  const BRK_CAP = { dorado: 1.02 };
+  // T7 downhill) left Extreme's 1.05 share ~15 km/h behind its plan at turn-in (wide on the exits); 1.02 = clean + quicker.
+  // Kettle Pond: the same at T9 after the 1.2 km downhill straight (~15 km/h over, 0.8 m onto the apron; the top of the adaptive dial 3 m); 1.03 = clean
+  const BRK_CAP = { dorado: 1.02, kettle: 1.03 };
   const ADAPT_FLOOR = 0.85;   // adaptive can go ~15 % easier than Easy
   function calOf(id) {
     const t = CAL_TRACK[id] || CAL_T, f = K_FIXED[id] || K_FIXED._;
@@ -8080,7 +8599,7 @@ const Race = (() => {
     }
     if (race.mode !== 'timetrial') overtakeAtLine(G, race, car);
     strategyHook(G, race, car);
-    if (car.isPlayer && race.laps > 1 && car.lap === race.laps) note(race, 'FINAL LAP');
+    if (car.isPlayer && race.phase === 'racing' && race.laps > 1 && car.lap === race.laps) note(race, 'FINAL LAP');   // (not in qualifying)
   }
 
   function finishCar(G, race, car, p, tc) {
@@ -8916,8 +9435,9 @@ const Race = (() => {
 // AI: run planner (plan), out lap (car.qPace 0.78, 2.5 s to the car ahead at the line), push (1), cool (0.7), in lap
 // (wantPit). Lap model pace (expLap): ref lap (Race._sess.refLap: dry softs) x (ref pace / brain pace)^CAL.e x CAL.k x
 // Weather.lapFactor, + noise / mistakes / traffic / deleted laps (sampleLap; tools/quali_cal.mjs).
-// Impeding (live only): a car on a flying lap held up on its line by a slower car that had it within 3 s behind for
-// 2.5 s -> a warning / grid places (IMP by penalty level). Causing a collision: Race's fault model at the level (a car
+// Impeding (live only): a car on a flying lap (within 5 s of its pace, projected: a cool-down is none) held up on its
+// line by a slower car that had it within 3 s behind for 2.5 s -> a warning / grid places (IMP by penalty level; the
+// same car on the same lap again only half a lap on). Causing a collision: Race's fault model at the level (a car
 // not on a flying lap that hits one is at fault as a blue-flag dive) -> grid places (COL). Both applied at finish.
 //
 // race.qs (plain JSON but for the two weather objects; car ids, never car refs):
@@ -8964,6 +9484,12 @@ const Quali = (() => {
   const QP = { out: 0.78, cool: 0.7, in: 0.7 };           // AI pace caps on slow laps (car.qPace -> ai.js cool-down speeds)
   const TURN = 30;                                        // s in the garage between two runs (at least; shorter in short sessions)
   const OUT_GAP = 2.5, SPACE = 6;                         // s to the car ahead at the end of an out lap; s between two cars leaving
+  // run planner: final-run margin floor (s before the flag) when two runs only fit with it; a time off the car's expected
+  // lap by > off (share): a middle run; skip the final run with a time within near of the expected best (expected lap
+  // x (1 - best)) on ses.sk < pNear, or projected >= safe places clear of the cut on ses.sk < pSafe (>= 2 push laps done)
+  const F1_MAX = 0.45;                                    // the latest early-run start (share of the session: drawSession)
+  const RUN = { dlMin: 15, off: 0.004, best: 0.002, near: 0.0025, safe: 4, pSafe: 0.7, pNear: 0.35 };
+  const LANE_PAD = 12;                                    // s: a pit-lane queue (cars released together): a car with no time waits no longer for spacing that late
   const PREP = 500;                                       // m (at least) before the line: an out / cool lap is at full pace from the last corner
   const H = 1 / 30, BLEND = 150;                          // lap model step (s); m to blend onto the racing line
   const NOISE = 0.0025, DEL = { easy: 0.04, medium: 0.025, adaptive: 0.025, hard: 0.015, extreme: 0.01 };   // model: lap spread, deleted laps
@@ -8971,15 +9497,17 @@ const Quali = (() => {
   // out / cool / in laps: x out, cool of the push lap
   // (2026-10-03, vortex + kotori, 20 cars x 2 push laps each per difficulty; adaptive: medium's, unmeasured). s: session
   // factor (quali_cal --session: a 12-minute Q1, live vs model mean best on vortex / kotori / harbour; best of several
-  // laps with the physical lap-to-lap spread, tows): the model's laps x k x s
+  // laps with the physical lap-to-lap spread, tows): the model's laps x k x s (2026-10-04, after the run planner's early
+  // runs / >= 2 push laps: hard over 6 sessions, medium / easy 3; extreme scaled as hard)
   const CAL = { k: { easy: 0.9997, medium: 1.0067, adaptive: 1.0067, hard: 1.016, extreme: 1.0289 }, e: 1, out: 1.15, cool: 1.24,
-    s: { easy: 0.996, medium: 0.9943, adaptive: 0.9943, hard: 0.9872, extreme: 0.9834 },
+    s: { easy: 0.9995, medium: 0.9964, adaptive: 0.9964, hard: 0.9896, extreme: 0.9858 },
     wet: 0.035 };   // (the AI's wet margins over Weather.lapFactor: x (1 + wet x min(1, w / 0.5)); kotori, I at 0.5 / W at 1)
   const END_LAPS = 1.6;                                   // a session ends by the flag + 1.6 laps at the latest
   // tyre wear in a session: the race's wear scale over >= Q_REF laps (G.world.wearPerMetre while qualifying, the race's
   // value back at qDone: a short race's rate put the softs past their cliff within one run)
   const Q_REF = 15;
-  const IMP_NEAR = 50, IMP_FAR = 80, IMP_DD = 2.2, IMP_T = 8, IMP_SEE = 3, IMP_SEE_T = 2.5;
+  const IMP_NEAR = 50, IMP_FAR = 80, IMP_DD = 2.2, IMP_T = 8, IMP_SEE = 5, IMP_SEE_T = 2.5;   // (flying car behind: warned 5 s out, so drivers have time to react)
+  const OFF_FLY = 5;                                      // s off the car's pace, projected over the lap: no flying lap for impeding (a cool-down: nobody impedes it)
 
   const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
   const emit = (G, ev) => { (G.events || (G.events = [])).push(ev); return ev; };
@@ -9035,7 +9563,7 @@ const Quali = (() => {
   const newRow = id => ({ id, best: null, s: [null, null, null], at: null, c: null, laps: 0, del: 0 });
   function initCar(qs, car) {
     car.q = { id: car.id, st: 'garage', run: 0, runs: [], push: 0, lap0: 0, cnt: -1, valid: false, lock: 0, sim: false, seen: 0, lapN: car.lap | 0,
-      T: 0, k: 0, d0: 0, bl: 0, rp: 0, tg: -1e9, n: 0, kE: 0.95, enc: null, del: false, delAt: -1, wxT: 0, ses: null };
+      T: 0, k: 0, d0: 0, bl: 0, rp: 0, tg: -1e9, n: 0, kE: 0.95, enc: null, imps: [], del: false, delAt: -1, wxT: 0, ses: null, np: 0 };
     car.qOut = -1; car.qBehind = -1; car.qPace = 1;
     pub(car);
   }
@@ -9044,13 +9572,14 @@ const Quali = (() => {
     car.qSt = q.st; car.qSim = q.sim; car.qLock = q.lock; car.qDel = q.del; car.wxMark = q.sim;
     car.qPush = q.st === 'push' && q.valid && (!isHuman(car) || q.kE > 0.8);   // (a human cruising is no flying lap)
   }
-  // a car's own plan for this session, rolled at the green flag: last-run margin (s before the flag), first-run start
-  // (share of the session), push laps per run, a middle run, skipping the final run when safe, 3-minute start (s)
+  // a car's own plan for this session, rolled at the green flag: last-run margin (s before the flag), early-run start
+  // (share of the session: ~20 % at the green, most by 30 %), push laps on the early run, on the final run, middle-run
+  // start (share), final-run skip roll (a good time: RUN.safe / RUN.near), 3-minute start (s)
   function drawSession(qs, car) {
-    const q = car.q;
-    q.ses = { dl: 15 + 55 * rnd(qs, q), f1: 0.08 + 0.22 * rnd(qs, q), n1: rnd(qs, q) < 0.35 ? 2 : 1, nl: rnd(qs, q) < 0.2 ? 2 : 1,
-      mid: rnd(qs, q) < 0.5, skip: rnd(qs, q) < 0.3, g0: 15 * rnd(qs, q) };
-    q.run = 0; q.runs.length = 0; q.rp = 0;
+    const q = car.q, r = rnd(qs, q), u = rnd(qs, q);
+    q.ses = { dl: 15 + 55 * rnd(qs, q), f1: r < 0.2 ? 0.02 * u : r < 0.9 ? 0.04 + 0.26 * u : 0.3 + 0.15 * u, n1: rnd(qs, q) < 0.7 ? 2 : 1,
+      nl: rnd(qs, q) < 0.2 ? 2 : 1, fm: 0.4 + 0.15 * rnd(qs, q), sk: rnd(qs, q), g0: 15 * rnd(qs, q) };
+    q.run = 0; q.runs.length = 0; q.rp = 0; q.np = 0;
   }
   function start(G, race, o) {
     const cars = G.cars, fm = format(cars.length), raceW = G.weather;
@@ -9156,10 +9685,15 @@ const Quali = (() => {
   const vAt = (T, s) => { const f = T.wrapS(s) / T.step; let i = Math.floor(f); const u = f - i; if (i >= T.N) i -= T.N; const j = i + 1 >= T.N ? 0 : i + 1; return T.raceSpeed[i] + (T.raceSpeed[j] - T.raceSpeed[i]) * u; };
 
   // ---------- AI run planner ----------
-  // The car's runs from `now` (q.runs = [{go, push, tl, tlH}], go = clock s; tlH: with a hurried out lap). The last run's last push lap starts ses.dl s
-  // before the flag; a first run at ses.f1 of the session and a middle one (long sessions) when they fit before it; a
-  // 3-minute session: one run in the first 15 s. Safe (> 4 places clear of the cut, a time set): no final Q1 / Q2 run
-  // with ses.skip. Rain due within the run on slicks: go now, 2-3 push laps. Drying (inter-wet track): the last run only.
+  // The car's runs from `now` (q.runs = [{go, push, tl, tlH}], go = clock s; tlH: with a hurried out lap).
+  // - Early run (no run yet): at ses.f1 of the session with ses.n1 push laps (else 1), pulled earlier so that a final run
+  //   still fits after it; when two runs never fit: one run with the push laps that fit (2 where the session allows).
+  // - Middle run (once, after the first run): the time is off (none / > RUN.off over the expected lap / projected within a
+  //   place of the cut or in the drop zone), at ses.fm of the session, when it fits before the final run.
+  // - Final run: its last push lap starts ses.dl s before the flag. Skipped with a good time after >= 2 push laps: projected
+  //   RUN.safe places clear of the cut (Q1 / Q2), or within RUN.near of the expected best (rolls ses.sk); re-checked every plan.
+  // 3-minute session: one run in the first 15 s. Rain due within the run on slicks: go now, 2-3 push laps. Drying
+  // (inter-wet track): the final run only.
   function plan(G, race, qs, car, now) {
     const q = car.q, s = q.ses, idx = qs.idx, g = qs.g[idx], len = qs.len[idx], f = g + len, W = qs.W, runs = q.runs;
     runs.length = 0;
@@ -9168,7 +9702,7 @@ const Quali = (() => {
     if (!s || now + tlH > f - 2) return runs;   // (no push lap could start before the flag, even with a hurried out lap)
     const late = f - 2 - tlH;   // (the latest go for a push lap before the flag: aiTrack hurries the out lap then)
     if (len <= 200) {
-      const go = Math.max(now, Math.min(g + s.g0, late));
+      const go = Math.max(now, Math.min(g + s.g0, late - LANE_PAD));   // (a tight lap: out at the green, ahead of a pit-lane queue)
       if (q.run === 0) runs.push({ go, push: Math.max(1, 1 + Math.floor((f - go - tl - P) / (P + C))), tl, tlH });
       return runs;
     }
@@ -9177,16 +9711,49 @@ const Quali = (() => {
       if (pr.p >= 0.5) { runs.push({ go: now, push: s.dl > 42 ? 3 : 2, tl, tlH }); return runs; }
     }
     const drying = !!(W && W.dynamic && W.trend < 0 && (+W.wet || 0) > (W.cross ? W.cross.I : 0.27));
-    const dur = n => tl + n * P + (n - 1) * C + I + turn(qs), goL = f - tl - (s.nl - 1) * (P + C) - s.dl;
-    if (!drying && q.run === 0) { const g1 = Math.max(now, g + s.f1 * len); if (g1 + dur(s.n1) <= goL) runs.push({ go: g1, push: s.n1, tl, tlH }); }
-    if (!drying && s.mid && len >= 720 && q.run <= 1) {
-      const a = runs.length ? runs[0].go + dur(runs[0].push) : now, gm = Math.max(now, (a + goL - dur(1)) / 2);
-      if (gm >= a && gm + dur(1) <= goL) runs.push({ go: gm, push: 1, tl, tlH });
+    const dur = n => tl + n * P + (n - 1) * C + I + turn(qs);
+    const goN = (n, dl) => f - tl - (n - 1) * (P + C) - dl;   // (the latest go for n push laps, the last one starting dl s before the flag)
+    const nl = s.nl > 1 && goN(s.nl, RUN.dlMin) < now ? 1 : s.nl, goL = goN(nl, s.dl);
+    if (q.run === 0 && !drying) {
+      // (the early go: ses.f1 of the session; when the run must leave by `x`, the field's spread squeezed into 85 % of the
+      // time to x - a tight fit only for a car that wants to go by x anyway or a spread of >= 12 % of the session)
+      const at = x => Math.max(now, g + s.f1 * Math.min(len, 0.85 * (x - g) / F1_MAX)), fits = x => now <= x && (g + s.f1 * len <= x || x - g >= 0.12 * len);
+      for (const [n, m, dl] of [[s.n1, nl, s.dl], [s.n1, nl, RUN.dlMin], [s.n1, 1, RUN.dlMin], [1, nl, s.dl], [1, nl, RUN.dlMin], [1, 1, RUN.dlMin]]) {
+        const x = goN(m, dl) - dur(n);
+        if (fits(x)) { runs.push({ go: at(x), push: n, tl, tlH }, { go: Math.max(now, goN(m, dl)), push: m, tl, tlH }); return runs; }
+      }
+      const x2 = goN(2, 5), n = now <= x2 ? 2 : 1;   // (one run: two push laps where they fit - the second one a bonus: 5 s margin)
+      runs.push({ go: at(n > 1 ? x2 : goN(1, s.dl)), push: n, tl, tlH });
+      return runs;
     }
-    const cut = idx < qs.fmt.k - 1 ? qs.fmt.start[idx + 1] : 0, R = rowOf(qs, idx, car.id);
-    const safe = cut > 0 && s.skip && q.run > 0 && R && R.best != null && car.pos > 0 && car.pos < cut - 4;
-    if (!safe || runs.length) runs.push({ go: Math.max(now, goL), push: s.nl, tl, tlH });
+    const cut = idx < qs.fmt.k - 1 ? qs.fmt.start[idx + 1] : 0, R = rowOf(qs, idx, car.id), t = R && R.best != null ? R.best : Infinity;
+    const E = runLap(G, c, P), pos = t < Infinity ? projPos(G, qs, car, c, t) : 99, off = t > E * (1 + RUN.off) || (cut > 0 && pos >= cut - 1);
+    if (off && q.run === 1 && !drying) {
+      const gm = Math.max(now, Math.min(g + s.fm * len, goL - dur(1)));
+      if (gm + dur(1) <= goL) runs.push({ go: gm, push: 1, tl, tlH });
+    }
+    const good = !off && q.np >= 2 && ((cut > 0 && pos <= cut - RUN.safe && s.sk < RUN.pSafe) || (t <= E * (1 - RUN.best) * (1 + RUN.near) && s.sk < RUN.pNear));
+    if (!good || runs.length) runs.push({ go: Math.max(now, goL), push: nl, tl, tlH });
     return runs;
+  }
+  // the expected first push lap of a run (push lap P) on a new set of c: worn by the out lap (wearF)
+  function runLap(G, c, P) {
+    const k = COMPOUNDS[c], wl = lapWear(G, c);
+    return k && wl > 0 && typeof Physics !== 'undefined' && Physics.wearGrip ? P * Math.pow(Physics.wearGrip(Math.min(1, 1.5 * wl), k.cliff), -0.45) : P;
+  }
+  // projected place in the session for time t: every other car at its best or its expected best (expected lap x
+  // (1 - RUN.best)), whichever is faster
+  function projPos(G, qs, car, c, t) {
+    const w = wetNow(qs);
+    let p = 1;
+    for (const o of G.cars) {
+      if (o === car || !inSess(qs, o)) continue;
+      const Ro = rowOf(qs, qs.idx, o.id);
+      let x = runLap(G, c, expLap(G, qs, o, c, w)) * (1 - RUN.best);
+      if (Ro && Ro.best != null && Ro.best < x) x = Ro.best;
+      if (x < t) p++;
+    }
+    return p;
   }
   // in the garage, green flag: re-plan every 2 s, leave at the run's time (after the turnaround / a lock), SPACE s after
   // the last car out unless the wait costs the run its push lap before the flag (3-minute session: no spacing)
@@ -9196,7 +9763,7 @@ const Quali = (() => {
     if ((q.rp -= dt) <= 0) { q.rp = 2; plan(G, race, qs, car, now); }
     const r = q.runs[0];
     if (!r) return;
-    const late = qs.g[qs.idx] + qs.len[qs.idx] - 2 - r.tlH;   // (past it no push lap starts before the flag: no turnaround / spacing wait)
+    const R = rowOf(qs, qs.idx, car.id), late = qs.g[qs.idx] + qs.len[qs.idx] - 2 - r.tlH - (R && R.best != null ? 0 : LANE_PAD);   // (past it no push lap starts before the flag: no turnaround / spacing wait; no time yet: a pit-lane queue's margin too)
     if (now < r.go || now < q.lock || (now < q.tg + turn(qs) && q.tg + turn(qs) < late)) return;
     if (now < qs.lastGo + SPACE && qs.len[qs.idx] > 200 && now + SPACE < late) return;
     const c = tyreFor(G, qs, car, r.push, r.tl / lapTime(G, qs));
@@ -9210,6 +9777,7 @@ const Quali = (() => {
     const q = car.q;
     q.st = st; q.del = false; q.delAt = -1;
     q.valid = st === 'push'; q.cnt = st === 'push' ? qs.idx : -1;
+    if (st === 'push') q.np++;
     if (isHuman(car)) return;
     car.wantPit = st === 'in';
     car.qPace = st === 'push' ? 1 : QP[st] || 1;
@@ -9217,16 +9785,27 @@ const Quali = (() => {
     q.T = st === 'push' ? sampleLap(G, qs, car) : P * (st === 'out' ? CAL.out : CAL.cool);
     q.k = lapSum(G.track) / q.T;
   }
-  // the tyre category is wrong for the conditions by > 3 %: no push lap on it
-  function tyresOk(G, qs, car) {
+  // the tyre category is wrong for the conditions by > 3 %: no push lap on it. u: laps to the push lap (out / cool lap):
+  // the set picked for the push laps ahead (the garage's pick, on the forecast) is fine too
+  function tyresOk(G, qs, car, u) {
     const W = qs.W;
     if (!W || !W.dynamic || !hasWx() || !Weather.cat) return true;
     const b = tyreFor(G, qs, car, 1, 0), c = car.tyre.compound;
-    return Weather.cat(b) === Weather.cat(c) || lapF(c, W.wet) <= 1.03 * lapF(b, W.wet);
+    if (Weather.cat(b) === Weather.cat(c) || lapF(c, W.wet) <= 1.03 * lapF(b, W.wet)) return true;
+    return u > 0 && Weather.cat(tyreFor(G, qs, car, Math.max(1, car.q.push), u)) === Weather.cat(c);
+  }
+  // wrong tyres (tyresOk): in only when that pays - a time already set (a push lap in progress: and another run still
+  // fits), or another run on the right set still fits before the flag; else the lap goes on (a time on the wrong set
+  // beats none: a drying / wetting track crossing a tyre line mid-lap must not leave the car with no time)
+  function tyresIn(G, qs, car, u) {
+    if (tyresOk(G, qs, car, u)) return false;
+    const R = rowOf(qs, qs.idx, car.id), timed = !!(R && R.best != null), P = expLap(G, qs, car, tyreFor(G, qs, car, 1, 0), wetNow(qs));
+    const again = qs.st === 'green' && qs.clock + inOf(G, car, P) + tlOf(G, car, P, 1) < qs.g[qs.idx] + qs.len[qs.idx] - 2;
+    return car.q.st === 'push' ? timed && again : timed || again;
   }
   // AI on track, every step: the out-lap gap (last 40 % of the lap: slower while the car ahead is within OUT_GAP s and
   // the flag allows), full pace from the last corner of an out / cool lap before a push lap (physics only: the model's
-  // slow-lap times include it), the tyre check every 2 s (wrong tyres: in)
+  // slow-lap times include it), the tyre check every 2 s (wrong tyres: in, when that pays - tyresIn)
   function aiTrack(G, qs, car, dt) {
     const q = car.q, T = G.track, rc = car._race;
     if (q.st === 'out' || q.st === 'cool') {
@@ -9248,7 +9827,7 @@ const Quali = (() => {
         if (q.sim && p < 1 && p0 < 1) q.k *= p / p0; else if (q.sim && p === 1) q.k = lapSum(T) / (P || expLap(G, qs, car, car.tyre.compound, wetNow(qs)));
       }
     }
-    if ((q.wxT -= dt) <= 0) { q.wxT = 2; if (!tyresOk(G, qs, car)) setSt(G, qs, car, 'in'); }
+    if ((q.wxT -= dt) <= 0) { q.wxT = 2; if (tyresIn(G, qs, car, q.st === 'push' ? 0 : Math.max(0, 1 - (rc.dist - rc.lineDist) / T.length))) setSt(G, qs, car, 'in'); }
   }
 
   // ---------- per step ----------
@@ -9306,7 +9885,7 @@ const Quali = (() => {
       const ps = rc.pit, human = isHuman(car);
       if (ps && ps.state === 'garage') { if (away(car)) arrive(qs, car); }
       else if (q.st === 'lane' && !ps) { setSt(G, qs, car, 'out'); q.clr = false; emit(G, { type: 'qOutLap', car }); if (model && !human) toModel(G, car); }
-      else if (human && (q.st === 'out' || q.st === 'push') && (ps || (car.inPitLane && q.clr))) setSt(G, qs, car, 'in');   // (in lap: back in the lane after reaching the track, not still on the exit road)
+      else if (human && (q.st === 'out' || q.st === 'push') && ps) setSt(G, qs, car, 'in');   // (in lap: only once past the limiter line - Race takes the car to the box; the entry road alone is not one)
       if (!car.inPitLane) q.clr = true;
       if (car.lap !== q.lapN) { laps(G, race, qs, car); q.lapN = car.lap; crossing(G, qs, car); }
       if (q.valid && (q.st === 'push' || q.st === 'cool') && rc.h && rc.h.bad) { q.valid = false; q.del = true; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }
@@ -9335,7 +9914,7 @@ const Quali = (() => {
     q.lap0 = rc.lapStartT;
     if (!away(car) || q.st === 'lane' || q.st === 'in') return;
     if (isHuman(car)) { setSt(G, qs, car, 'push'); if (!green) { q.valid = false; q.cnt = -1; if (rc.h) rc.h.bad = true; } return; }
-    const ok = green && tyresOk(G, qs, car);
+    const ok = green && !tyresIn(G, qs, car, 0);
     if (q.st === 'push') { q.push--; setSt(G, qs, car, q.push > 0 && ok ? 'cool' : 'in'); }
     else setSt(G, qs, car, ok ? 'push' : 'in');
     if (q.sim) q.k = lapSum(G.track) / q.T;
@@ -9597,20 +10176,39 @@ const Quali = (() => {
 
   // ---------- impeding (live) ----------
   const lostCtl = (T, c) => { const i = c.idx >= 0 ? c.idx : 0, rel = U.wrapAngle((c.h || 0) - Math.atan2(T.tz[i], T.tx[i])); return Math.abs(rel) > 0.7 || Math.abs(Math.atan2(c.vLat || 0, Math.max(3, Math.abs(c.vLong || 0)))) > 0.3; };
-  const exempt = (T, Y) => !!(Y.qPush || Y.ghosted || Y.inPitLane || Y.kinematic || (Y._race && Y._race.pit) || Y.offTrack || Y.dnf || !away(Y) || (T.inPitArea && T.inPitArea(Y.s, Y.d)) || lostCtl(T, Y));
+  // share of a lap's time at d m past the line (raceSpeed); s the lap so far is off the car's pace, projected over the
+  // lap: against its best of the session (never faster than its expected lap in the conditions now: rain), else that
+  // expected lap, scaled to the distance covered (>= a third of a lap: an AI push lap's early noise stays < OFF_FLY). Lap model cars: 0
+  const cumOf = T => T._qCum || (T._qCum = (() => { const a = new Float64Array(T.N + 1); for (let i = 0; i < T.N; i++) a[i + 1] = a[i] + T.step / Math.max(5, T.raceSpeed[i]); return a; })());
+  function shareAt(T, d) {
+    const C = cumOf(T), f = clamp(d, 0, T.length) / T.step, i = Math.min(T.N - 1, Math.floor(f));
+    return (C[i] + (C[i + 1] - C[i]) * Math.min(1, f - i)) / C[T.N];
+  }
+  function offPace(G, qs, car) {
+    const q = car.q, rc = car._race;
+    if (!q || !rc || q.sim || typeof rc.lapStartT !== "number") return 0;
+    const R = rowOf(qs, qs.idx, car.id), exp = expLap(G, qs, car, car.tyre.compound, wetNow(qs)), ref = R && R.best != null ? Math.max(R.best, exp) : exp;
+    const sh = shareAt(G.track, (rc.dist || 0) - (rc.lineDist || 0));
+    return (qs.clock - rc.lapStartT - ref * sh) / Math.max(1 / 3, sh);
+  }
+  const FLY = [];   // (impeding: per car, on a flying lap - qPush and on its pace)
+  const exempt = (T, Y, fy) => !!(fy || Y.ghosted || Y.inPitLane || Y.kinematic || (Y._race && Y._race.pit) || Y.offTrack || Y.dnf || !away(Y) || (T.inPitArea && T.inPitArea(Y.s, Y.d)) || lostCtl(T, Y));
   // qs.see[Y * n + X]: s that X, on a flying lap, has been within IMP_SEE s behind Y. Encounter (X.q.enc): Y ahead within
   // IMP_NEAR m on X's line (offsets from the racing line within IMP_DD); X loses dt (1 - v / vExp) while slower than 0.97 vExp (vExp = X's own pace
   // x raceSpeed); over on a pass, a gap > IMP_FAR m or after IMP_T s. Incident: lost >= the level's, X's lap still valid,
-  // Y had X in sight >= IMP_SEE_T s
+  // Y had X in sight >= IMP_SEE_T s; the same Y again on X's lap only >= half a lap after (q.imps). A flying lap: qPush and
+  // within OFF_FLY s of the car's pace (offPace: a cool-down / a lap already ruined can't be impeded)
   const offL = (T, c) => (c.d || 0) - T.raceLine[c.idx >= 0 ? c.idx : T.idxAt(c.s)];   // (lateral offset from the racing line)
   function impeding(G, race, qs, dt) {
     const T = G.track, cars = G.cars, n = cars.length, see = qs.see, lvl = race.penalties ? IMP[race.penaltyLevel] : null;
     if (!see || see.length !== n * n) return;
+    FLY.length = n;
+    for (let x = 0; x < n; x++) FLY[x] = !!(cars[x].qPush && cars[x].q && offPace(G, qs, cars[x]) <= OFF_FLY);
     for (let y = 0; y < n; y++) {
       const Y = cars[y];
       for (let x = 0; x < n; x++) {
         const X = cars[x], k = y * n + x;
-        if (x === y || !X.qPush || !away(Y)) { see[k] = 0; continue; }
+        if (x === y || !FLY[x] || !away(Y)) { see[k] = 0; continue; }
         const ds = T.deltaS(X.s, Y.s);
         if (ds > 0 && ds / Math.max(15, X.speed || 0) < IMP_SEE) see[k] += dt; else see[k] = 0;
       }
@@ -9618,20 +10216,25 @@ const Quali = (() => {
     for (let x = 0; x < n; x++) {
       const X = cars[x], q = X.q;
       if (!q) continue;
-      if (!X.qPush) { q.enc = null; continue; }
+      if (!FLY[x]) { q.enc = null; continue; }
       let e = q.enc;
       if (e) { const Y = cars[e.y], ds = T.deltaS(X.s, Y.s); if (ds <= 0 || ds > IMP_FAR || qs.clock - e.t0 > IMP_T) e = q.enc = null; }
       if (!e) {
         let by = -1, bd = IMP_NEAR;
-        for (let y = 0; y < n; y++) { const Y = cars[y]; if (y === x || exempt(T, Y)) continue; const ds = T.deltaS(X.s, Y.s); if (ds > 0 && ds < bd && Math.abs(offL(T, Y) - offL(T, X)) < IMP_DD) { bd = ds; by = y; } }
+        for (let y = 0; y < n; y++) { const Y = cars[y]; if (y === x || exempt(T, Y, FLY[y])) continue; const ds = T.deltaS(X.s, Y.s); if (ds > 0 && ds < bd && Math.abs(offL(T, Y) - offL(T, X)) < IMP_DD) { bd = ds; by = y; } }
         if (by < 0) continue;
         e = q.enc = { y: by, lost: 0, t0: qs.clock, done: false };
       }
       const Y = cars[e.y];
-      if (e.done || exempt(T, Y) || Math.abs(offL(T, Y) - offL(T, X)) >= IMP_DD) continue;
+      if (e.done || exempt(T, Y, FLY[e.y]) || Math.abs(offL(T, Y) - offL(T, X)) >= IMP_DD) continue;
       const vExp = q.kE * vAt(T, X.s), v = X.speed || 0;
       if (vExp > 5 && v < 0.97 * vExp) e.lost += dt * (1 - v / vExp);
-      if (lvl && e.lost >= lvl.lost && q.valid && see[e.y * n + x] >= IMP_SEE_T) { incident(G, qs, Y, X, e.lost, lvl); e.done = true; }
+      if (lvl && e.lost >= lvl.lost && q.valid && see[e.y * n + x] >= IMP_SEE_T) {
+        const rc = X._race, d = rc ? (rc.dist || 0) - (rc.lineDist || 0) : 0, L = X.lap | 0;
+        q.imps = (q.imps || []).filter(r => r.lap === L);
+        if (!q.imps.some(r => r.y === e.y && d - r.d < 0.5 * T.length)) { incident(G, qs, Y, X, e.lost, lvl); q.imps.push({ y: e.y, lap: L, d }); }
+        e.done = true;
+      }
     }
   }
   function incident(G, qs, Y, X, lost, lvl) {
@@ -9801,7 +10404,7 @@ const Quali = (() => {
       } else if (x.a === 'out') {
         if (qs.st !== 'green') { x.a = 'g'; x.at = Infinity; break; }
         car.tyre.compound = x.c; car.tyre.wear = x.w || 0;
-        x.T = sampleLap(G, qs, car); x.w = (x.w || 0) + lapWear(G, x.c); x.del = q.delAt >= 0; x.start = x.at; x.a = 'lap'; x.at += x.T;
+        x.T = sampleLap(G, qs, car); x.w = (x.w || 0) + lapWear(G, x.c); x.del = q.delAt >= 0; x.start = x.at; x.a = 'lap'; x.at += x.T; q.np++;
       } else if (x.a === 'lap') {
         const R = rowOf(qs, qs.idx, car.id);
         if (R) {
@@ -9921,7 +10524,7 @@ const Quali = (() => {
     PRESETS, IMP, COL, CAL, SPEEDS, collision, format, opts, start, update, frame, garageMode, setSpeed, speed,
     goOut, returnToGarage, skipBreak, ready, cont, simulateRest, finish, classify, status, remaining, humansIn,
     stateMsg, applyState, mirror, resMsg, applyRes, clientTick, snapshot, restore, canRewind,
-    _int: { expLap, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf },   // (tests)
+    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt },   // (tests)
   };
 })();
 
