@@ -864,7 +864,7 @@ const TRACK_DATA = {
   harbour: {
     id: 'harbour',
     name: 'Harbour Street Circuit',
-    country: 'Riviera city state (fictional)',
+    country: 'France (fictional)',
     climate: { when: 'late May (Monaco)', wetDay: 0.17, rain: 0.12, start: 0.4 },
     lapRecordHint: '1:08',
     description: 'Barriers inches from the kerbs: a crawling hotel hairpin, the tunnel sweep onto the harbour-front chicane, quick swimming-pool esses and a short main straight. Qualifying is everything.',
@@ -11540,7 +11540,7 @@ const NetCore = (() => {
       else if (!inp) input = BRAKE;
       else {
         const p = S.pin;
-        p.throttle = inp.throttle; p.brake = inp.brake; p.steer = inp.steer; p.boost = inp.boost; p.aeroPress = first && inp.aeroPress; p.kb = !!inp.kb;
+        p.throttle = inp.throttle; p.brake = inp.brake; p.steer = inp.steer; p.boost = inp.boost; p.aeroPress = first && inp.aeroPress; p.kb = !!inp.kb; p.hold = !!inp.hold;
         input = G.paused || S.pauseBrain ? pauseDrive(S, p, dt, !!G.paused) : p;   // (the race goes on behind the pause menu: the AI drives)
       }
       Physics.step(me, input, dt, G.world);

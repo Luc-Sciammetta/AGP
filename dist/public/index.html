@@ -55567,7 +55567,7 @@ const TRACK_DATA = {
   harbour: {
     id: 'harbour',
     name: 'Harbour Street Circuit',
-    country: 'Riviera city state (fictional)',
+    country: 'France (fictional)',
     climate: { when: 'late May (Monaco)', wetDay: 0.17, rain: 0.12, start: 0.4 },
     lapRecordHint: '1:08',
     description: 'Barriers inches from the kerbs: a crawling hotel hairpin, the tunnel sweep onto the harbour-front chicane, quick swimming-pool esses and a short main straight. Qualifying is everything.',
@@ -65547,7 +65547,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-04 20:41';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-05 11:44';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -68150,7 +68150,7 @@ const NetCore = (() => {
       else if (!inp) input = BRAKE;
       else {
         const p = S.pin;
-        p.throttle = inp.throttle; p.brake = inp.brake; p.steer = inp.steer; p.boost = inp.boost; p.aeroPress = first && inp.aeroPress; p.kb = !!inp.kb;
+        p.throttle = inp.throttle; p.brake = inp.brake; p.steer = inp.steer; p.boost = inp.boost; p.aeroPress = first && inp.aeroPress; p.kb = !!inp.kb; p.hold = !!inp.hold;
         input = G.paused || S.pauseBrain ? pauseDrive(S, p, dt, !!G.paused) : p;   // (the race goes on behind the pause menu: the AI drives)
       }
       Physics.step(me, input, dt, G.world);
@@ -85178,7 +85178,7 @@ const Game = (() => {
       try { const saved = M.ghost.load(localStorage, G.track.id, G.track); if (saved) M.race.setGhost(G, saved, { sessionBest: !netS }); } catch (e) { /* ignore */ }
     }
     qStart();   // (qualifying: screen state, ?qspeed)
-    rw.t = 0;   // (no 3-2-1 left over from a rewind)
+    rw.t = 0; rs.t = 0;   // (no 3-2-1 left over from a rewind or a respawn)
   }
 
   // G.weather for this session (CONTRACT §14): fixed dry / damp / wet, or a dynamic / custom timeline + forecast.
@@ -85371,6 +85371,7 @@ const Game = (() => {
       if (M.mobile) M.mobile.merge(inp, dt);   // touch pedals / tilt / on-screen buttons on top of keys + pad
       G.input = inp;
       uiInput(inp);
+      rsHold(inp, G.paused && !(M.net && M.net.live()) ? 0 : dt);   // (after R: held for a 3-2-1)
       qInput(inp);   // (qualifying garage / result: the pad / pause key pauses)
       if (G.race && G.race.awaitConfirm && params.has('autostart') && M.race && M.race.confirmGrid) M.race.confirmGrid(G);   // headless tests
       if (G.track && (!G.paused || (M.net && M.net.live()))) {   // (a multiplayer race goes on behind the pause menu)
@@ -85479,6 +85480,7 @@ const Game = (() => {
           pin.throttle = inp.throttle; pin.brake = inp.brake; pin.steer = inp.steer;
           pin.boost = inp.boost; pin.aeroPress = first && inp.aeroPress;
           pin.kb = !!inp.kb;               // keys drive the car: physics applies assists.kb (keyboard assist)
+          pin.hold = !!inp.hold;           // (respawn 3-2-1: held, no reverse)
           input = pin;
         } else {
           let brain = G.brains.get(car);
@@ -85515,10 +85517,11 @@ const Game = (() => {
           G.settings.view = G.view; saveSettings();
           if (M.menu && M.menu.remember) M.menu.remember({ view: G.view });   // (the menu's copy + its store)
         }
-        if (inp.resetPress && G.player && !G.player.kinematic && G.race && (G.race.phase === 'racing' || G.race.phase === 'quali') && !G.race.awaitConfirm && !(rw.t > 0)) {
+        if (inp.resetPress && G.player && !G.player.kinematic && G.race && (G.race.phase === 'racing' || G.race.phase === 'quali') && !G.race.awaitConfirm && !(rw.t > 0) && !(rs.t > 0)) {
           Physics.resetToTrack(G.player, G.track);
           if (M.race && M.race.markLapInvalid) M.race.markLapInvalid(G, G.player);   // time trial: a reset lap never counts (qualifying: it does, Race decides)
-          rwReset();   // (a ghost until up to speed: rewind section)
+          rwReset(true);   // (a ghost until up to speed: rewind section; the countdown says it)
+          rs.t = 3 * RS_BEAT; rs.n = 0;   // held still for a 3-2-1 (rsHold)
         }
         if (inp.compound && M.race && M.race.choosePitCompound) M.race.choosePitCompound(G, inp.compound);
       }
@@ -85665,12 +85668,29 @@ const Game = (() => {
   // Pause menu REWIND (offline): Rewind.go restores the race ~20 s back, then a 3-2-1 with the race frozen (rwHold).
   const rw = { t: 0, n: 0, back: 0 }, RW_BEAT = 0.8;
   function rwGhosts(cars, dt) { for (let i = 0; i < cars.length; i++) if (cars[i].ghosted) Physics.ghostStep(cars[i], cars, G.track, dt); }
-  function rwReset() {
+  function rwReset(quiet) {
     const P = G.player;
     if (!P || !Physics.ghostStart) return;
     Physics.ghostStart(P);
     if (M.net && M.net.onReset) M.net.onReset(P);   // (multiplayer: the server makes it a ghost for everyone)
-    if (M.hud && M.hud.flash) M.hud.flash('GHOST', { sub: 'NO CONTACT UNTIL YOU ARE BACK UP TO SPEED', color: '#27d7f5', duration: 2.2, key: 'rwghost' });
+    if (!quiet && M.hud && M.hud.flash) M.hud.flash('GHOST', { sub: 'NO CONTACT UNTIL YOU ARE BACK UP TO SPEED', color: '#27d7f5', duration: 2.2, key: 'rwghost' });
+  }
+  // R respawn: the player's car is held still for a 3-2-1 (the rest of the race runs on; it is a ghost meanwhile), then GO.
+  // rsHold runs every frame after uiInput: it counts down (not while paused offline) and zeroes the player's input.
+  const rs = { t: 0, n: 0 }, RS_BEAT = 1;
+  function rsHold(inp, dt) {
+    if (!(rs.t > 0)) { if (inp.hold) inp.hold = false; return; }
+    if (G.screen !== 'race' || G.attract || !G.player || G.player.finished) { rs.t = 0; return; }
+    rs.t -= dt;
+    const n = rs.t > 0 ? Math.ceil(rs.t / RS_BEAT - 1e-6) : 0;
+    if (n !== rs.n) {
+      rs.n = n;
+      if (M.hud && M.hud.flash) M.hud.flash(n > 0 ? String(n) : 'GO', { sub: n > 0 ? 'GHOST · NO CONTACT UNTIL YOU ARE BACK UP TO SPEED' : '', color: '#27d7f5', duration: n > 0 ? RS_BEAT + 0.3 : 0.7, key: 'respawn', priority: 3 });
+      if (M.sfx && audioReady && M.sfx.ui) M.sfx.ui(n > 0 ? 'move' : 'select');
+      if (!n && G.player.ghosted && !(M.net && M.net.live())) G.player.ghostT = 0;   // (offline: the no-contact window counts from GO)
+    }
+    if (rs.t > 0) { inp.throttle = 0; inp.brake = 1; inp.steer = 0; inp.boost = false; inp.aeroPress = false; inp.hold = true; }   // (hold: brake at a standstill is no reverse)
+    else inp.hold = false;
   }
   function onRewind() {
     if (!M.rewind || G.screen !== 'race' || G.attract || !G.paused || (M.net && M.net.live())) return false;
@@ -85708,6 +85728,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-04 20:41 -->
+<!-- Apex GP build 2026-10-05 11:44 -->
 </body>
 </html>
