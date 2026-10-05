@@ -55454,6 +55454,10 @@ const Livery = (() => {
 //   banking (optional): [[at, degrees], ...] same interpolation (bankSmooth, default 40 m); + = banked for a right-hander.
 //   Without them the track is flat (elev/grade/bank all 0).
 //   detect: Overtake-Mode detection point. pit: {side, entry, exit, blendIn, blendOut, ...}.
+//   pit.path (optional): [[at, d], ...] the lane centre's offset from the track centreline along the lane (entry .. exit,
+//   d on the pit side): a pit road that swings away from the track (smooth points; the builder interpolates, adds the
+//   entry / exit ends at the usual lane start offset). pit.limiterIn / pit.limiterOut (optional): the speed-limit lines,
+//   m after the entry / before the exit.
 //   pit.exitCap (optional): {kph, from, to} = speed cap on the exit road from `from` to `to` metres before the exit line
 //   (a bend right after the limiter line): the lane autopilot slows every car to kph (world speed) by `from` and holds
 //   it to `to` (in the lane: use to <= blendOut, the limiter line); full control after the limiter line as usual.
@@ -56334,10 +56338,24 @@ const TRACK_DATA = {
     close: [1,76],
     start: [1,302],
     turns: [[4,19],[10,6],[17,5],[24,4],[30,85],[33,41],[37,5],[43,6],[49,5],[54,5],[58,4],[63,5],[68,4],[72,6],[0,0]],   // T1..T15 as numbered at the real circuit
-    zones: [{"s0":5312,"s1":454},{"s0":4324,"s1":5042}],   // Straight mode: main straight (T15 exit -> T1) and back straight (T14 exit -> T15)
-    detect: 3949,   // Overtake-Mode detection: between T12 and T13, as the real back-straight DRS detection
+    // Straight mode (F1 2026 style, 4 zones): main straight (T15 exit -> T1), T3 -> T4 (from where the long T3 right has
+    // opened out, ~1 g), T8 -> T9, back straight (T14 exit -> T15)
+    zones: [{ s0: 5312, s1: 454 }, { s0: 1170, s1: 1426 }, { s0: 2765, s1: 3020 }, { s0: 4324, s1: 5042 }],
+    detect: 5149,   // Overtake-Mode detection: the T15 apex (with the pit entry)
     sectors: [2457, 4007],   // the real sector lengths 2.465 / 1.555 / 1.523 km (scaled to this lap)
-    pit: {"side":1,"entry":5093,"exit":550,"blendIn":110,"blendOut":110,"boxSpacing":16},
+    // pit lane on the real pit road (OSM ways 23410526 + 144359483, projected to s / d; generator tools/tracks_ref/sepang_fit/
+    // pit_path.mjs): leaves at the T15 apex on the outside, swings ~62 m out round the hairpin, runs along the main
+    // straight (held at the 16 m lane offset past the garages: the OSM line sits inside this 16 m wide track model),
+    // rejoins before T1 as before. Limiter: where the road straightens beside the straight -> the west end of the garages.
+    pit: {
+      side: 1, entry: 5149, exit: 550, blendIn: 110, blendOut: 110, boxSpacing: 16, limiterIn: 316, limiterOut: 204,
+      path: [[5158.1, 6.85], [5166.2, 10.92], [5173.2, 14.91], [5179.2, 20.01], [5184.1, 26.03], [5188.7, 32.6], [5193.3, 39.38], [5197.8, 45.86], [5203.2, 51.46], [5209.9, 55.95],
+        [5216.3, 59.47], [5224.9, 61.63], [5235.5, 61.45], [5245.7, 59.46], [5255.6, 56.86], [5265.7, 54.2], [5275.7, 51.65], [5285.4, 49.18], [5296, 46.48], [5306.7, 43.77],
+        [5317.3, 41.07], [5328, 38.37], [5338.7, 35.67], [5349.3, 32.97], [5359, 30.52], [5368.7, 28.07], [5378.4, 25.61], [5388.3, 23.2], [5398.6, 21.13], [5409, 19.72],
+        [5419.7, 18.87], [5430.2, 18.28], [5440.7, 17.8], [5451, 17.51], [5461.1, 17.4], [5471.3, 17.06], [5481.5, 16.27], [5491.6, 16], [7.7, 16], [47.8, 16],
+        [88.8, 16], [129.8, 16], [170.8, 16], [211.8, 16], [252.8, 16], [293.8, 16], [333.9, 16], [374.6, 16], [415.2, 16], [440, 16],
+        [462, 15.01], [484, 12.66], [506, 9.84], [528, 7.49]],
+    },
     widths: [{ from: 524, to: 827, w: 21 }],   // the wide T1-T2 hairpins
     // heights at the turns / straight ends from SRTM (smoothed), straights as one slope (the raw data sees the grandstand
     // roofs as a hump on the back straight), the T4-T9 plateau without the noise, scaled to the published ~20 m change
@@ -56387,6 +56405,11 @@ const TRACK_DATA = {
 //   track.lapTimeEst -> estimated lap (s) from raceSpeed; track.warnings -> [strings] (builder sanity notes).
 //   track.pit.laneCenterD (d of the lane centre along the wall section), pit.garageD (d of garage fronts),
 //   pit.wallThick (pit wall thickness, m), pit.blendIn / pit.blendOut (m).
+//   pit lane on a path (data pit.path, see the pit section below): laneD(s) follows it; the walled section is where the
+//   lane is clear of the track; pit.wallDAt(s) = the pit wall's d there (it follows the lane's inner edge; pit.wallD stays
+//   the value beside the garages), pit.path = resolved [[s, d], ...], pit.laneLen = driven lane length (m), pit.stretchAt(s)
+//   = lane metres per metre of s (Race's autopilot runs at world speed). data pit.limiterOut (m before the exit) moves the
+//   limiter end line (pit.limiterS1) short of the wall's end. All absent / unchanged without a path.
 //   sample/toWorld/project/corridor accept an optional last `out` object to avoid allocations in hot paths.
 //   wallL/wallR are barrier lines (car centre must stay inside by its own half width — physics' job).
 //   track.escapes -> [{s, side, len, w, x0, z0, x1, z1, tx, tz, corners}] escape roads (data.escapes): straight-on
@@ -56887,15 +56910,57 @@ const buildTrack = (() => {
     const entryS = atS(pd.entry || [0, 50]);
     const exitS = atS(pd.exit || [0, 400]);
     const pitLen = wrap(exitS - entryS);
-    const blendIn = Math.min(pd.blendIn || 130, pitLen * 0.3), blendOut = Math.min(pd.blendOut || 130, pitLen * 0.3);
+    let blendIn = Math.min(pd.blendIn || 130, pitLen * 0.3), blendOut = Math.min(pd.blendOut || 130, pitLen * 0.3);
     const hwE = halfW[Math.round(entryS / step) % N];
     const wallGap = pd.wallGap || 3.0;              // track edge -> lane inner edge (holds the pit wall)
     const laneCenterAbs = hwE + wallGap + laneHalfW;
     const laneStartAbs = hwE - 1.5;
     const wallThick = 0.8;
     const wallD = pitSide * (hwE + wallGap * 0.55);
-    const wallS0 = wrap(entryS + blendIn), wallS1 = wrap(exitS - blendOut);
-    const laneD = s => {
+    // optional pd.path = [[at, d], ...]: the lane centre's lateral offset along the lane (entry .. exit; d on the pit side,
+    // either sign), cubic Hermite through the points (Catmull-Rom tangents), [entry, laneStartAbs] / [exit, laneStartAbs]
+    // added when missing; tabulated every 0.5 m of s and lightly smoothed (+-2 m, 2 passes, ends held). The walled section is then where the lane's inner edge is >= wallGap clear
+    // of the asphalt, and the pit wall runs wallGap * 0.45 inside the lane's inner edge (wallDAt; = wallD where the lane
+    // is at laneCenterAbs). Without path: the fixed offset with sstep blends (unchanged).
+    let laneTab = null, wallDAt = null, pathOut = null;
+    if (Array.isArray(pd.path) && pd.path.length >= 2) {
+      const pts = pd.path.map(q => [Math.min(pitLen, wrap(atS(q[0]) - entryS)), Math.abs(q[1])]).sort((a, b) => a[0] - b[0]);
+      if (pts[0][0] > 0.5) pts.unshift([0, laneStartAbs]);
+      if (pts[pts.length - 1][0] < pitLen - 0.5) pts.push([pitLen, laneStartAbs]);
+      const n = pts.length, h = [], m = [], tg = new Float64Array(n);
+      for (let k = 0; k < n - 1; k++) { h.push(Math.max(1e-6, pts[k + 1][0] - pts[k][0])); m.push((pts[k + 1][1] - pts[k][1]) / h[k]); }
+      for (let k = 1; k < n - 1; k++) tg[k] = (pts[k + 1][1] - pts[k - 1][1]) / (h[k] + h[k - 1]);   // Catmull-Rom tangents
+      tg[0] = m[0] * 0.5; tg[n - 1] = m[n - 2] * 0.5;
+      const nT = Math.ceil(pitLen / 0.5) + 1;
+      laneTab = new Float64Array(nT);
+      for (let q = 0, k = 0; q < nT; q++) {
+        const u = Math.min(pitLen, q * 0.5);
+        while (k < n - 2 && u > pts[k + 1][0]) k++;
+        const t = clamp((u - pts[k][0]) / h[k], 0, 1), t2 = t * t, t3 = t2 * t;
+        laneTab[q] = (2 * t3 - 3 * t2 + 1) * pts[k][1] + (t3 - 2 * t2 + t) * h[k] * tg[k] + (-2 * t3 + 3 * t2) * pts[k + 1][1] + (t3 - t2) * h[k] * tg[k + 1];
+      }
+      for (let pass = 0; pass < 2; pass++) {   // (+-2 m box blur, the first / last 2 m held)
+        const b = Float64Array.from(laneTab);
+        for (let q = 4; q < nT - 4; q++) { let a = 0; for (let e = -4; e <= 4; e++) a += b[q + e]; laneTab[q] = a / 9; }
+      }
+      pathOut = pts.map(q => [wrap(entryS + q[0]), pitSide * q[1]]);
+    }
+    const laneAbsU = u => { const f = clamp(u, 0, pitLen) / 0.5, q = Math.min(laneTab.length - 2, Math.floor(f)); return lerp(laneTab[q], laneTab[q + 1], f - q); };
+    let wallS0 = wrap(entryS + blendIn), wallS1 = wrap(exitS - blendOut);
+    if (laneTab) {   // walled section: the lane's inner edge >= wallGap beyond the asphalt edge
+      const clear = u => laneAbsU(u) - laneHalfW >= halfW[Math.round(wrap(entryS + u) / step) % N] + wallGap - 1e-6;
+      let u0 = 0, u1 = pitLen;
+      while (u0 < pitLen && !clear(u0)) u0 += 0.5;
+      while (u1 > u0 && !clear(u1)) u1 -= 0.5;
+      if (u1 - u0 < 60) warn.push('pit path: walled section too short');
+      blendIn = u0; blendOut = pitLen - u1;
+      wallS0 = wrap(entryS + u0); wallS1 = wrap(entryS + u1);
+      wallDAt = s => { const u = wrap(s - entryS); return pitSide * Math.max(hwE + wallGap * 0.55, laneAbsU(u) - laneHalfW - wallGap * 0.45); };
+    }
+    const laneD = laneTab ? s => {
+      const u = wrap(s - entryS);
+      return u > pitLen ? null : pitSide * laneAbsU(u);
+    } : s => {
       const u = wrap(s - entryS);
       if (u > pitLen) return null;
       let t = 1;
@@ -56903,6 +56968,7 @@ const buildTrack = (() => {
       else if (u > pitLen - blendOut) t = sstep((pitLen - u) / blendOut);
       return pitSide * lerp(laneStartAbs, laneCenterAbs, t);
     };
+    const wdAt = wallDAt || (() => wallD);   // the pit wall's d at s (walled section)
     const inWallSec = s => wrap(s - wallS0) <= wrap(wallS1 - wallS0);
     const inPitRange = s => wrap(s - entryS) <= pitLen;
     // no kerb under the pit lane: where the lane asphalt (entry / exit roads incl. the blends) reaches the kerb band on the
@@ -56920,7 +56986,11 @@ const buildTrack = (() => {
       let need;
       if (inPitRange(s)) need = Math.abs(laneD(s)) + laneHalfW + (inWallSec(s) ? 0.5 : 1.0);
       else if (wrap(entryS - s) < 25 || wrap(s - exitS) < 25) need = laneStartAbs + laneHalfW + 1.0;
-      else continue;
+      if (laneTab) for (let e = -8; e <= 8; e++) {   // (pit path: the lane's offset may change fast; wall smoothing is +-6 m)
+        const se = wrap(s + e);
+        if (inPitRange(se)) need = Math.max(need || 0, Math.abs(laneD(se)) + laneHalfW + 1.0);
+      }
+      if (need == null) continue;
       if (pitSide > 0) { baseR[i] = Math.max(baseR[i], need); } else { baseL[i] = Math.max(baseL[i], need); }
     }
     // boxes: one per team (TEAMS.length, 20), evenly along the walled section, team 0 nearest the exit. They stay 15 m
@@ -56929,7 +56999,10 @@ const buildTrack = (() => {
     const NB = Math.max(10, typeof TEAMS !== 'undefined' && TEAMS.length ? TEAMS.length : 10);
     const wallLen = wrap(wallS1 - wallS0);
     const uLim = pd.limiterIn != null ? Math.min(wallLen * 0.5, wrap(entryS + Math.max(blendIn, Math.min(pd.limiterIn, pitLen * 0.5)) - wallS0)) : 0;
+    // optional pd.limiterOut (m before the exit): the speed-limit end line (autopilot hand-back) short of the wall's end
+    const limS1 = pd.limiterOut != null ? wrap(exitS - Math.max(blendOut, Math.min(pd.limiterOut, pitLen * 0.5))) : wallS1;
     let bLo = uLim + 15, bHi = wallLen - 15;
+    if (pd.limiterOut != null) bHi = Math.min(bHi, wrap(limS1 - wallS0) - 20);   // (boxes >= 20 m before the limiter end)
     const pbd = data.scenery && data.scenery.pitBuilding;   // (and every box inside the pit building, half a bay from its ends)
     if (pbd && pbd.from && pbd.to) {
       const rel = s => { let u = wrap(s - wallS0); if (u > L / 2) u -= L; return u; };
@@ -57251,7 +57324,7 @@ const buildTrack = (() => {
         side: pitSide, entryS, exitS, laneD, laneHalfW, wallD, wallS0, wallS1,
         // optional pd.limiterIn (m after the entry): put the speed-limit line (and autopilot takeover) past any corners
         limiterS0: pd.limiterIn != null ? wrap(entryS + Math.max(blendIn, Math.min(pd.limiterIn, pitLen * 0.5))) : wallS0,
-        limiterS1: wallS1, boxS, boxD: pitSide * (laneCenterAbs + laneHalfW * 0.5),
+        limiterS1: limS1, boxS, boxD: pitSide * (laneCenterAbs + laneHalfW * 0.5),
         length: pitLen, laneCenterD: pitSide * laneCenterAbs, garageD: pitSide * (laneCenterAbs + laneHalfW),
         wallThick, blendIn, blendOut, kerbCut,   // kerbCut: s of the kerb samples removed from under the lane
         // exitCap {kph, s0, s1}: speed cap on the exit road (data pit.exitCap {kph, from, to} = m before the exit line)
@@ -57336,14 +57409,15 @@ const buildTrack = (() => {
         const w = side > 0 ? wallR[i] : -wallL[i];
         if (a >= w && !(OAX.length && a > halfW[i] && inBaySD(s, d) >= 0)) return S_.WALL;
         if (side === pitSide && inPitRange(s)) {
-          if (inWallSec(s) && Math.abs(d - wallD) <= wallThick / 2) return S_.WALL;
+          const wd = inWallSec(s) ? wdAt(s) : 0;
+          if (wd && Math.abs(d - wd) <= wallThick / 2) return S_.WALL;
           const ld = laneD(s);
           if (a > halfW[i] && Math.abs(d - ld) <= laneHalfW) return S_.PIT;
-          if (inWallSec(s) && (d - wallD) * pitSide > 0) return S_.PIT;
+          if (wd && (d - wd) * pitSide > 0) return S_.PIT;
         }
         if (a <= halfW[i]) return S_.TRACK;
         if (a <= halfW[i] + KERB_W && (side > 0 ? kerbR[i] : kerbL[i])) return S_.KERB;
-        if (side === pitSide && inPitRange(s)) return S_.RUNOFF;
+        if (side === pitSide && inPitRange(s) && !laneTab) return S_.RUNOFF;   // (pit path: the run-off between keeps its type)
         if (OAX.length && a >= w) return S_.RUNOFF;   // (an open area beyond this sample's barrier: paved)
         return side > 0 ? runoffR[i] : runoffL[i];
       },
@@ -57351,7 +57425,7 @@ const buildTrack = (() => {
       inPitArea(s, d) {
         s = wrap(s);
         if (!inPitRange(s) || d * pitSide <= halfW[idxAt(s)]) return false;
-        if (inWallSec(s) && (d - wallD) * pitSide <= wallThick / 2) return false;
+        if (inWallSec(s) && (d - wdAt(s)) * pitSide <= wallThick / 2) return false;
         return Math.abs(d - laneD(s)) <= laneHalfW;
       },
       corridor(s, d, out) {
@@ -57360,12 +57434,12 @@ const buildTrack = (() => {
         const f = s / step, i = Math.floor(f) % N, j = (i + 1) % N, u = f - Math.floor(f);
         const wL = wallL[i] + (wallL[j] - wallL[i]) * u, wR = wallR[i] + (wallR[j] - wallR[i]) * u;
         if (inWallSec(s)) {
-          const h2 = wallThick / 2;
-          if ((d - wallD) * pitSide > 0) {
-            if (pitSide > 0) { out.min = wallD + h2; out.max = wR; } else { out.min = wL; out.max = wallD - h2; }
+          const h2 = wallThick / 2, wd = wdAt(s);
+          if ((d - wd) * pitSide > 0) {
+            if (pitSide > 0) { out.min = wd + h2; out.max = wR; } else { out.min = wL; out.max = wd - h2; }
             out.pit = true;
           } else {
-            if (pitSide > 0) { out.min = wL; out.max = wallD - h2; } else { out.min = wallD + h2; out.max = wR; }
+            if (pitSide > 0) { out.min = wL; out.max = wd - h2; } else { out.min = wd + h2; out.max = wR; }
             out.pit = false;
           }
           return out;
@@ -57424,6 +57498,19 @@ const buildTrack = (() => {
       },
     };
 
+    // pit path extras (pd.path only): wallDAt(s), the resolved path [[s, d]], stretchAt(s) = metres of lane centre per
+    // metre of s (the lane far out round a bend is longer than s: the autopilot runs at world speed), laneLen (m)
+    if (laneTab) {
+      const nS = Math.ceil(pitLen) + 1, k = new Float32Array(nS), a = {}, b = {};
+      let len = 0;
+      for (let q = 0; q < nS; q++) {
+        const u0 = Math.max(0, q - 0.5), u1 = Math.min(pitLen, q + 0.5);
+        T.toWorld(entryS + u0, laneD(wrap(entryS + u0)), a); T.toWorld(entryS + u1, laneD(wrap(entryS + u1)), b);
+        k[q] = Math.max(0.2, Math.hypot(b.x - a.x, b.z - a.z) / Math.max(1e-6, u1 - u0));
+        if (q < nS - 1) len += k[q];
+      }
+      Object.assign(T.pit, { wallDAt, path: pathOut, laneLen: len, stretchAt: s => { const u = wrap(s - entryS); return u > pitLen ? 1 : k[Math.min(nS - 1, Math.round(u))]; } });
+    }
     // escape roads: keep only the length that is really inside the barriers (the Voronoi clamp may stop it short of
     // another part of the track), then the corners for the renderers
     for (const esc of escapes) {
@@ -60214,7 +60301,7 @@ const AI = (() => {
       w: 0, wT: 0, wRate: 1, absSide: 0, absM: 2, absD: 0, absDT: 0, absRate: 2, free: false,
       off: 0, offT: 0, offRate: 1.5, cons, nCons: 0,
       pitIn: false, pitOut: false, pitOutS: 0, poM: Infinity, poLen: 1, poD: 0, poFix: false,   // pit exit: merge start (m past the limiter end) / length, held d
-      atk: null, atkSide: 0, atkPh: 0, atkCool: 0, defC: -1, defOn: false, yieldOn: false,
+      atk: null, atkSide: 0, atkPh: 0, atkCool: 0, defC: -1, defOn: false, yieldOn: false, qHurry: 0, qSide: 0, qFid: -1,
       // blue flags (racecraft, unlapping): crawl timer (ulT / ulCar / ulOK), the lapper's speed deficits (uf, blueWatch) vs
       // my own clean-air region speeds (myMn / myMx), my race distance when each car last went by me (psd, by car id), the
       // unlap under way (ulTgt, ulPT s out beside it), abandoned (ulBack) or done (ulDone at ulDoneD)
@@ -60356,7 +60443,7 @@ const AI = (() => {
       b.coolD += v * dt;
       const L = A.L, u = b.coolD / L, k0 = clamp(1 - b.coolD / 400, 0, 1);
       b.coolF = (P.coolK + (1 - P.coolK) * k0) * (1 - (P.coolK - P.coolEnd) / P.coolK * clamp((u - 0.75) / 0.25, 0, 1));
-    } else b.coolF = inQ(race) && car.qPace > 0 && car.qPace < 1 ? car.qPace : 0;   // (qualifying: out / cool / in laps)
+    } else b.coolF = inQ(race) && car.qPace > 0 && car.qPace < 1 && !b.qHurry ? car.qPace : 0;   // (qualifying: out / cool / in laps; qYield: its own pace with a flying car close)
     b.coolV = !finished && b.coolF > 0 ? b.coolF * Math.min(VTOP, b.capS || VTOP) : 0;   // (... their straight-line cap x qPace too)
     let pace = b.pace * (startPh ? 0.985 : 1);
     // a lane / offset change still under way near a braking zone (traffic): the path the car will steer is tighter than the
@@ -60805,8 +60892,9 @@ const AI = (() => {
     }
 
     // blue flags: move off the line on straights and lift a little for a car lapping us
-    b.yieldOn = false;
-    if (lapper && (!finished || !lapper.finished) && (-lapDs - LEN) / Math.max(v, 10) < (finished ? 2 : qm ? 4.5 : 1.2) && !b.pitIn && !b.pitOut) {
+    b.yieldOn = false; b.qHurry = 0;
+    if (qm && qYield(b, car, cars, A, L, v, idx, toBrk)) wT = 1;
+    else if (lapper && (!finished || !lapper.finished) && (-lapDs - LEN) / Math.max(v, 10) < (finished ? 2 : 1.2) && !b.pitIn && !b.pitOut) {
       b.yieldOn = true;
       if (onStr) {
         const ln = lineAt(A, car.s, b.kw);
@@ -60861,8 +60949,11 @@ const AI = (() => {
         // (+ Overtake Mode), and how early on a straight it pulls out to use it
         const hg = b.adaptive ? clamp(0.3 + 0.6 * (b.e != null ? b.e : 0.75), 0.25, 1) : b.aggr;
         const lbA = atkCraft(b), dvA = lbA.dv + (car.overtake ? 2 : 0);
+        // (qualifying, my flying lap, a car ahead on its out / cool / in lap: no tucking in behind it, nor following it
+        // across, once it is QY.tuck m off my line - it is getting out of the way; past it on the side with more room)
+        const qSlow = qm && car.qPush && car.qFly !== false && (!ah.qPush || ah.qFly === false), tuck = qSlow && Math.abs(oRel) >= QY.tuck ? 0 : oRel;
         if (b.atkPh === 1) {
-          offT = oRel;                                          // tuck into the tow
+          offT = tuck;                                          // tuck into the tow
           if (onStr && (lapsMe ? ub : toBrk) > 120) b.atkBoost = dvA;   // hunt it down the straight (tow + boost, above the usual cap)
           // early-to-mid straight: pull out once in the tow if that speed gets me level before the braking point
           const need = (gap + LEN) * Math.max(v, 20) / Math.max(1, Math.max(0, closing) + dvA);
@@ -60875,13 +60966,14 @@ const AI = (() => {
           }
           if (pull) {
             const odp = ah.d + ah.speed * Math.sin(wrapA(ah.h - A.th[ah.idx >= 0 ? ah.idx : 0])) * 0.8;
-            const side = lapsMe ? clearSide(A, ah.s, oRel, b.kw, clamp(ub - cut, 0, 400)) : chooseSide(A, ah, cn.dir, idx, odp);
+            const side = lapsMe ? clearSide(A, ah.s, oRel, b.kw, clamp(ub - cut, 0, 400)) : qSlow ? (A.hw[ah.idx >= 0 ? ah.idx : idx] - ah.d > A.hw[ah.idx >= 0 ? ah.idx : idx] + ah.d ? 1 : -1) : chooseSide(A, ah, cn.dir, idx, odp);
             if (side) { b.atkSide = side; b.atkPh = 2; b.atkMin = ahDs; b.atkT = 0; }
           }
           if (gapT > b.atkGap * 1.6 && !owed) { b.atk = null; }
         }
         if (b.atk === ah && b.atkPh >= 2) {
           offT = oRel + b.atkSide * (lapsMe ? SEP + UL_W : SEP + 0.5 + 0.4 * hg);   // (unlapping: a car's width of air)
+          if (qSlow) offT = b.atkSide < 0 ? Math.min(0, offT) : Math.max(0, offT);   // (never off my line towards it)
           b.offRate = 3.2 + 1.5 * hg;                         // (hungrier: a quicker, decisive move out of the tow)
           if ((lapsMe ? ub : toBrk) > 0 && ahDs > -LEN) b.atkBoost = dvA;   // out of the tow: go for it (drive() lifts the straight cap, boost)
           // not gaining for ~1.5 s on the straight: back into the tow (no hanging out alongside for nothing)
@@ -60895,10 +60987,10 @@ const AI = (() => {
           // its space: still behind its middle and it is coming across (defending / turning in) -> back out, tuck in behind
           const across = b.atkSide * ah.speed * Math.sin(wrapA(ah.h - A.th[ah.idx >= 0 ? ah.idx : 0]));
           // (also squeezed: no room left between it and the edge / wall while not yet ahead)
-          if (!owed && ahDs > LEN * 0.3 && ahDs < LEN * 2.2 && ((across > (ah.aiDefending ? 0.5 : 1.5) && Math.abs(ah.d - car.d) < SEP + 0.8) || (room < -0.6 && Math.abs(ah.d - car.d) < SEP + 0.2))) { b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = oRel; b.atkBoost = 0; b.vLim = Math.min(b.vLim, Math.max(6, ah.speed - 2)); }
+          if (!owed && ahDs > LEN * 0.3 && ahDs < LEN * 2.2 && ((across > (ah.aiDefending ? 0.5 : 1.5) && Math.abs(ah.d - car.d) < SEP + 0.8) || (room < -0.6 && Math.abs(ah.d - car.d) < SEP + 0.2))) { b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = tuck; b.atkBoost = 0; b.vLim = Math.min(b.vLim, Math.max(6, ah.speed - 2)); }
           if (ahDs < (cn.vMin < 28 ? LEN * 0.6 : LEN + 0.8) && Math.abs(ah.d - car.d) > 2.1) b.atkPh = 3;                    // alongside: committed
           if (b.atkPh === 2 && !owed && ((toBrk < 0 && ahDs > LEN * Math.max(0.8, b.lateCap ? lbA.reach - 2 : 0) && closing < 3) || room < -0.8 || gapT > b.atkGap * 1.5)) {
-            b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = oRel;
+            b.atk = null; b.atkCool = 2 + b.rnd() * 2; offT = tuck;
           }
         }
       }
@@ -61117,6 +61209,50 @@ const AI = (() => {
   }
   // way over from d0 to d1 (plus a car's width) free of cars alongside or closing from behind within ~2 s?
   // (cars ahead are for the normal following / collision logic)
+  // qualifying, my out / cool / in lap (or a push lap already ruined): the nearest car on a flying lap (quali.js qFly) closing
+  // from behind, within QY.t s at its speed. Straights and fast curves (|curvature| < QY.k): off the line to one side (kept
+  // while that car is behind), and lift once off it when that gets it by before the braking point (lifting when it can't
+  // only moves the pass into the corner; with it within QY.tH s: always). Its braking zone with it right behind: stay off
+  // the line, brake early. Corners (or still on the line) with it within QY.tH s: no crawling on the line - the car's own
+  // pace (b.qHurry, next step's plan) until it is by. (The flying car: no tow-tucking behind it - qSlow in the attack.)
+  const QY = { t: 4.5, tH: 2, lift: 0.985, see: 600, off: 2.4, tuck: 1, k: 1 / 250 };
+  function qYield(b, car, cars, A, L, v, idx, toBrk) {   // -> true: hold the off-line lane (b.absSide)
+    if ((car.qPush && car.qFly !== false) || b.pitOut) return false;   // (qFly false: a push lap already ruined - quali.js)
+    let F = null, fDs = 0, fT = QY.t;
+    for (let n = 0; n < cars.length; n++) {
+      const o = cars[n];
+      if (o === car || !o.qPush || o.qFly === false || o.kinematic || o.inPitLane || o.dnf) continue;
+      let ds = o.s - car.s; if (ds > L / 2) ds -= L; else if (ds < -L / 2) ds += L;
+      if (ds >= 0 || ds < -QY.see) continue;
+      const t = (-ds - LEN) / Math.max(o.speed, 20);
+      if (t < fT) { fT = t; F = o; fDs = ds; }
+    }
+    if (!F) { b.qSide = 0; return false; }
+    b.yieldOn = true;
+    const ln = lineAt(A, car.s, b.kw), cur = car.d - ln, off = Math.abs(cur) >= QY.off;
+    // straights and fast curves (no braking point close): off the line, then lift; the braking zone with it right behind
+    // and me still off the line: stay there and brake early (it goes by into the corner); else no crawling (qHurry)
+    const str = toBrk > 0 && Math.abs(A.lk[idx]) < QY.k, brk = !str && toBrk > -20 && toBrk < 120 && fDs > -30 && off;
+    let lane = false;
+    if (str || brk) {
+      // the side: the one I am on when already off the line, else away from the line here and where it will go by (the line
+      // swings across a straight); then kept while this car is behind (crossing over in front of it was the worst block)
+      if (!b.qSide || b.qFid !== F.id) {
+        b.qSide = Math.abs(cur) > 1.5 ? (cur > 0 ? 1 : -1) : ln + lineAt(A, car.s + clamp(toBrk, 60, 250), b.kw) > 0 ? -1 : 1; b.qFid = F.id;
+      }
+      if (!b.pitIn) { b.absSide = b.qSide; b.absM = 1.6; b.wRate = 1.2; lane = true; }   // (an in lap: the pit side, pitIn)
+    }
+    if (str) {
+      // (lifting while still on its line, right in front of it, only costs it more: first over, then lift)
+      const tLift = (-fDs + LEN + 6) / Math.max(0.5, F.speed - 0.85 * v), tB = toBrk / Math.max(v, 10);
+      if (off && (fDs > -35 || fT < QY.tH || tLift < tB + 0.5)) b.vLim = Math.min(b.vLim, v * QY.lift);
+      else if (fT < QY.tH) b.qHurry = 1;
+    } else if (brk) b.vLim = Math.min(b.vLim, v * QY.lift);
+    else if (fT < QY.tH) b.qHurry = 1;
+    // (into the braking zone with it beside me: a little slower than it, it takes the corner ahead of me)
+    if (toBrk < 60 && fDs > -LEN && Math.abs(F.d - car.d) > 1.8 && !lapStop(A, F)) b.vLim = Math.min(b.vLim, Math.max(8, F.speed - 1.5));
+    return lane;
+  }
   function mergeClear(car, G, A, v, d0, d1) {
     const L = A.L, sg = d1 > d0 ? 1 : -1, e0 = d0 + sg * 1.3, e1 = d1 + sg * 2.3, lo = Math.min(e0, e1), hi = Math.max(e0, e1);
     // (on a hot exit's road: clear of anyone who would close up before the move across is done, + 1.2 s; else 2 s of closing)
@@ -61329,7 +61465,7 @@ const AI = (() => {
     leman: [1.0531, 1.0384, 1.0247, 1.0079, 1, 0.9889, 0.9715, 0.9617],
     dorado: [1.0569, 1.0421, 1.0279, 1.0126, 1, 0.9903, 0.9791, 0.9766],
     kettle: [1.0628, 1.0463, 1.0304, 1.0090, 1, 0.9864, 0.9677, 0.9621],
-    sepang: [1.0546, 1.0405, 1.0264, 1.0118, 1, 0.9878, 0.9697, 0.9654],
+    sepang: [1.0551, 1.0405, 1.0264, 1.0118, 1, 0.9876, 0.9694, 0.9653],
   };
   // fixed difficulties on the k scale (k = extreme's k x extreme lap / difficulty lap; the mean of six team cars), v3:
   // Easy / Medium / Hard keep their lap times (VS), Extreme is quicker, the E_REF reference lap moved (REF_MIG[3])
@@ -61342,7 +61478,7 @@ const AI = (() => {
     leman: { easy: 0.7081, medium: 0.8331, hard: 0.9094, extreme: 1.0385 },
     dorado: { easy: 0.7117, medium: 0.8372, hard: 0.9176, extreme: 1.0227 },
     kettle: { easy: 0.7204, medium: 0.8414, hard: 0.9242, extreme: 1.0384 },
-    sepang: { easy: 0.7095, medium: 0.8305, hard: 0.9103, extreme: 1.0296 },
+    sepang: { easy: 0.7088, medium: 0.8296, hard: 0.9096, extreme: 1.0307 },
     _: { easy: 0.7158, medium: 0.8378, hard: 0.9186, extreme: 1.0342 },
   };
   // braking share cap of the limit envelope per circuit: Cerro Dorado's long heavy stops into hairpins (T1 from 340 km/h,
@@ -61735,6 +61871,7 @@ const Race = (() => {
   const AI_CAPTURE = 55;                  // m before the pit entry: an AI car with wantPit is taken over
   const BOX_BLEND = 22;                   // m: lateral move from the fast lane into / out of the pit box
   const PIT_ACC = 6.5, PIT_STOP_DEC = 7, PIT_MAX_DEC = 45, PIT_EXIT_V = 36, PIT_GAP = 10;
+  const PATH_LAT = 18, PATH_DEC = 14;    // m/s^2: lateral limit / braking run-in of the lane autopilot through a pit path's bends
   const CAP_DEC = 5;                      // m/s^2: smooth slow-down into a pit.exitCap bend
   const PIT_WING_COST = [0.2, 0.5];   // s: one random extra (race.rnd) added to a stop when either wing changes (not shown)
   const TWO_COMPOUND_PEN = 10;            // s
@@ -61845,7 +61982,8 @@ const Race = (() => {
       tTrack += track.step / Math.max(20, track.raceSpeed[i] * vRef);
     }
     const blend = Math.min(P * 0.3, pit.blendIn || 130) + Math.min(P * 0.3, pit.blendOut || 130);
-    const tLane = (P - blend) / vLim + blend / ((vLim + PIT_EXIT_V) / 2) + vLim / PIT_STOP_DEC / 2 + vLim / PIT_ACC / 2
+    const Pw = pit.path && pit.laneLen ? pit.laneLen : P;   // (a pit path: the lane is driven at world speed, its own length)
+    const tLane = (Pw - blend) / vLim + blend / ((vLim + PIT_EXIT_V) / 2) + vLim / PIT_STOP_DEC / 2 + vLim / PIT_ACC / 2
       + (R.pitServiceMin + R.pitServiceMax) / 2;
     return Math.max(8, tLane - tTrack);
   }
@@ -62723,6 +62861,22 @@ const Race = (() => {
       }
       for (let u = n - 2; u >= 0; u--) vs[u] = Math.min(vs[u], Math.sqrt(vs[u + 1] * vs[u + 1] + 2 * CAP_DEC));
       g.cap = { u0, u1, kph: ec.kph, vs };
+    }
+    // a pit path (pit.path, e.g. a pit road swinging out round a hairpin): the autopilot also holds a world-speed cap
+    // through the lane's own bends, sqrt(PATH_LAT / curvature), with a braking run-in (no HUD sign: kph 0 there)
+    if (pit.path) {
+      const n = Math.ceil(P) + 2, vs = new Float32Array(n).fill(1e9), ps0 = { P, pg: g, stop: false }, w2 = {};
+      for (let u = 4; u < n - 6; u++) {   // (curvature over +-4 m of lane: the path's sample-scale wiggles don't count)
+        worldAt(track, track.wrapS(pit.entryS + u - 4), laneD(track, pit, ps0, u - 4), _w0);
+        worldAt(track, track.wrapS(pit.entryS + u), laneD(track, pit, ps0, u), _w1);
+        worldAt(track, track.wrapS(pit.entryS + u + 4), laneD(track, pit, ps0, u + 4), w2);
+        const ax = _w1.x - _w0.x, az = _w1.z - _w0.z, bx = w2.x - _w1.x, bz = w2.z - _w1.z, la = Math.hypot(ax, az), lb = Math.hypot(bx, bz);
+        const k = Math.abs(ax * bz - az * bx) / Math.max(1e-6, la * lb) * 2 / Math.max(1e-6, la + lb);   // (1 / radius)
+        if (k > 1e-4) vs[u] = Math.min(vs[u], Math.sqrt(PATH_LAT / k));
+      }
+      for (let u = n - 2; u >= 0; u--) vs[u] = Math.min(vs[u], Math.sqrt(vs[u + 1] * vs[u + 1] + 2 * PATH_DEC));
+      if (g.cap) for (let u = 0; u < n; u++) vs[u] = Math.min(vs[u], u < g.cap.vs.length ? g.cap.vs[u] : 1e9);
+      g.cap = { u0: g.cap ? g.cap.u0 : 0, u1: P, kph: g.cap ? g.cap.kph : 0, vs };
     }
     return g;
   }
@@ -63678,11 +63832,18 @@ const Race = (() => {
     const track = G.track, pg = race.pitG, rc = car._race, vLim = R.pitSpeedLimit;
     const onRoad = u >= -2 && u < pg.uL0 && track.inPitArea(car.s, car.d) && (car.vLong || 0) > -0.5;
     if (!onRoad) {
-      if (rc.preLane) { rc.preLane = false; car.inPitLane = false; car.limiterWarn = false; if (car.pitState === 'entry') car.pitState = null; }
+      if (rc.preLane) {
+        rc.preLane = false; car.inPitLane = false; car.limiterWarn = false; if (car.pitState === 'entry') car.pitState = null;
+        // back on the track before the limiter line (a wheel on the entry road, no pit stop): the lap is no in-lap
+        // after all (quali / time trial: it still counts)
+        if (rc.h && rc.preLaneIn0 != null) { rc.h.inLap = rc.preLaneIn0; if (!rc.h.inLap) rc.h.entryRun = null; }
+      }
+      rc.preLaneIn0 = null;
       return;
     }
     if (!rc.preLane) {
       rc.preLane = true; car.inPitLane = true; car.pitState = 'entry';
+      rc.preLaneIn0 = rc.h ? !!rc.h.inLap : null;   // (restored if the car leaves the entry road again)
       if (car.isPlayer) {
         if (!race.playerPitCompound) race.playerPitCompound = pickCompound(race, car, track.length, true);
         car.pitCompound = race.playerPitCompound;
@@ -63701,7 +63862,7 @@ const Race = (() => {
         car.penalty += SPEEDING_PEN;
         emit(G, { type: 'penalty', car, sec: SPEEDING_PEN, reason: 'Speeding in pit lane' });
       }
-      rc.preLane = false; car.limiterWarn = false;
+      rc.preLane = false; rc.preLaneIn0 = null; car.limiterWarn = false;   // (committed: the in-lap stands)
     }
     startPit(G, race, car, u, manual);
     // got in some other way than down the entry road: a stop only with room left to line up for the box, else a
@@ -63807,7 +63968,7 @@ const Race = (() => {
       if (ps.stop) vT = Math.min(vT, Math.sqrt(2 * PIT_STOP_DEC * Math.max(0, ps.uBox - ps.u)));
       vT = Math.min(vT, laneLimit(G, car, ps), capAt(ps.pg, ps.u));
       ps.v = ps.v < vT ? Math.min(vT, ps.v + PIT_ACC * dt) : Math.max(vT, ps.v - PIT_MAX_DEC * dt);
-      ps.u += ps.v * dt;
+      ps.u += ps.v * dt / uRate(track, pit, ps);
       if (ps.stop && car.finished && ps.u >= ps.uBox - 0.002) {
         // already took the chequered flag (line crossed in the pit lane): no service after the finish —
         // tyres and penalties stay as they were, the car just rolls on through the lane
@@ -63857,7 +64018,7 @@ const Race = (() => {
       const vT = Math.min(ps.u < ps.uL1 ? vLim : PIT_EXIT_V, laneLimit(G, car, ps), vc);
       car.pitCap = vc < vLim - 0.3 ? ps.pg.cap.kph : 0;   // HUD: the exit-cap sign (e.g. 80) while it holds the car
       ps.v = ps.v < vT ? Math.min(vT, ps.v + PIT_ACC * dt) : Math.max(vT, ps.v - PIT_MAX_DEC * dt);
-      ps.u = Math.min(ps.uExit, ps.u + ps.v * dt);
+      ps.u = Math.min(ps.uExit, ps.u + ps.v * dt / uRate(track, pit, ps));
     }
     pitPose(track, pit, car, ps, dt, vPrev);
     if (ps.state === 'exit' && ps.u >= ps.uExit) release(G, race, car, ps);
@@ -63928,13 +64089,21 @@ const Race = (() => {
   }
 
   // pose + plausible dynamic fields for renderers / audio / HUD while the car is kinematic
+  // metres of lane path per metre of u (track.pit.path only, else 1): a lane far out round a bend is longer than s,
+  // so the autopilot's speed ps.v is the car's world speed there
+  function uRate(track, pit, ps) {
+    if (!pit.path) return 1;
+    worldAt(track, track.wrapS(pit.entryS + ps.u), pathD(track, pit, ps, ps.u), _w0);
+    worldAt(track, track.wrapS(pit.entryS + ps.u + 0.5), pathD(track, pit, ps, ps.u + 0.5), _w1);
+    return Math.max(0.2, 2 * Math.hypot(_w1.x - _w0.x, _w1.z - _w0.z));
+  }
   function pitPose(track, pit, car, ps, dt, vPrev) {
     const s = track.wrapS(pit.entryS + ps.u), d = pathD(track, pit, ps, ps.u);
     worldAt(track, s, d, _w0);
     const u2 = ps.u + 0.5;
     worldAt(track, track.wrapS(pit.entryS + u2), pathD(track, pit, ps, u2), _w1);
     const dx = (_w1.x - _w0.x) * 2, dz = (_w1.z - _w0.z) * 2;
-    const speed = ps.v * (Math.hypot(dx, dz) || 1);
+    const speed = pit.path ? ps.v : ps.v * (Math.hypot(dx, dz) || 1);   // (pit path: ps.v is the world speed, uRate)
     let h = Math.atan2(dz, dx);
     if (ps.tau < 0.4) h = ps.h0 + U.wrapAngle(h - ps.h0) * U.smooth(ps.tau / 0.4);
     h = U.wrapAngle(h);
@@ -64215,7 +64384,9 @@ const Race = (() => {
 // Weather.lapFactor, + noise / mistakes / traffic / deleted laps (sampleLap; tools/quali_cal.mjs).
 // Impeding (live only): a car on a flying lap (within 5 s of its pace, projected: a cool-down is none) held up on its
 // line by a slower car that had it within 3 s behind for 2.5 s -> a warning / grid places (IMP by penalty level; the
-// same car on the same lap again only half a lap on). Causing a collision: Race's fault model at the level (a car
+// same car on the same lap again only half a lap on). Held up = right behind it, that car not pulling away, with room
+// left to move over (not against the edge / wall: narrow street circuits) and slow there (a car at a real pace in front,
+// below 90 % of the reference speed - 80 % in a corner, where there is no passing - is traffic: held()). Causing a collision: Race's fault model at the level (a car
 // not on a flying lap that hits one is at fault as a blue-flag dive) -> grid places (COL). Both applied at finish.
 //
 // race.qs (plain JSON but for the two weather objects; car ids, never car refs):
@@ -64276,9 +64447,11 @@ const Quali = (() => {
   // (2026-10-03, vortex + kotori, 20 cars x 2 push laps each per difficulty; adaptive: medium's, unmeasured). s: session
   // factor (quali_cal --session: a 12-minute Q1, live vs model mean best on vortex / kotori / harbour; best of several
   // laps with the physical lap-to-lap spread, tows): the model's laps x k x s (2026-10-04, after the run planner's early
-  // runs / >= 2 push laps: hard over 6 sessions, medium / easy 3; extreme scaled as hard)
+  // runs / >= 2 push laps: hard over 6 sessions, medium / easy 3; extreme scaled as hard). 2026-10-05, after the AI's
+  // qualifying yield (ai.js qYield: far less time lost in traffic), 6 sessions each: hard live / model 0.9971 -> s x 0.9971;
+  // medium 1.0015, extreme 1.0016 (measured now; kept)
   const CAL = { k: { easy: 0.9997, medium: 1.0067, adaptive: 1.0067, hard: 1.016, extreme: 1.0289 }, e: 1, out: 1.15, cool: 1.24,
-    s: { easy: 0.9995, medium: 0.9964, adaptive: 0.9964, hard: 0.9896, extreme: 0.9858 },
+    s: { easy: 0.9995, medium: 0.9964, adaptive: 0.9964, hard: 0.9867, extreme: 0.9858 },
     wet: 0.035 };   // (the AI's wet margins over Weather.lapFactor: x (1 + wet x min(1, w / 0.5)); kotori, I at 0.5 / W at 1)
   const END_LAPS = 1.6;                                   // a session ends by the flag + 1.6 laps at the latest
   // tyre wear in a session: the race's wear scale over >= Q_REF laps (G.world.wearPerMetre while qualifying, the race's
@@ -64286,6 +64459,11 @@ const Quali = (() => {
   const Q_REF = 15;
   const IMP_NEAR = 50, IMP_FAR = 80, IMP_DD = 2.2, IMP_T = 8, IMP_SEE = 5, IMP_SEE_T = 2.5;   // (flying car behind: warned 5 s out, so drivers have time to react)
   const OFF_FLY = 5;                                      // s off the car's pace, projected over the lap: no flying lap for impeding (a cool-down: nobody impedes it)
+  // held up (the flying lap's loss counts only then, held()): right behind (<= IMP_HM m or IMP_HT s), the car ahead not pulling
+  // away (> IMP_PULL m/s), that car with more than IMP_ROOM m left between it and the edge / wall on the side away from the
+  // flying car, and slow: below IMP_SLOW of the reference speed (raceSpeed) there - IMP_CV in a corner (|curvature| > IMP_CK:
+  // no passing there; a car taking it at a real pace is no block, crawling is). A car at racing speed in front is traffic
+  const IMP_HM = 30, IMP_HT = 0.6, IMP_PULL = 2, IMP_ROOM = 0.6, IMP_CK = 1 / 250, IMP_CV = 0.8, IMP_SLOW = 0.9;
 
   const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
   const emit = (G, ev) => { (G.events || (G.events = [])).push(ev); return ev; };
@@ -64582,14 +64760,15 @@ const Quali = (() => {
     return car.q.st === 'push' ? timed && again : timed || again;
   }
   // AI on track, every step: the out-lap gap (last 40 % of the lap: slower while the car ahead is within OUT_GAP s and
-  // the flag allows), full pace from the last corner of an out / cool lap before a push lap (physics only: the model's
+  // the flag allows, not with a flying car within IMP_SEE s behind), full pace from the last corner of an out / cool lap before a push lap (physics only: the model's
   // slow-lap times include it), the tyre check every 2 s (wrong tyres: in, when that pays - tyresIn)
+  const flyBehind = (T, cars, car) => cars.some(o => { if (o === car || !o.qFly) return false; const ds = T.deltaS(o.s, car.s); return ds > 0 && ds / Math.max(20, o.speed || 0) < IMP_SEE; });
   function aiTrack(G, qs, car, dt) {
     const q = car.q, T = G.track, rc = car._race;
     if (q.st === 'out' || q.st === 'cool') {
       const fr = (rc.dist - rc.lineDist) / T.length, fl = qs.st === 'green' ? qs.g[qs.idx] + qs.len[qs.idx] : 0;
       let p = QP[q.st];
-      if (q.st === 'out' && fr > 0.6 && qs.clock + (1 - fr) * q.T / 0.85 < fl - 2) {   // (never at the cost of the push lap before the flag)
+      if (q.st === 'out' && fr > 0.6 && qs.clock + (1 - fr) * q.T / 0.85 < fl - 2 && (q.sim || !flyBehind(T, G.cars, car))) {   // (never at the cost of the push lap before the flag; nor with a flying car closing: let it by first)
         for (const o of G.cars) {
           if (o === car || !o.q || !away(o) || (o._race && o._race.pit)) continue;
           const ds = T.deltaS(car.s, o.s);
@@ -64691,7 +64870,9 @@ const Quali = (() => {
     const q = car.q, rc = car._race, green = qs.st === 'green' && inSess(qs, car) && car.qOut < 0;
     q.lap0 = rc.lapStartT;
     if (!away(car) || q.st === 'lane' || q.st === 'in') return;
-    if (isHuman(car)) { setSt(G, qs, car, 'push'); if (!green) { q.valid = false; q.cnt = -1; if (rc.h) rc.h.bad = true; } return; }
+    // (a human's pace estimate starts the push lap afresh: after a slow out lap - or one in traffic, where kE is not
+    // updated - the first flying lap was no flying lap (qPush: kE > 0.8) for most of it: COOL-DOWN, no blue flags / yields)
+    if (isHuman(car)) { setSt(G, qs, car, 'push'); q.kE = Math.max(q.kE, 0.95); if (!green) { q.valid = false; q.cnt = -1; if (rc.h) rc.h.bad = true; } return; }
     const ok = green && !tyresIn(G, qs, car, 0);
     if (q.st === 'push') { q.push--; setSt(G, qs, car, q.push > 0 && ok ? 'cool' : 'in'); }
     else setSt(G, qs, car, ok ? 'push' : 'in');
@@ -64981,7 +65162,7 @@ const Quali = (() => {
     const T = G.track, cars = G.cars, n = cars.length, see = qs.see, lvl = race.penalties ? IMP[race.penaltyLevel] : null;
     if (!see || see.length !== n * n) return;
     FLY.length = n;
-    for (let x = 0; x < n; x++) FLY[x] = !!(cars[x].qPush && cars[x].q && offPace(G, qs, cars[x]) <= OFF_FLY);
+    for (let x = 0; x < n; x++) cars[x].qFly = FLY[x] = !!(cars[x].qPush && cars[x].q && offPace(G, qs, cars[x]) <= OFF_FLY);   // (qFly: ai.js yields to these)
     for (let y = 0; y < n; y++) {
       const Y = cars[y];
       for (let x = 0; x < n; x++) {
@@ -65004,7 +65185,7 @@ const Quali = (() => {
         e = q.enc = { y: by, lost: 0, t0: qs.clock, done: false };
       }
       const Y = cars[e.y];
-      if (e.done || exempt(T, Y, FLY[e.y]) || Math.abs(offL(T, Y) - offL(T, X)) >= IMP_DD) continue;
+      if (e.done || exempt(T, Y, FLY[e.y]) || Math.abs(offL(T, Y) - offL(T, X)) >= IMP_DD || !held(T, X, Y)) continue;
       const vExp = q.kE * vAt(T, X.s), v = X.speed || 0;
       if (vExp > 5 && v < 0.97 * vExp) e.lost += dt * (1 - v / vExp);
       if (lvl && e.lost >= lvl.lost && q.valid && see[e.y * n + x] >= IMP_SEE_T) {
@@ -65014,6 +65195,18 @@ const Quali = (() => {
         e.done = true;
       }
     }
+  }
+  // X held up by Y right now (see IMP_HM ..): not when X hangs back or Y pulls away, X is off the circuit (a pit exit road), Y
+  // is as far off X's line as the edge / walls let it go (narrow street circuits), or Y is at a real pace there
+  function held(T, X, Y) {
+    const vx = X.speed || 0, vy = Y.speed || 0, ds = T.deltaS(X.s, Y.s);
+    if (ds > Math.max(IMP_HM, IMP_HT * vx) || vy > vx + IMP_PULL) return false;
+    const ix = X.idx >= 0 ? X.idx : T.idxAt(X.s), iy = Y.idx >= 0 ? Y.idx : T.idxAt(Y.s);
+    if (Math.abs(X.d || 0) > T.halfW[ix] + 1.5 || (T.inPitArea && T.inPitArea(X.s, X.d))) return false;
+    const sd = (Y.d || 0) >= (X.d || 0) ? 1 : -1, wall = sd > 0 ? T.wallR[iy] : -T.wallL[iy];
+    const edge = Math.min(T.halfW[iy] + 0.5, wall > 0 ? wall - 0.3 : 99);
+    if (edge - sd * (Y.d || 0) - CFG.car.width / 2 < IMP_ROOM) return false;
+    return vy < (Math.abs(T.curv[iy]) > IMP_CK ? IMP_CV : IMP_SLOW) * T.raceSpeed[iy];
   }
   function incident(G, qs, Y, X, lost, lvl) {
     const turn = turnAt(G, Y.s), places = lvl.places, warn = !places;
@@ -65302,7 +65495,7 @@ const Quali = (() => {
     PRESETS, IMP, COL, CAL, SPEEDS, collision, format, opts, start, update, frame, garageMode, setSpeed, speed,
     goOut, returnToGarage, skipBreak, ready, cont, simulateRest, finish, classify, status, remaining, humansIn,
     stateMsg, applyState, mirror, resMsg, applyRes, clientTick, snapshot, restore, canRewind,
-    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt },   // (tests)
+    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt, held },   // (tests)
   };
 })();
 
@@ -65595,7 +65788,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-05 16:55';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-05 19:24';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -70220,7 +70413,10 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
       if (!ghost) {
         const target = clamp01((car.brake || 0) * 1.25 - 0.25) * clamp01(((car.speed || 0) - 20) / 40);
         glowV = target > glowV ? Math.min(target, glowV + dt * 3) : Math.max(target, glowV - dt * 0.7);
-        if (car.harvesting) { flashT += dt; light.visible = (flashT * flashHz + flashPh) % 1 < 0.5; } else { flashT = 0; light.visible = false; }
+        // rain light: flashes in the regen phases (braking / lifting, as physics' harvest), also with a full battery
+        // (the player's often is: it only drains with boost)
+        const v = car.speed || 0, regen = car.harvesting || (!car.boosting && (((car.brake || 0) > 0.05 && v > 8) || (car.throttle != null && car.throttle < 0.05 && v > 15)));
+        if (regen) { flashT += dt; light.visible = (flashT * flashHz + flashPh) % 1 < 0.5; } else { flashT = 0; light.visible = false; }
         updateHead(car, dt);
       }
       for (const r of rigs) {
@@ -72441,11 +72637,12 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const pit = T.pit;
     if (!pit || !pitWallRange || pit.wallD == null) return;
     const sd = pit.side, len = loopLen(pitWallRange[0], pitWallRange[1]), step = T.step;
-    const th = pit.wallThick || 0.8, e0 = Math.abs(pit.wallD) - th / 2, e1 = e0 + th, H = 1.1;
+    // (a pit path, track.pit.wallDAt: the wall follows the lane's inner edge wherever the lane runs away from the track)
+    const th = pit.wallThick || 0.8, H = 1.1, e0At = s => Math.abs(pit.wallDAt ? pit.wallDAt(T.wrapS(s)) : pit.wallD) - th / 2;
     const cConc = col('#e6e7e4'), cCap = col('#bfc3c7'), cPost = col('#5b6068'), cDark = col('#2b2e33');
     let prev = null;
     for (let u = 0; u <= len + 1e-6; u += step) {
-      const s = pitWallRange[0] + Math.min(u, len), i = idxOf(s);
+      const s = pitWallRange[0] + Math.min(u, len), i = idxOf(s), e0 = e0At(s), e1 = e0 + th;
       const p = T.toWorld(s, sd * e0), pb = T.toWorld(s, sd * e1);
       if (prev) {
         const n = [-sd * T.nx[i], 0, -sd * T.nz[i]], nb = [-n[0], 0, -n[2]];
@@ -72460,10 +72657,10 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     }
     // sponsor boards on the track face
     let k = 0;
-    for (let u = 12; u < len - 8; u += 24) board(B, S, pitWallRange[0] + u, sd, e0 - 0.03, 8, 0.85, 0.2, 'brand' + (k++ % 12), false);
+    for (let u = 12; u < len - 8; u += 24) board(B, S, pitWallRange[0] + u, sd, e0At(pitWallRange[0] + u) - 0.03, 8, 0.85, 0.2, 'brand' + (k++ % 12), false);
     // team pit-wall stands on the lane side
     (pit.boxS || []).forEach((bs, t) => {
-      const i = idxOf(bs), yaw = yawAt(i), tc = natural((TEAMS[t] || TEAMS[0]).primary, 0.9);
+      const i = idxOf(bs), yaw = yawAt(i), tc = natural((TEAMS[t] || TEAMS[0]).primary, 0.9), e1 = e0At(bs) + th;
       const p = T.toWorld(bs, sd * (e1 + 0.9));
       S.box(p.x, 1.2, p.z, 4.0, 0.1, 1.5, yaw, cDark);
       S.box(p.x, 2.65, p.z, 4.4, 0.12, 2.0, yaw, tc, tc);
@@ -72614,7 +72811,8 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const s = 0, i = 0, yaw = yawAt(i), pit = T.pit;
     let dl = -(wallAt(i, -1) + 0.9), dr = wallAt(i, 1) + 0.9;
     if (pit && pit.wallD != null && pitWallRange && inRange(0, pitWallRange[0], pitWallRange[1])) {
-      if (pit.side > 0) dr = Math.abs(pit.wallD); else dl = -Math.abs(pit.wallD);
+      const wd = Math.abs(pit.wallDAt ? pit.wallDAt(0) : pit.wallD);
+      if (pit.side > 0) dr = wd; else dl = -wd;
     }
     dl = Math.max(dl, -40); dr = Math.min(dr, 40);
     const cG = col('#23262b'), cG2 = col('#3a3e45'), H = 7.4;
@@ -76281,10 +76479,12 @@ const Render2D = (() => {
       poly(S.lane, [...lin, ...lout.slice().reverse()]);
       line(S.laneLines, lin); line(S.laneLines, lout);
       // apron between the track edge and the lane along the walled section (holds the pit wall)
-      const sw = sampleS(pit.wallS0 - 10, pit.wallS1 + 10, 2);
-      poly(S.apron, [...sw.map(s => at(s, side * hwAt(s))), ...sw.slice().reverse().map(s => { const d = pit.laneD(T.wrapS(s)); return at(s, d == null ? side * hwAt(s) : d - side * hw); })]);
+      // (a pit path, pit.wallDAt: the apron is the strip round the pit wall, which follows the lane's inner edge)
+      const sw = sampleS(pit.wallS0 - 10, pit.wallS1 + 10, 2), wdAt = s => (pit.wallDAt ? pit.wallDAt(T.wrapS(s)) : pit.wallD);
+      const apIn = s => (pit.wallDAt ? side * Math.max(hwAt(s), Math.abs(wdAt(s)) - 1.5) : side * hwAt(s));
+      poly(S.apron, [...sw.map(s => at(s, apIn(s))), ...sw.slice().reverse().map(s => { const d = pit.laneD(T.wrapS(s)); return at(s, d == null ? apIn(s) : d - side * hw); })]);
       const wp = sampleS(pit.wallS0, pit.wallS1, 3);
-      line(S.pitWall, wp.map(s => at(s, pit.wallD)));
+      line(S.pitWall, wp.map(s => at(s, wdAt(s))));
       for (const s of [pit.limiterS0, pit.limiterS1]) { const d = pit.laneD(T.wrapS(s)); if (d != null) line(S.limiter, [at(s, d - hw), at(s, d + hw)]); }
       // boxes + garages (team order = index)
       const gd = pit.garageD != null ? pit.garageD : pit.boxD + side * hw * 0.5;
@@ -77052,13 +77252,16 @@ const HUD = (() => {
     if (E.gear._n !== gr) { E.gear._n = gr; E.gear.textContent = gr < 0 ? 'R' : gr === 0 ? 'N' : gr; }
 
     // 15 rev lights: 5 green, 5 red, 5 blue; all flash at the shift point; limiter pattern in the pit lane
-    const rpm = car.rpm || 0, lo = C.rpmShiftUp - (C.rpmMax - C.rpmIdle) * 0.45;
-    const lit = clamp(Math.ceil(NREV * (rpm - lo) / (C.rpmShiftUp - lo)), 0, NREV);
+    // (from the gearbox's own rpm: it shifts the moment that reaches rpmShiftUp, and the smoothed car.rpm lags it, so
+    // the lights never filled / flashed on car.rpm alone)
+    const topGear = C.gearTop.length - 1, kmhG = Math.abs(car.vLong != null ? car.vLong : car.speed || 0) * 3.6;
+    const rpmG = gr > 0 && C.gearTop[gr] ? Math.min(C.rpmMax, C.rpmMax * kmhG / C.gearTop[gr]) : 0;
+    const rpm = Math.max(car.rpm || 0, rpmG), lo = C.rpmShiftUp - (C.rpmMax - C.rpmIdle) * 0.45, shiftAt = C.rpmShiftUp - 250;
+    const lit = clamp(Math.ceil(NREV * (rpm - lo) / (shiftAt - lo)), 0, NREV);
     if (st.revLit !== lit) { st.revLit = lit; for (let i = 0; i < NREV; i++) setC(revEls[i], 'on', i < lit); }
-    const topGear = C.gearTop.length - 1;
-    setC(E.revs, 'is-shift', rpm >= C.rpmShiftUp && gr > 0 && gr < topGear && !car.pitLimiter);
+    setC(E.revs, 'is-shift', rpm >= shiftAt && gr > 0 && gr < topGear && !car.pitLimiter);
     setC(E.revs, 'is-lim', !!car.pitLimiter);
-    setC(E.gearBox, 'is-shift', rpm >= C.rpmShiftUp && gr > 0 && gr < topGear);
+    setC(E.gearBox, 'is-shift', rpm >= shiftAt && gr > 0 && gr < topGear);
 
     const th = Math.round(clamp(car.throttle || 0, 0, 1) * 40), br = Math.round(clamp(car.brake || 0, 0, 1) * 40);
     if (E.thr._n !== th) { E.thr._n = th; E.thr.style.transform = 'scaleY(' + th / 40 + ')'; }
@@ -86199,6 +86402,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-05 16:55 -->
+<!-- Apex GP build 2026-10-05 19:24 -->
 </body>
 </html>
