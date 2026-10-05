@@ -8279,6 +8279,26 @@ const Race = (() => {
       rc.tlOff = { t0: race.t, D0: rc.dist, s0: car.s, k: U.clamp(rc.tlK || 0.95, 0.6, 1.1), ahead, lap: car.lap };
     }
   }
+  // time trial: a lap deleted only after the line (an off just before it, judged adv.rejoin s after the rejoin) stops
+  // counting: best lap, session fastest lap, best sectors, ghost and personal best go back to what they were before it
+  // (rc.undo, kept by lineCrossing); main re-saves the previous ghost (or clears it) on 'pbRevoked'
+  function undoLap(G, race, car, e) {
+    const rc = car._race, u = rc.undo;
+    if (race.mode !== 'timetrial' || !u || u.lap !== e.lap) return;
+    rc.undo = null;
+    car.bestLap = u.bestLap; race.fastestLap = u.fastestLap;
+    restoreSectors(race, car, u.sec);
+    if (race.ghostRec && race.bestGhost !== u.ghost) {
+      race.bestGhost = u.ghost; race.ghostPlayer = u.ghostPlayer; race.pb = u.pb;
+      race.ghostRec.bestTime = u.recBestTime; race.ghostRec.best = u.recBest;
+      emit(G, { type: 'pbRevoked', car, ghost: u.ghost || null });
+    }
+  }
+  // best sectors as they were when the lap began (rc.secStash): a deleted lap's sectors never count
+  function restoreSectors(race, car, st) {
+    if (!st) return;
+    for (let i = 0; i < 3; i++) { car.bestSectors[i] = st.car[i]; race.sessionBestSectors[i] = st.ses[i]; }
+  }
   function tlJudge(G, race, car, x) {
     const rc = car._race, T = G.track, D1 = x.D1 != null ? x.D1 : rc.dist, len = D1 - x.D0, tAct = (x.tR != null ? x.tR : race.t) - x.t0;
     const tR = x.tR != null ? x.tR : race.t;
@@ -8293,8 +8313,8 @@ const Race = (() => {
     if (race.mode === 'timetrial' || inQ(race)) {   // (time trial / qualifying: the lap is deleted)
       // (off before the line, judged after it: the lap just finished is the one deleted, not the new one)
       const H = car.lapHist, e = x.lap != null && car.lap !== x.lap && H && H.length ? H[H.length - 1] : null;
-      if (e) { if (!e.invalid) { e.invalid = true; e.late = true; } }
-      else if (rc.h) rc.h.bad = true;
+      if (e) { if (!e.invalid) { e.invalid = true; e.late = true; undoLap(G, race, car, e); } }
+      else if (rc.h) { rc.h.bad = true; if (race.mode === 'timetrial') restoreSectors(race, car, rc.secStash); }
       emit(G, { type: 'trackLimits', car, invalid: true, turn, gain });
       return;
     }
@@ -8510,7 +8530,7 @@ const Race = (() => {
     rc.sectorStartT = tc;
     car.sectors[i] = st;
     const sb = race.sessionBestSectors[i], pb = car.bestSectors[i];
-    const nb = inQ(race) && !!rc.h && (rc.h.inLap || rc.h.outLap || rc.h.bad);   // (qualifying: out / in / deleted laps set no bests)
+    const nb = (inQ(race) || race.mode === 'timetrial') && !!rc.h && (rc.h.inLap || rc.h.outLap || rc.h.bad);   // (qualifying / time trial: out / in / deleted laps set no bests)
     let flag;
     if (nb) flag = 'yellow';
     else if (sb == null || st < sb) { flag = 'purple'; race.sessionBestSectors[i] = st; }
@@ -8559,6 +8579,12 @@ const Race = (() => {
     if (inQ(race)) { qualiLine(G, race, car, tc); return; }
     let lapEv = null;
     const inv = car.lap >= 1 && lapInvalid(race, rc);   // (time trial in / out lap: no best, no ghost)
+    // time trial: what a valid lap may replace, in case it is deleted after the line (undoLap)
+    if (race.mode === 'timetrial') {
+      rc.undo = car.lap >= 1 && !inv ? { lap: car.lap, bestLap: car.bestLap, fastestLap: race.fastestLap, sec: rc.secStash || null,
+        ghost: race.bestGhost || null, ghostPlayer: race.ghostPlayer || null, pb: race.pb || null,
+        recBestTime: race.ghostRec ? race.ghostRec.bestTime : null, recBest: race.ghostRec ? race.ghostRec.best : null } : null;
+    }
     if (car.lap >= 1) {
       sectorDone(G, race, car, 2, tc);
       const lt = tc - rc.lapStartT;
@@ -8597,6 +8623,7 @@ const Race = (() => {
       car.lastSectors[i] = car.sectors[i]; car.lastSectorFlags[i] = car.sectorFlags[i];
       car.sectors[i] = null; car.sectorFlags[i] = null;
     }
+    if (race.mode === 'timetrial') rc.secStash = { car: car.bestSectors.slice(), ses: race.sessionBestSectors.slice() };   // (restoreSectors)
     if (race.mode !== 'timetrial') overtakeAtLine(G, race, car);
     strategyHook(G, race, car);
     if (car.isPlayer && race.phase === 'racing' && race.laps > 1 && car.lap === race.laps) note(race, 'FINAL LAP');   // (not in qualifying)
@@ -11764,7 +11791,13 @@ const NetCore = (() => {
     if (S.mode !== 'timetrial') return;
     const G = S.G, me = S.me;
     for (const ev of G.events) {
-      if (ev.type !== 'lap' || ev.car !== me) continue;
+      if (ev.car !== me) continue;
+      if (ev.type === 'trackLimits' && ev.invalid) {   // a lap deleted only after the line (already sent as valid): withdraw it
+        const H = me.lapHist, h = H && H[H.length - 1];
+        if (h && h.invalid && h.late) S.out.push({ t: 'lapdel', time: h.time });
+        continue;
+      }
+      if (ev.type !== 'lap') continue;
       S.out.push({ t: 'lap', time: ev.time, lap: ev.lap, s: (me.lastSectors || []).slice(0, 3), valid: !ev.invalid });
       if (ev.ghost && typeof Ghost !== 'undefined') S.out.push({ t: 'ghost', time: ev.time, data: Ghost.serialize(ev.ghost) });
     }

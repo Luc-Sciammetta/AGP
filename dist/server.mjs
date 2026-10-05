@@ -761,11 +761,20 @@ class TTSim {
       (!sec || (sec.length === 3 && Math.abs(sec[0] + sec[1] + sec[2] - time) < 0.08));
     e.prog = 0;
     if (!ok) return;
+    // (kept until the next lap: the client withdraws a lap deleted for track limits only after the line -> onLapDel)
+    e.undo = { time, laps: e.laps, last: e.last, bs: e.bs ? e.bs.slice() : null, best: e.best, bestS: e.bestS, ghost: e.ghost, ghostT: e.ghostT };
     e.laps++; e.last = time;
     // [UF sectors] each sector's best of every valid lap (not only the best lap's): everyone's purple sectors follow it
     if (sec) { const b = e.bs || (e.bs = [null, null, null]); for (let k = 0; k < 3; k++) if (sec[k] > 0 && !(b[k] > 0 && b[k] <= sec[k])) b[k] = sec[k]; }
     if (e.best == null || time < e.best) { e.best = time; e.bestS = sec; e.ghost = null; e.ghostT = time; }
     this.leaderboard();
+  }
+  onLapDel(p, m) {   // that lap no longer counts: the board goes back to before it (best, sectors, ghost)
+    const e = this.ent.get(p.id), u = e && e.undo;
+    if (!u || !(Math.abs(+m.time - u.time) < 0.002)) return;
+    e.undo = null;
+    e.laps = u.laps; e.last = u.last; e.bs = u.bs; e.best = u.best; e.bestS = u.bestS; e.ghost = u.ghost; e.ghostT = u.ghostT;
+    this.leaderboard(true);
   }
   onGhost(p, m) {
     const e = this.ent.get(p.id);
@@ -866,6 +875,7 @@ function onText(p, raw) {
     case 'rst': if (sim && sim.onReset) sim.onReset(p); break;   // (reset ghost: the player pressed R)
     case 'qgo': case 'qret': case 'qready': case 'qcont': if (sim && sim.onQ) sim.onQ(p, m); break;   // (qualifying)
     case 'lap': if (sim && sim.onLap) sim.onLap(p, m); break;
+    case 'lapdel': if (sim && sim.onLapDel) sim.onLapDel(p, m); break;
     case 'ghost': if (sim && sim.onGhost) sim.onGhost(p, m); break;
     case 'getghost': if (sim && sim.getGhost) sim.getGhost(p, m); break;
     case 'emote': if (room && EMO_TXT.has(m.k) && t - (p.emoteT || 0) > 800) { p.emoteT = t; sendAll(room, { t: 'emote', pid: p.id, k: m.k, txt: EMO_TXT.get(m.k) }); } break;
