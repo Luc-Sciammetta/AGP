@@ -573,7 +573,7 @@ CFG.penalties = {
   help: {
     off: 'No penalties at all: contact, track limits, corner cuts, pit-lane speeding and jump starts go unpunished.',
     lenient: 'Only big hits that are clearly your fault. Five track-limits warnings, only for time gained past the white line; places or big time gained off track must be given back within 30 s. Generous pit-lane and start tolerance.',
-    standard: 'Clear rear-ends, divebombs and moving into a car alongside; light contact is a racing incident. Track limits are the white line: all four wheels past it without losing time (up to 0.25 s lost still counts) is a strike - three warnings, then 5 s. Give back a place or time gained off track within 20 s.',
+    standard: 'Clear rear-ends, divebombs and moving into a car alongside; light contact is a racing incident. Track limits are the white line: all four wheels past it at your own pace or faster is a strike (running wide and losing time is free) - three warnings, then 5 s. Give back a place or time gained off track within 20 s.',
     strict: 'Close to real F1 stewarding: smaller rear-end hits and lunges count (wheel-to-wheel rubbing is still a racing incident), all four wheels past the white line is a strike unless it cost 0.5 s, places gained off track go back within 15 s (or 10 s), 1 km/h pit tolerance, 10 s jump start.',
   },
   lenient: {
@@ -584,7 +584,7 @@ CFG.penalties = {
   },
   standard: {
     col: { light: 3, rear: 6, side: 4, dive: 5.5, share: 0.7, along: 2.4, back: 10, lunge: 4, diveNA: true, lap1: 1.25, lap1Dist: 1200, spin: false, sec: 5, big: null, cool: 8 },
-    tl: { warn: 3, gain: -0.25, cut: 0.8, sec: 5 },
+    tl: { warn: 3, gain: -0.05, cut: 0.8, sec: 5 },   // (a strike unless it lost time: -0.05 s = the car's own pace, within the estimate's noise)
     adv: { rejoin: 1.5, margin: 0.5, passWin: 20, passSec: 5, timeWin: 20, slack: 0.15, big: 3 },
     pitTol: 5, jump: 0.6, jumpSec: 5,
   },
@@ -9765,8 +9765,9 @@ const Race = (() => {
     if (race.mode === 'timetrial' || inQ(race)) {   // (time trial / qualifying: the lap is deleted)
       // (off before the line, judged after it: the lap just finished is the one deleted, not the new one)
       const H = car.lapHist, e = x.lap != null && car.lap !== x.lap && H && H.length ? H[H.length - 1] : null;
-      if (e) { if (!e.invalid) { e.invalid = true; e.late = true; undoLap(G, race, car, e); } }
-      else if (rc.h) { rc.h.bad = true; if (race.mode === 'timetrial') restoreSectors(race, car, rc.secStash); }
+      // (one LAP DELETED message a lap: later breaches on a lap already deleted say nothing)
+      if (e) { if (e.invalid) return; e.invalid = true; e.late = true; undoLap(G, race, car, e); }
+      else if (rc.h) { if (rc.h.bad) return; rc.h.bad = true; if (race.mode === 'timetrial') restoreSectors(race, car, rc.secStash); }
       emit(G, { type: 'trackLimits', car, invalid: true, turn, gain });
       return;
     }
