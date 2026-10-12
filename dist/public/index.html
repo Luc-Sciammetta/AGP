@@ -913,6 +913,7 @@ html:not(.agp-touch) .agp-map.is-zoom.is-mpb { bottom: max(1.4em, 38px); }   /* 
 .agp-qb-row .agp-ring { font-size: .7em; }
 .agp-qb-row b.is-sb { padding: .2em .35em .16em; border-radius: .18em; background: var(--agp-purple); color: #fff; }
 .agp-qb-nt { font-size: .78em; letter-spacing: .1em; color: #6d7482; }
+.agp-qb-nt.is-del { font-size: .7em; letter-spacing: .06em; white-space: nowrap; }
 .agp-qb-row.agp-qb-hd { position: sticky; top: 0; z-index: 1; height: 1.45em; background: rgba(15, 17, 23, .98); }
 .agp-qb-row.agp-qb-hd > span { font-size: .62em; letter-spacing: .18em; color: var(--agp-dim); }
 .agp-qb-row.is-me { background: #fff; color: var(--agp-ink); }
@@ -1133,6 +1134,7 @@ html.agp-touch .agp-hud.is-qs .agp-wx { top: 15.2em; }
   background: rgba(255, 255, 255, .05); font: 700 .9em/1 var(--agp-fd); }
 .agp-q-row i { height: 1.1em; border-radius: .1em; }
 .agp-q-row em { text-align: right; color: #cdd2da; font-variant-numeric: tabular-nums; }
+.agp-q-row em.is-del { font-size: .72em; white-space: nowrap; }
 .agp-q-row.is-me { background: #fff; color: var(--agp-ink); }
 .agp-quali.is-big .agp-q-table { font-size: 1.12em; }
 .agp-q-row.is-me em { color: #30343c; }
@@ -1449,6 +1451,7 @@ html.agp-touch .agp-setup-car .agp-cs-swp path { stroke-width: 2; }
    hint sits at its right. Penalties / fastest lap / OT / PIT stay as badges beside the rows. */
 .agp-tw-mode kbd { font-size: .55em; opacity: .75; }
 .agp-tw-gap { --b: 0; --bc: #19e06a; }
+.agp-tw-gap[data-k="del"] { font-size: .72em; letter-spacing: .02em; }
 .agp-tw-gap[data-k="bar"] { align-self: stretch; display: flex; align-items: center; justify-content: flex-end;
   background: linear-gradient(90deg, var(--bc) calc(var(--b) * 100%), rgba(255, 255, 255, .14) 0) right .55em bottom .28em / 3.2em .2em no-repeat; }
 .agp-tw-row.is-me .agp-tw-gap[data-k="bar"] { background-image: linear-gradient(90deg, var(--bc) calc(var(--b) * 100%), rgba(0, 0, 0, .14) 0); }
@@ -65198,7 +65201,7 @@ const Race = (() => {
       if (P.lapTimes.length) { q.player = q.del ? null : P.lapTimes[0]; q.done = true; q.endT = race.t; }
       else if (race.t > q.maxT) { q.done = true; q.endT = race.t; }
       if (q.done) {
-        q.times.push({ car: P, time: q.player });
+        q.times.push({ car: P, time: q.player, del: !!q.del });
         q.times.sort((a, b) => (a.time == null ? 1e9 : a.time) - (b.time == null ? 1e9 : b.time));
         emit(G, { type: 'qualiDone', times: q.times, pos: q.times.findIndex(x => x.car === P) + 1, deleted: !!q.del });
         finishQuali(G, race);
@@ -67706,13 +67709,14 @@ const Quali = (() => {
     const N = G.cars.length, fin = classify(G, qs.fmt.k - 1).map(r => r.id);
     for (let i = qs.fmt.k - 2; i >= 0; i--) for (const id of qs.out[i] || []) if (fin.indexOf(id) < 0) fin.push(id);
     for (const c of G.cars) if (fin.indexOf(c.id) < 0) fin.push(c.id);
-    const rows = fin.map((id, i) => ({ id, pos: i + 1, grid: 0, q: qs.fmt.names.map((n, k) => { const r = rowOf(qs, k, id); return r ? r.best : null; }), pen: qs.pen[id] || 0,
+    const rows = fin.map((id, i) => ({ id, pos: i + 1, grid: 0, q: qs.fmt.names.map((n, k) => { const r = rowOf(qs, k, id); return r ? r.best : null; }),
+      qd: qs.fmt.names.map((n, k) => { const r = rowOf(qs, k, id); return !!(r && r.best == null && r.del > 0); }), pen: qs.pen[id] || 0,   // (qd: no valid time in that session, a lap deleted: LAP DELETED)
       why: ['imp', 'col'].filter(k => qs.imp.some(r => r.by === id && r.places > 0 && (r.kind || 'imp') === k)) }));   // (grid notes: IMPEDING / COLLISION)
     const g = rows.slice().sort((a, b) => (Math.min(a.pos + a.pen, N) + (a.pen > 0 ? 0.5 : 0)) - (Math.min(b.pos + b.pen, N) + (b.pen > 0 ? 0.5 : 0)) || a.pos - b.pos);
     g.forEach((r, i) => { r.grid = i + 1; });
     qs.final = rows;
     const last = q => { for (let k = q.length - 1; k >= 0; k--) if (q[k] != null) return q[k]; return null; };
-    race.quali = { times: g.map(r => ({ car: G.cars[r.id], time: last(r.q), q: r.q.slice(), pen: r.pen, why: r.why.slice(), pos: r.pos })), done: true };
+    race.quali = { times: g.map(r => ({ car: G.cars[r.id], time: last(r.q), q: r.q.slice(), qd: r.qd.slice(), del: last(r.q) == null && r.qd.some(Boolean), pen: r.pen, why: r.why.slice(), pos: r.pos })), done: true };
     race.qualiBest = race.quali.times[0] && race.quali.times[0].time != null ? { car: race.quali.times[0].car, time: race.quali.times[0].time } : null;
     G.weather = qs.raceW; if (G.world) G.world.weather = qs.raceW;   // (the race's weather from the grid on: one world rebuild)
     if (G.world && qs.wpm != null) G.world.wearPerMetre = qs.wpm;
@@ -68469,7 +68473,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-12 14:43';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-12 16:51';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -69135,10 +69139,13 @@ const Stats = (() => {
 //  * Awards.dotd(G[, res]) -> the race's DRIVER OF THE DAY { car, teamIndex, code, name, pos, grid, score, reason, ranked, src }
 //    (memoised on G.race.dotd; null for a time trial / no results). main calls it at raceEnd (before Stats, which counts it),
 //    the results screen shows it. Awards.driverOfDay(results, opts) is the pure scorer (tests).
-//    Score = how much better than expected a classified driver drove: places gained from the grid, real on-track passes (from
-//    every car's lap-by-lap positions, pit-stop swaps left out), a win / podium, the fastest lap, recovering from a penalty or
-//    a slow stop, holding a rival off at the flag, a wet-race drive, a win from far back. A "fan vote" (a seeded random
-//    term, the same on every screen / client for one race) keeps it from always being the winner.
+//    Score (reworked 2026-10-12, weights in driverOfDay): result (P1..P10 = 25,18,15,12,10,8,6,4,2,1 / 5) + places gained valued by
+//    where they are won (position value v(p) = 6 * (1 - (p-1)/(N-1))^1.5, so P14 -> P4 is worth more than P24 -> P14), credited
+//    in full only for places earned on track (passes made - times passed; places that came from other cars' stops / penalties /
+//    retirements count 25 %) + race pace (median clean lap rank vs finish: beating faster cars scores, finishing where the
+//    pace says adds nothing) + the final fastest lap + recovering from a penalty or a slow stop + holding a rival off at the
+//    flag + a wet-race drive + a win from P6 or worse. A seeded "fan vote" (sd ~0.6, a tie-breaker nudge; the same on every
+//    screen / client for one race) is the only random term. Nothing depends on who the player is.
 //  * Awards.titleMaths(ch, opts) -> who has clinched the title, who is still in it (and what they need), who is out.
 //    Exact under the game's rules (Race.standingsTable: points, then wins, then podiums, then best finish, then team index;
 //    any car may retire, so a rival can always score nothing):
@@ -69171,8 +69178,9 @@ const Awards = (() => {
   const histOf = c => (c && Array.isArray(c.lapHist) ? c.lapHist : []);
 
   // on-track passes per car: at every lap line, the cars that were ahead at the previous line (the grid for lap 1) and are
-  // behind now, neither of them having pitted that lap (a pit-stop swap is not a pass)
-  function passCounts(res) {
+  // behind now, neither of them having pitted that lap (a pit-stop swap is not a pass). made: passes by the car; lost: times
+  // the car was passed that way
+  function passTally(res) {
     const info = res.map(r => {
       const c = r.car, m = new Map();
       for (const e of histOf(c)) if (num(e.lap) && num(e.pos)) m.set(e.lap | 0, { pos: e.pos, pit: (e.pit | 0) > 0 });
@@ -69180,7 +69188,7 @@ const Awards = (() => {
     });
     let maxLap = 0;
     for (const x of info) for (const k of x.m.keys()) if (k > maxLap) maxLap = k;
-    const out = new Map(info.map(x => [x.r, 0]));
+    const made = new Map(info.map(x => [x.r, 0])), lost = new Map(info.map(x => [x.r, 0]));
     for (let L = 1; L <= maxLap; L++) {
       const now = info.map(x => x.m.get(L) || null);
       const was = info.map((x, i) => (L === 1 ? (x.grid != null ? { pos: x.grid, pit: false } : null) : x.m.get(L - 1) || null));
@@ -69188,12 +69196,25 @@ const Awards = (() => {
         if (!now[a] || !was[a] || now[a].pit) continue;
         for (let b = 0; b < info.length; b++) {
           if (a === b || !now[b] || !was[b] || now[b].pit) continue;
-          if (was[b].pos < was[a].pos && now[b].pos > now[a].pos) out.set(info[a].r, out.get(info[a].r) + 1);
+          if (was[b].pos < was[a].pos && now[b].pos > now[a].pos) { made.set(info[a].r, made.get(info[a].r) + 1); lost.set(info[b].r, lost.get(info[b].r) + 1); }
         }
       }
     }
-    return out;
+    return { made, lost };
   }
+  const passCounts = res => passTally(res).made;
+
+  // ---- the weights (points) ----
+  const RESULT = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1].map(x => x / 5);   // P1..P10: 5, 3.6, 3, 2.4, 2, 1.6, 1.2, 0.8, 0.4, 0.2
+  const FREE = 0.25;      // a place gained without an on-track pass (another car's stop / penalty / retirement) counts this much
+  const FAR_WIN = 1.5;    // a win from P6 or worse (scaled by the earned share of the climb)
+  const FAR_POD = 0.9;    // a podium (P2 / P3) from P8 or worse, the same way (user 2026-10-12: 'something for podiums too')
+  const PACE_UP = 0.5, PACE_DOWN = 0.2, PACE_FLOOR = -1, PACE_TIE = 0.05;   // race pace vs finish: per unit of position value; tie band (s)
+  const FL_FINAL = 1.0, FL_FAST = 0.4;   // the race's final fastest lap / a top-10 finisher's best lap rank (0 .. 0.4)
+  const FAN_SD = 0.6;     // fan vote (sum of three uniforms has sd 0.5)
+  // position value: 6 at the front, 0 at the back, rising toward the front (so a place near the front is worth more)
+  const vOf = (p, N) => 6 * Math.pow(Math.max(0, Math.min(1, 1 - (p - 1) / Math.max(1, N - 1))), 1.5);
+  const ord = n => n + ((n % 100 >= 11 && n % 100 <= 13 ? 'TH' : ['TH', 'ST', 'ND', 'RD'][n % 10]) || 'TH');
 
   function driverOfDay(res, o) {
     o = o || {};
@@ -69203,31 +69224,51 @@ const Awards = (() => {
     // the fastest lap: the race's final one (o.fl = race.fastestLap at raceEnd), never a lap deleted for track limits
     const flOk = f => { const e = f.lap != null ? histOf(f.car).find(h => h.lap === f.lap && num(h.time) && Math.abs(h.time - f.time) < 1e-3) : null; return !(e && e.invalid); };
     const flCar = o.fl && o.fl.car ? (flOk(o.fl) ? o.fl.car : null) : (res.find(r => r.fastestLap) || {}).car || null;
-    const passes = passCounts(res);
-    // a slow stop = a stop lap well over the field's usual stop-lap loss (the lap time over the car's own clean laps)
-    const lossOf = new Map(), losses = [];
+    const tally = passTally(res), passes = tally.made, N = res.length;
+    // a slow stop = a stop lap well over the field's usual stop-lap loss (the lap time over the car's own clean laps);
+    // race pace = the median of the car's clean laps (needs two)
+    const lossOf = new Map(), paceOf = new Map(), losses = [];
     for (const r of res) {
       const hist = histOf(r.car), clean = hist.filter(e => !(e.pit > 0) && !e.inLap && !e.outLap && num(e.time) && e.time > 0).map(e => e.time), base = median(clean);
       const L = [];
       for (const e of hist) if (e.pit > 0 && num(e.time) && e.time > 0 && base > 0) { L.push({ lap: e.lap, x: e.time - base }); losses.push(e.time - base); }
       lossOf.set(r, L);
+      if (clean.length >= 2 && base > 0) paceOf.set(r, base);
     }
     const usual = median(losses);
     const bestLaps = res.filter(r => !r.dnf && num(r.bestLap) && r.bestLap > 0).map(r => r.bestLap).sort((a, b) => a - b);
+    const paced = res.filter(r => paceOf.has(r));
     const cands = [];
     res.forEach((r, i) => {
       const c = r.car;
       if (!c || r.dnf || !num(r.pos)) return;
       const hist = histOf(c), pos = r.pos, grid = num(r.grid) ? r.grid : num(c.grid) ? c.grid : null;
-      const gained = grid != null ? grid - pos : 0, ov = passes.get(r) || 0;
+      const gained = grid != null ? grid - pos : 0, ov = passes.get(r) || 0, lost = tally.lost.get(r) || 0;
+      // places EARNED on track: passes made minus times passed, at most the places actually gained; the rest of a climb came
+      // from other cars' stops / penalties / retirements and counts FREE
+      const earned = gained > 0 ? Math.max(0, Math.min(gained, ov - lost)) : 0;
+      const credit = gained > 0 ? (earned + FREE * (gained - earned)) / gained : 1;
       const p = {};
-      p.gain = gained > 0 ? gained : gained * 0.5;
-      p.pass = 0.4 * Math.min(ov, 12);
-      p.result = pos === 1 ? 4 : pos === 2 ? 2.2 : pos === 3 ? 1.2 : pos <= 10 ? 0.3 : 0;
-      p.far = pos === 1 && grid != null && grid >= 6 ? 4 : 0;
+      p.result = pos <= RESULT.length ? RESULT[pos - 1] : 0;
+      // places gained, valued by where they are won (the difference of the position values); places lost count less
+      const dv = grid != null ? vOf(pos, N) - vOf(grid, N) : 0;
+      p.gain = gained > 0 ? Math.max(0, dv) * credit : gained < 0 ? Math.min(0, dv) * 0.4 : 0;
+      p.far = pos === 1 && grid != null && grid >= 6 ? FAR_WIN * credit : 0;
+      p.farPod = (pos === 2 || pos === 3) && grid != null && grid >= 8 ? FAR_POD * credit : 0;
+      // race pace rank vs finishing order (both among the cars with a pace). A tie band: finishing anywhere inside the band of
+      // cars within PACE_TIE s is exactly on pace. Beating faster cars scores, being beaten by slower ones costs a little.
+      let paceRank = null, posR = null;
+      if (paceOf.has(r) && paced.length >= 4) {
+        const pace = paceOf.get(r);
+        const lo = 1 + paced.filter(q => paceOf.get(q) < pace - PACE_TIE).length, hi = paced.filter(q => paceOf.get(q) <= pace + PACE_TIE).length;
+        posR = 1 + paced.filter(q => (q.pos || 99) < pos).length;
+        paceRank = Math.min(hi, Math.max(lo, posR));
+      }
+      const dp = paceRank != null ? vOf(posR, N) - vOf(paceRank, N) : 0;
+      p.pace = dp > 0 ? PACE_UP * dp : Math.max(PACE_FLOOR, PACE_DOWN * dp);
       const isFl = !!flCar && flCar === c;   // (one car: o.fl wins over a results row's flag)
-      p.fl = isFl ? 2.5 : 0;
-      if (!isFl && num(r.bestLap) && bestLaps.length > 2) p.fl = 1.2 * (1 - bestLaps.indexOf(r.bestLap) / (bestLaps.length - 1)) * (pos <= 10 ? 1 : 0);
+      p.fl = isFl ? FL_FINAL : 0;
+      if (!isFl && num(r.bestLap) && bestLaps.length > 2) p.fl = FL_FAST * (1 - bestLaps.indexOf(r.bestLap) / (bestLaps.length - 1)) * (pos <= 10 ? 1 : 0);
       // trouble: a penalty (>= 5 s) or a stop well over the usual loss, then how far it climbed back from its low point
       const pen = Math.max(+r.penalty || 0, +c.penalty || 0) + (+r.penaltyServed || 0);
       let trouble = null;
@@ -69240,49 +69281,51 @@ const Awards = (() => {
         // stop cycle are no 'recovery', user 2026-10-12: 'back from P9' when the player never ran P9)
         for (const e of hist) if (e.lap >= trouble.lap && num(e.pos) && e.pos > low && (trouble.kind !== 'pen' || (!(e.pit > 0) && !e.inLap && !e.outLap))) low = e.pos;
         rec = pos <= 10 ? Math.max(0, low - pos) : 0;
-        p.rec = pos <= 10 ? 1.5 + Math.min(5, 0.7 * rec) : 0;
+        p.rec = pos <= 10 ? 0.5 + Math.min(1.5, 0.25 * rec) : 0;
       } else p.rec = 0;
       // defending: how close the next car was at the flag (same lap, penalties included)
       const nx = res[i + 1];
       let gap = null;
       if (nx && !nx.dnf && pos <= 10 && num(nx.time) && num(r.time) && (nx.laps == null || r.laps == null || nx.laps === r.laps)) gap = nx.time - r.time;
-      p.def = gap != null && gap >= 0 && gap < 1.5 ? 0.5 + 1.2 * (1 - gap / 1.5) : 0;
+      p.def = gap != null && gap >= 0 && gap < 1.5 ? 0.3 + 0.7 * (1 - gap / 1.5) : 0;
       // wet-race drive: the share of its laps run in rain / on a damp track
       const wetLaps = hist.filter(e => e.cond === 'light' || e.cond === 'heavy').length + 0.5 * hist.filter(e => e.cond === 'damp').length;
       const wetFrac = hist.length ? wetLaps / hist.length : 0;
-      p.wet = wetFrac >= 0.3 ? wetFrac * (0.35 * Math.max(0, gained) + 0.15 * ov + (pos <= 3 ? 2.5 : 0)) : 0;
+      p.wet = wetFrac >= 0.3 ? wetFrac * (0.12 * Math.min(10, earned) + (pos <= 3 ? 1 : 0)) : 0;
       const base = Object.keys(p).reduce((a, k) => a + p[k], 0);
-      cands.push({ r, car: c, i, pos, grid, gained, ov, p, base, trouble, rec, low, gap, wetFrac });
+      cands.push({ r, car: c, i, pos, grid, gained, ov, lost, earned, credit, paceRank, posR, isFl, p, base, trouble, rec, low, gap, wetFrac });
     });
     if (!cands.length) return null;
     const rnd = o.rnd || rng(seedOf(res, o));
     for (const x of cands) {
-      x.fan = (rnd() + rnd() + rnd() - 1.5) * 4;   // the fan vote (sd ~2 points)
+      x.fan = (rnd() + rnd() + rnd() - 1.5) * (FAN_SD / 0.5);   // the fan vote (sd FAN_SD points: a tie-breaker nudge)
       x.score = x.base + x.fan;
     }
     cands.sort((a, b) => b.score - a.score || a.pos - b.pos);
     const w = cands[0];
-    // the short reason: the two biggest things it did
+    // the short reason: the two biggest things it did (each phrase says only what the numbers show)
     const ph = [];
     const add = (v, t) => { if (t) ph.push({ v, t }); };
-    if (w.p.far) add(w.p.far + w.p.gain + 3, `WON FROM P${w.grid}`);
-    else if (w.gained >= 3) add(w.p.gain + 2, `+${w.gained} PLACES FROM P${w.grid}`);
+    if (w.p.far) add(w.p.far + w.p.gain + 1, `WON FROM P${w.grid}`);
+    else if (w.gained >= 3 && w.credit >= 0.6) add(w.p.gain + 1, `+${w.gained} PLACES FROM P${w.grid}`);
+    else if (w.gained >= 3 && w.ov >= 3) add(w.p.gain + 1, `P${w.pos} FROM P${w.grid}, ${w.ov} OVERTAKES`);   // (most of the climb was other cars' stops: no '+N PLACES')
     // (several penalties: '2 PENALTIES (10 S)', not 'A 10 S PENALTY')
     const penTxt = t => t.n > 1 ? `${t.n} PENALTIES (${t.sec} S)` : `A ${t.sec} S PENALTY`;
-    if (w.p.rec > 0 && w.rec >= 2) add(w.p.rec + 1, w.trouble.kind === 'pen' ? `BACK FROM P${w.low} AFTER ${penTxt(w.trouble)}` : `BACK FROM P${w.low} AFTER A SLOW STOP`);
+    if (w.p.rec > 0 && w.rec >= 2) add(w.p.rec + 0.5, w.trouble.kind === 'pen' ? `BACK FROM P${w.low} AFTER ${penTxt(w.trouble)}` : `BACK FROM P${w.low} AFTER A SLOW STOP`);
     else if (w.p.rec > 0) add(w.p.rec, w.trouble.kind === 'pen' ? `FINISHED P${w.pos} DESPITE ${penTxt(w.trouble)}` : `FINISHED P${w.pos} AFTER A SLOW STOP`);
-    if (w.ov >= 5) add(w.p.pass + 0.5, `${w.ov} OVERTAKES`);
-    if (w.p.fl >= 2) add(w.p.fl, 'FASTEST LAP');
-    if (w.p.wet > 0 && (w.gained >= 2 || w.pos <= 3)) add(w.p.wet + 1, 'WET-RACE DRIVE');
+    if (w.p.pace >= 0.8 && w.paceRank != null && w.posR <= w.paceRank - 3) add(w.p.pace + 0.3, `P${w.pos} ON ONLY ${ord(w.paceRank)}-BEST PACE`);
+    if (w.ov >= 5 && w.credit >= 0.6) add(0.1 + 0.02 * Math.min(w.ov, 12), `${w.ov} OVERTAKES`);
+    if (w.isFl) add(w.p.fl, 'FASTEST LAP');
+    if (w.p.wet > 0 && (w.gained >= 2 || w.pos <= 3)) add(w.p.wet + 0.5, 'WET-RACE DRIVE');
     if (w.p.def > 0 && w.gap != null) add(w.p.def, `HELD OFF P${w.pos + 1} BY ${w.gap.toFixed(1)} S`);
-    const fb = w.pos === 1 ? (w.grid === 1 ? 'WON FROM POLE' : 'RACE WINNER') : w.pos <= 3 ? `PODIUM FINISH: P${w.pos}` : w.fan > 2 ? 'FAN FAVOURITE' : `A STRONG P${w.pos}`;
+    const fb = w.pos === 1 ? (w.grid === 1 ? 'WON FROM POLE' : 'RACE WINNER') : w.pos <= 3 ? `PODIUM FINISH: P${w.pos}` : w.fan > 0.9 ? 'FAN FAVOURITE' : `A STRONG P${w.pos}`;
     if (!ph.length) add(0, fb); else if (ph.length === 1 && !w.p.far && w.pos <= 3) add(-1, fb);
     ph.sort((a, b) => b.v - a.v);
     const reason = ph.slice(0, 2).map(x => x.t).join(' · ');
     const c = w.car, d = c.driver || {};
     return { car: c, teamIndex: c.teamIndex != null ? c.teamIndex : w.r.teamIndex, code: c.code || w.r.code || '', name: w.r.name || ((d.first ? d.first + ' ' : '') + (d.last || c.name || '')).trim(),
-      pos: w.pos, grid: w.grid, gained: w.gained, passes: w.ov, score: w.score, reason,
-      ranked: cands.map(x => ({ car: x.car, pos: x.pos, score: x.score, base: x.base, fan: x.fan })) };
+      pos: w.pos, grid: w.grid, gained: w.gained, passes: w.ov, passed: w.lost, earned: w.earned, paceRank: w.paceRank, score: w.score, reason,
+      ranked: cands.map(x => ({ car: x.car, pos: x.pos, score: x.score, base: x.base, fan: x.fan, p: x.p })) };
   }
 
   // the race's Driver of the Day, once per results array (G.race.dotd); null: time trial / no classification
@@ -69387,7 +69430,7 @@ const Awards = (() => {
     return { left: R, total, avail, maxRound: M, leader: L.ti, rows: out, clinched: clinchedRow ? clinchedRow.ti : null, clinchNext: cn, blurb, counts };
   }
 
-  return { dotd, driverOfDay, titleMaths, roundMax, _passCounts: passCounts, _table: table };
+  return { dotd, driverOfDay, titleMaths, roundMax, _passCounts: passCounts, _passTally: passTally, _table: table };
 })();
 
 
@@ -71517,7 +71560,7 @@ const NetCore = (() => {
     qs.st = 'done'; qs.seq++;
     const last = a => { for (let k = (a || []).length - 1; k >= 0; k--) if (a[k] != null) return a[k]; return null; };
     const fin = new Map((qs.final || []).map(r => [r.id, r]));
-    race.quali = { times: order.map(c => { const r = fin.get(c.id) || { q: [], pen: 0, why: [], pos: 0 }; return { car: c, time: last(r.q), q: (r.q || []).slice(), pen: r.pen || 0, why: (r.why || []).slice(), pos: r.pos }; }), done: true };
+    race.quali = { times: order.map(c => { const r = fin.get(c.id) || { q: [], pen: 0, why: [], pos: 0 }, qd = (r.qd || []).slice(); return { car: c, time: last(r.q), q: (r.q || []).slice(), qd, del: last(r.q) == null && qd.some(Boolean), pen: r.pen || 0, why: (r.why || []).slice(), pos: r.pos }; }), done: true };
     race.qualiBest = race.quali.times[0] && race.quali.times[0].time != null ? { car: race.quali.times[0].car, time: race.quali.times[0].time } : null;
     G.weather = qs.raceW; if (G.world) G.world.weather = qs.raceW;   // (the race's weather from the grid on: one world rebuild)
     for (const r of rows) { const c = S.byId[r.id]; if (c && r.compound) c._startC = r.compound; }
@@ -83715,7 +83758,7 @@ const HUD = (() => {
   function qualiRows(G) {
     const q = G.race && G.race.quali, t = q && q.times;
     let rows = [];
-    if (Array.isArray(t)) rows = t.map(e => (e && e.car ? { car: e.car, time: e.time } : null)).filter(Boolean);
+    if (Array.isArray(t)) rows = t.map(e => (e && e.car ? { car: e.car, time: e.time, del: !!e.del } : null)).filter(Boolean);
     else if (t instanceof Map) t.forEach((v, k) => rows.push({ car: k, time: v }));
     else if (t && typeof t === 'object') for (const c of G.cars || []) if (t[c.id] != null) rows.push({ car: c, time: t[c.id] });
     if (!rows.length && Array.isArray(t)) rows = (G.cars || []).map((c, i) => ({ car: c, time: t[i] }));
@@ -83740,7 +83783,7 @@ const HUD = (() => {
       setT(E.qTitle, 'STARTING GRID'); setT(E.qSub, 'QUALIFYING RESULT'); setT(E.qTime, '');
       const rows = qualiRows(G), best = rows.length && isNum(rows[0].time) ? rows[0].time : null;
       setC(E.quali, 'is-big', rows.length > 10);   // (11+ cars: larger text, 2 columns still fit under the start lights)
-      const html = rows.map((r, i) => `<div class="agp-q-row${r.car === G.player ? ' is-me' : ''}"><span>${i + 1}</span><i style="background:${teamBar(r.car.team)}"></i><b>${codeOf(r.car)}</b><em>${isNum(r.time) ? (i && best != null ? '+' + (r.time - best).toFixed(3) : fmtT(r.time)) : 'NO TIME'}</em></div>`).join('');
+      const html = rows.map((r, i) => `<div class="agp-q-row${r.car === G.player ? ' is-me' : ''}"><span>${i + 1}</span><i style="background:${teamBar(r.car.team)}"></i><b>${codeOf(r.car)}</b><em${!isNum(r.time) && r.del ? ' class="is-del"' : ''}>${isNum(r.time) ? (i && best != null ? '+' + (r.time - best).toFixed(3) : fmtT(r.time)) : r.del ? 'LAP DELETED' : 'NO TIME'}</em></div>`).join('');
       if (E.qTable._t !== html) { E.qTable._t = html; E.qTable.innerHTML = html; }
     }
   }
@@ -83835,12 +83878,12 @@ const HUD = (() => {
     const R = m.rows.get(car.id), b = R && isNum(R.best) ? R.best : null, ko = car.qOut >= 0, s = car.qSt;
     let v;
     if (towerView === 'stops') v = (R ? R.laps | 0 : 0) + ' LAPS';
-    else if (b == null) v = ko || !s || s === 'garage' || s === 'parked' ? 'NO TIME' : car.qPush ? 'FLYING' : s === 'out' || s === 'lane' ? 'OUT LAP' : 'NO TIME';
+    else if (b == null) { const nt = R && R.del > 0 || car.qDel ? 'LAP DELETED' : 'NO TIME'; v = ko || !s || s === 'garage' || s === 'parked' ? nt : car.qPush ? 'FLYING' : s === 'out' || s === 'lane' ? 'OUT LAP' : nt; }   // (a deleted lap and no valid time: LAP DELETED)
     else if (ko || i === 0 || !isNum(m.lead)) v = fmtT(b);
     else v = fmtGap(Math.max(0, b - (towerView === 'interval' && isNum(m.prev) ? m.prev : m.lead)), 3);
     if (!ko && b != null) m.prev = b;
     setT(r.gap, v);
-    setA(r.gap, 'data-k', null);
+    setA(r.gap, 'data-k', v === 'LAP DELETED' ? 'del' : null);
   }
   function qTowerRow(r, car, i, m) {
     const cut = m ? m.cut : null;
@@ -84696,7 +84739,16 @@ const Menu = (() => {
   }
   // keep a row / card inside its scrolling box (keyboard selection): only that box scrolls, never the page
   function keepInView(box, it, pad = 6) {
-    if (!box || !it || box.scrollHeight <= box.clientHeight + 1) return;
+    if (!it) return;
+    // (the given box may not be the element that scrolls - e.g. the results board inside its scrolling panel: ↑ / ↓ then
+    // moved the pick off screen past P11, user 2026-10-12 -> the nearest scrolling ancestor of the item instead)
+    if (!box || box.scrollHeight <= box.clientHeight + 1) {
+      box = null;
+      for (let e = it.parentElement; e; e = e.parentElement) {
+        if (e.scrollHeight > e.clientHeight + 1) { const oy = getComputedStyle(e).overflowY; if (oy === 'auto' || oy === 'scroll') { box = e; break; } }
+      }
+      if (!box) return;
+    }
     const b = box.getBoundingClientRect(), r = it.getBoundingClientRect();
     if (r.top < b.top + pad) box.scrollTop -= b.top + pad - r.top;
     else if (r.bottom > b.bottom - pad) box.scrollTop += r.bottom - (b.bottom - pad);
@@ -86949,7 +87001,7 @@ const Menu = (() => {
     const grid = (race.grid && race.grid.length ? race.grid : race.order && race.order.length ? race.order : (G && G.cars) || []).slice();
     const q = race.quali, qt = q && Array.isArray(q.times) ? q.times : null;
     let rows;
-    if (kind === 'grid' && qt) rows = qt.map(x => ({ car: x.car, time: x.time }));
+    if (kind === 'grid' && qt) rows = qt.map(x => ({ car: x.car, time: x.time, del: !!x.del }));
     else rows = grid.map(c => ({ car: c }));
     if (kind === 'grid' && !qt) rows.sort((a, b) => (a.car.grid || 99) - (b.car.grid || 99));
     const best = rows.length && isNum(rows[0].time) ? rows[0].time : null;
@@ -86985,7 +87037,7 @@ const Menu = (() => {
       const c = r.car || {}, team = c.team || {};
       const pos = kind === 'grid' ? i + 1 : (showGridNo ? (c.grid || i + 1) : '\u2014');
       let a, b;
-      if (kind === 'grid') { a = isNum(r.time) ? fmtT(r.time) : 'NO TIME'; b = isNum(r.time) && best != null && i ? '+' + (r.time - best).toFixed(3) : ''; }
+      if (kind === 'grid') { a = isNum(r.time) ? fmtT(r.time) : r.del ? 'LAP DELETED' : 'NO TIME'; b = isNum(r.time) && best != null && i ? '+' + (r.time - best).toFixed(3) : ''; }
       else {
         const cp = (c.tyre && c.tyre.compound) || 'M';
         a = c.number != null ? c.number : team.driver ? team.driver.number : '';
@@ -87305,7 +87357,7 @@ const Menu = (() => {
     const sb = idx === qs.idx && qs.st !== 'done' ? qs.sbs : [0, 1, 2].map(k => rows.reduce((m, r) => (r.s && isNum(r.s[k]) && r.s[k] > 0 && (m == null || r.s[k] < m) ? r.s[k] : m), null));
     const sec = (r, k) => { const x = r && r.s ? r.s[k] : null; return isNum(x) && x > 0 ? `<b class="${isNum(sb[k]) && Math.abs(x - sb[k]) < 5e-4 ? 'is-sb' : ''}">${x.toFixed(3)}</b>` : '—'; };
     const row = (c, r, pos, cls, gap, st) => `<div class="agp-qb-row${c === me ? ' is-me' : ''}${cls}" data-fk="c${c.id}"><span>${pos}</span><i style="background:${teamBg(c.team)}"></i>${qDrv(c)}` +
-      `<span>${r && isNum(r.best) ? `<b class="${lead != null && Math.abs(r.best - lead) < 1e-6 ? 'is-sb' : ''}">${fmtT(r.best)}</b>` : '<em class="agp-qb-nt">NO TIME</em>'}</span><span>${gap}</span>` +
+      `<span>${r && isNum(r.best) ? `<b class="${lead != null && Math.abs(r.best - lead) < 1e-6 ? 'is-sb' : ''}">${fmtT(r.best)}</b>` : `<em class="agp-qb-nt${r && r.del > 0 ? ' is-del' : ''}">${r && r.del > 0 ? 'LAP DELETED' : 'NO TIME'}</em>`}</span><span>${gap}</span>` +
       `<span>${sec(r, 0)}</span><span>${sec(r, 1)}</span><span>${sec(r, 2)}</span><span>${r ? r.laps | 0 : 0}</span><span>${qRing((r && r.c) || (c.tyre && c.tyre.compound))}</span>` +
       `<span class="agp-qb-st${st[1] ? ' is-' + st[1] : ''}">${st[0]}</span></div>`;
     let h = `<div class="agp-qb-row agp-qb-hd"><span>POS</span><i></i><span>DRIVER</span><span>BEST</span><span>GAP</span><span>S1</span><span>S2</span><span>S3</span><span>LAPS</span><span>TYRE</span><span>${live ? 'STATUS' : ''}</span></div>`;
@@ -87687,7 +87739,7 @@ const Menu = (() => {
     const HD = { qbest: ['BEST LAP', 'GAP', 'INTERVAL', 'LAPS'], qsec: ['S1', 'S2', 'S3', 'BEST LAP'], qstat: ['STATUS', 'TYRE', 'LAPS', 'DELETED'] }[psView];
     const cells = (x, i) => {
       const r = x.r, b = r && isNum(r.best) ? r.best : null;
-      if (psView === 'qbest') { const pv = i > 0 && !x.ko ? list[i - 1].r : null; return [b != null ? (i === 0 && !x.ko ? `<b class="agp-pt-fl">${fmtT(b)}</b>` : fmtT(b)) : 'NO TIME', b != null && i && !x.ko && isNum(lead) ? '+' + (b - lead).toFixed(3) : '', b != null && pv && isNum(pv.best) ? '+' + (b - pv.best).toFixed(3) : '', String(r ? r.laps | 0 : 0)]; }
+      if (psView === 'qbest') { const pv = i > 0 && !x.ko ? list[i - 1].r : null; return [b != null ? (i === 0 && !x.ko ? `<b class="agp-pt-fl">${fmtT(b)}</b>` : fmtT(b)) : r && r.del > 0 ? 'LAP DELETED' : 'NO TIME', b != null && i && !x.ko && isNum(lead) ? '+' + (b - lead).toFixed(3) : '', b != null && pv && isNum(pv.best) ? '+' + (b - pv.best).toFixed(3) : '', String(r ? r.laps | 0 : 0)]; }
       if (psView === 'qsec') return [sec(r, 0), sec(r, 1), sec(r, 2), qTm(b)];
       const st = qStat(g, x.c);
       return [`<span class="agp-qb-st${st[1] ? ' is-' + st[1] : ''}">${st[0]}</span>`, qRing(x.c.tyre && x.c.tyre.compound), String(r ? r.laps | 0 : 0), r && r.del ? String(r.del) : '—'];
@@ -87713,7 +87765,7 @@ const Menu = (() => {
     return `<div class="agp-rs-row agp-rs-hd agp-qgrid" style="--qk:${k}"><span>POS</span><span></span><span>DRIVER</span><span>TEAM</span>${cols}<span></span></div>` +
       qt.map((x, i) => {
         const c = x.car || {}, team = c.team || {};
-        const ts = n.map((_, j) => { const t = x.q ? x.q[j] : null; return `<span class="agp-qg-t">${isNum(t) ? (t === fast[j] ? `<b class="is-sb">${fmtT(t)}</b>` : fmtT(t)) : !(c.qOut >= 0) || j <= c.qOut ? '<em>NO TIME</em>' : ''}</span>`; }).join('');   // (blank: a session it was out of)
+        const ts = n.map((_, j) => { const t = x.q ? x.q[j] : null; return `<span class="agp-qg-t">${isNum(t) ? (t === fast[j] ? `<b class="is-sb">${fmtT(t)}</b>` : fmtT(t)) : !(c.qOut >= 0) || j <= c.qOut ? (x.qd && x.qd[j] ? '<em class="is-del">LAP DELETED</em>' : '<em>NO TIME</em>') : ''}</span>`; }).join('');   // (blank: a session it was out of)
         const why = Array.isArray(x.why) && x.why.length ? x.why.map(k => (k === 'col' ? 'COLLISION' : 'IMPEDING')).join(' + ') : qPenWhy(qs, c.id);   // (Quali.finish: why ['imp', 'col'])
         const note = x.pen ? `<em class="is-pen">+${x.pen} GRID · ${why}</em>` : isNum(x.pos) && x.pos !== i + 1 ? `<em>QUALIFIED P${x.pos}</em>` : '';
         return `<div class="agp-rs-row agp-pre agp-qgrid${c === me ? ' is-me' : ''}" style="--qk:${k};animation-delay:${i * 40}ms"><span class="agp-rs-pos">${i + 1}</span><i style="background:${teamBg(team)}"></i>` +
@@ -91302,7 +91354,7 @@ const Game = (() => {
   const params = new URLSearchParams(location.search);
   const M = {};                       // optional modules (present once their agents deliver)
   let acc = 0, lastT = 0, resultsTimer = -1, audioReady = false, errShown = false;
-  let fpsEl = null, fpsAcc = 0, fpsN = 0, adaptEl = null, adaptT = 0, wxSeedNext = null, sndT = 0, sndLock = null;
+  let fpsEl = null, fpsAcc = 0, fpsN = 0, adaptEl = null, adaptT = 0, wxSeedNext = null, raceSeedNext = null, sndT = 0, sndLock = null;
 
   const el = id => document.getElementById(id);
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -91540,7 +91592,9 @@ const Game = (() => {
     G.events.length = 0; G.time = 0; G.ghost = null; G.paused = false;
     acc = 0; resultsTimer = -1;
     const netS = !attract && M.net ? M.net.sessionHook() : null;   // multiplayer: the room's seed, entry list + grid
-    const seed = netS ? netS.seed : (Math.random() * 1e9) | 0;
+    // Restart replays the same session: the same seed -> the same field (teams / drivers drawn), random grid, liveries (user 2026-10-12)
+    const seed = netS ? netS.seed : raceSeedNext != null && !attract ? raceSeedNext : (Math.random() * 1e9) | 0;
+    if (!attract) raceSeedNext = null;
     // custom livery (livery.js): the player's car in the slot (box, entry) of a team that sits out, its colours / name / code / number
     const lv = !attract && !netS && M.livery ? M.livery.forSession(settings, G.champ, seed) : null;
     G.weather = makeWeather(settings, attract, seed);
@@ -91666,6 +91720,7 @@ const Game = (() => {
     // championship: undo this race's points/round advance so Restart replays the same round
     if (G.settings.mode === 'championship' && G.champSnap) { G.champ = clone(G.champSnap); saveChamp(); }
     wxSeedNext = G.weather && G.weather.seed != null ? G.weather.seed : null;   // same forecast / outcome again
+    raceSeedNext = G.race && G.race.seed != null ? G.race.seed >>> 0 : null;   // same field, grid and drivers again
     onStart(G.settings);
   }
   function onQuit() { champNew = false; if (M.net && !M.net.inQuit) M.net.onQuit(); if (M.sfx && audioReady) M.sfx.pause(false); startSession(G.settings, true); showMenu(); }   // (multiplayer: leaves the room)
@@ -92144,6 +92199,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-12 14:43 -->
+<!-- Apex GP build 2026-10-12 16:51 -->
 </body>
 </html>

@@ -10264,7 +10264,7 @@ const Race = (() => {
       if (P.lapTimes.length) { q.player = q.del ? null : P.lapTimes[0]; q.done = true; q.endT = race.t; }
       else if (race.t > q.maxT) { q.done = true; q.endT = race.t; }
       if (q.done) {
-        q.times.push({ car: P, time: q.player });
+        q.times.push({ car: P, time: q.player, del: !!q.del });
         q.times.sort((a, b) => (a.time == null ? 1e9 : a.time) - (b.time == null ? 1e9 : b.time));
         emit(G, { type: 'qualiDone', times: q.times, pos: q.times.findIndex(x => x.car === P) + 1, deleted: !!q.del });
         finishQuali(G, race);
@@ -12772,13 +12772,14 @@ const Quali = (() => {
     const N = G.cars.length, fin = classify(G, qs.fmt.k - 1).map(r => r.id);
     for (let i = qs.fmt.k - 2; i >= 0; i--) for (const id of qs.out[i] || []) if (fin.indexOf(id) < 0) fin.push(id);
     for (const c of G.cars) if (fin.indexOf(c.id) < 0) fin.push(c.id);
-    const rows = fin.map((id, i) => ({ id, pos: i + 1, grid: 0, q: qs.fmt.names.map((n, k) => { const r = rowOf(qs, k, id); return r ? r.best : null; }), pen: qs.pen[id] || 0,
+    const rows = fin.map((id, i) => ({ id, pos: i + 1, grid: 0, q: qs.fmt.names.map((n, k) => { const r = rowOf(qs, k, id); return r ? r.best : null; }),
+      qd: qs.fmt.names.map((n, k) => { const r = rowOf(qs, k, id); return !!(r && r.best == null && r.del > 0); }), pen: qs.pen[id] || 0,   // (qd: no valid time in that session, a lap deleted: LAP DELETED)
       why: ['imp', 'col'].filter(k => qs.imp.some(r => r.by === id && r.places > 0 && (r.kind || 'imp') === k)) }));   // (grid notes: IMPEDING / COLLISION)
     const g = rows.slice().sort((a, b) => (Math.min(a.pos + a.pen, N) + (a.pen > 0 ? 0.5 : 0)) - (Math.min(b.pos + b.pen, N) + (b.pen > 0 ? 0.5 : 0)) || a.pos - b.pos);
     g.forEach((r, i) => { r.grid = i + 1; });
     qs.final = rows;
     const last = q => { for (let k = q.length - 1; k >= 0; k--) if (q[k] != null) return q[k]; return null; };
-    race.quali = { times: g.map(r => ({ car: G.cars[r.id], time: last(r.q), q: r.q.slice(), pen: r.pen, why: r.why.slice(), pos: r.pos })), done: true };
+    race.quali = { times: g.map(r => ({ car: G.cars[r.id], time: last(r.q), q: r.q.slice(), qd: r.qd.slice(), del: last(r.q) == null && r.qd.some(Boolean), pen: r.pen, why: r.why.slice(), pos: r.pos })), done: true };
     race.qualiBest = race.quali.times[0] && race.quali.times[0].time != null ? { car: race.quali.times[0].car, time: race.quali.times[0].time } : null;
     G.weather = qs.raceW; if (G.world) G.world.weather = qs.raceW;   // (the race's weather from the grid on: one world rebuild)
     if (G.world && qs.wpm != null) G.world.wearPerMetre = qs.wpm;
@@ -14006,7 +14007,7 @@ const NetCore = (() => {
     qs.st = 'done'; qs.seq++;
     const last = a => { for (let k = (a || []).length - 1; k >= 0; k--) if (a[k] != null) return a[k]; return null; };
     const fin = new Map((qs.final || []).map(r => [r.id, r]));
-    race.quali = { times: order.map(c => { const r = fin.get(c.id) || { q: [], pen: 0, why: [], pos: 0 }; return { car: c, time: last(r.q), q: (r.q || []).slice(), pen: r.pen || 0, why: (r.why || []).slice(), pos: r.pos }; }), done: true };
+    race.quali = { times: order.map(c => { const r = fin.get(c.id) || { q: [], pen: 0, why: [], pos: 0 }, qd = (r.qd || []).slice(); return { car: c, time: last(r.q), q: (r.q || []).slice(), qd, del: last(r.q) == null && qd.some(Boolean), pen: r.pen || 0, why: (r.why || []).slice(), pos: r.pos }; }), done: true };
     race.qualiBest = race.quali.times[0] && race.quali.times[0].time != null ? { car: race.quali.times[0].car, time: race.quali.times[0].time } : null;
     G.weather = qs.raceW; if (G.world) G.world.weather = qs.raceW;   // (the race's weather from the grid on: one world rebuild)
     for (const r of rows) { const c = S.byId[r.id]; if (c && r.compound) c._startC = r.compound; }
