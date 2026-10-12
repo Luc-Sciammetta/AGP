@@ -11096,7 +11096,7 @@ const Race = (() => {
   const lapInvalid = (race, rc) => !!rc.h && (race.mode === 'timetrial' || qLike(race) ? rc.h.inLap || rc.h.outLap || rc.h.bad : rc.h.bad);
   function histFinal(G, race) {   // personal best (green) and the race's fastest lap (purple)
     const fl = race.fastestLap;
-    for (const c of G.cars) for (const e of c.lapHist || []) { e.pb = e.time === c.bestLap; e.fl = !!fl && fl.car === c && fl.lap === e.lap; }
+    for (const c of G.cars) for (const e of c.lapHist || []) { e.pb = !e.invalid && e.time === c.bestLap; e.fl = !e.invalid && !!fl && fl.car === c && fl.lap === e.lap; }
   }
 
   function lineCrossing(G, race, car, p, tc) {
@@ -11164,6 +11164,8 @@ const Race = (() => {
   function finishCar(G, race, car, p, tc) {
     const rc = car._race;
     car.finished = true; car.finishTime = tc; rc.finishKey = p; car.raceDist = p;
+    // an off still running at the flag (trackLimitsStep stops at the flag): judged as rejoined at the line (advStep / checkRaceEnd)
+    if (rc.tlOff) { const x = rc.tlOff; rc.tlOff = null; x.tR = race.t; x.D1 = rc.dist; rc.tlPost = x; }
     if (!race.leaderFinished) { race.leaderFinished = true; race.winnerTime = tc; }
     if (race.penalties && ruleOpen(race, car)) {   // (same test as the strategy's: waivers included)
       car.penalty += TWO_COMPOUND_PEN;
@@ -11196,6 +11198,14 @@ const Race = (() => {
     let all = true;
     for (const c of G.cars) if (!c.finished && !c.dnf) { all = false; break; }
     if (all || (race.playerFinishT != null && race.t - race.playerFinishT >= FINISH_TIMEOUT)) {
+      // a verdict still pending (an off just before the flag) is given now: a lap it deletes never stands in the
+      // classification, the fastest lap, Driver of the Day or the stats (nothing changes after raceEnd)
+      for (const c of G.cars) {
+        const q = c._race;
+        if (!q || !q.tlPost || c.dnf) continue;
+        const x = q.tlPost; q.tlPost = null; tlJudge(G, race, c, x);
+        if (q.gb && q.gb.length) advStep(G, race, c, 0);   // (a finished car's new order: its penalty now)
+      }
       race.results = classify(G, true);
       updateOrder(G, race, true);          // (committed estimates) then every penalty still pending is applied now,
       settlePenalties(G, race, true);      // before the results: tower order = classification

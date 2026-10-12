@@ -746,6 +746,7 @@ html:not(.agp-touch) .agp-map.is-zoom.is-mpb { bottom: max(1.4em, 38px); }   /* 
 .agp-lc-tags .t-pen { background: rgba(255, 212, 0, .16); color: var(--agp-yellow); }
 .agp-lc-tags .t-srv, .agp-lc-tags .t-pb { background: rgba(25, 224, 106, .15); color: var(--agp-green); }
 .agp-lc-tags .t-fl { background: var(--agp-purple); color: #fff; }
+.agp-lc-tags .t-del { background: rgba(255, 74, 66, .26); color: #ff8078; }
 .agp-gr-runs .agp-lc-strip { margin-top: .4em; }
 .agp-gr-runs .agp-gr-none { flex: 1; }
 .agp-rs-row { display: grid; grid-template-columns: 3em .32em minmax(9em, 1.5fr) minmax(7em, 1.1fr) 4.2em 8.6em 7.4em 3.2em 3.2em; align-items: center; column-gap: .9em;
@@ -66029,7 +66030,7 @@ const Race = (() => {
   const lapInvalid = (race, rc) => !!rc.h && (race.mode === 'timetrial' || qLike(race) ? rc.h.inLap || rc.h.outLap || rc.h.bad : rc.h.bad);
   function histFinal(G, race) {   // personal best (green) and the race's fastest lap (purple)
     const fl = race.fastestLap;
-    for (const c of G.cars) for (const e of c.lapHist || []) { e.pb = e.time === c.bestLap; e.fl = !!fl && fl.car === c && fl.lap === e.lap; }
+    for (const c of G.cars) for (const e of c.lapHist || []) { e.pb = !e.invalid && e.time === c.bestLap; e.fl = !e.invalid && !!fl && fl.car === c && fl.lap === e.lap; }
   }
 
   function lineCrossing(G, race, car, p, tc) {
@@ -66097,6 +66098,8 @@ const Race = (() => {
   function finishCar(G, race, car, p, tc) {
     const rc = car._race;
     car.finished = true; car.finishTime = tc; rc.finishKey = p; car.raceDist = p;
+    // an off still running at the flag (trackLimitsStep stops at the flag): judged as rejoined at the line (advStep / checkRaceEnd)
+    if (rc.tlOff) { const x = rc.tlOff; rc.tlOff = null; x.tR = race.t; x.D1 = rc.dist; rc.tlPost = x; }
     if (!race.leaderFinished) { race.leaderFinished = true; race.winnerTime = tc; }
     if (race.penalties && ruleOpen(race, car)) {   // (same test as the strategy's: waivers included)
       car.penalty += TWO_COMPOUND_PEN;
@@ -66129,6 +66132,14 @@ const Race = (() => {
     let all = true;
     for (const c of G.cars) if (!c.finished && !c.dnf) { all = false; break; }
     if (all || (race.playerFinishT != null && race.t - race.playerFinishT >= FINISH_TIMEOUT)) {
+      // a verdict still pending (an off just before the flag) is given now: a lap it deletes never stands in the
+      // classification, the fastest lap, Driver of the Day or the stats (nothing changes after raceEnd)
+      for (const c of G.cars) {
+        const q = c._race;
+        if (!q || !q.tlPost || c.dnf) continue;
+        const x = q.tlPost; q.tlPost = null; tlJudge(G, race, c, x);
+        if (q.gb && q.gb.length) advStep(G, race, c, 0);   // (a finished car's new order: its penalty now)
+      }
       race.results = classify(G, true);
       updateOrder(G, race, true);          // (committed estimates) then every penalty still pending is applied now,
       settlePenalties(G, race, true);      // before the results: tower order = classification
@@ -68458,7 +68469,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-12 12:55';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-12 14:43';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -68980,7 +68991,7 @@ const Stats = (() => {
         quali(s, me ? me.pos | 0 : 0);
         break;
       }
-      case 'raceEnd': result(s, G.weather, G); break;
+      case 'raceEnd': result(s, G.weather, G, true); break;   // (final: the fastest lap / Driver of the Day count only here)
     }
   }
   // a lap the player drove. Counted once per lap number within a segment (the race, the time trial, one qualifying session),
@@ -69031,8 +69042,9 @@ const Stats = (() => {
     }
     commit(s);
   }
-  // the race ended with the player in the results (flag or retired), or he quit after his flag (W: the weather, G: null then)
-  function result(s, W, G) {
+  // the race ended with the player in the results (flag or retired; final), or he quit after his flag (W: the weather, G: null
+  // then; the rest of the field still running: no fastest lap / Driver of the Day, a later lap could still beat his)
+  function result(s, W, G, final) {
     const R = s.race, car = s.car;
     if (s.ended || R.mode === 'timetrial' || R.qs && R.phase === 'quali') return;
     const rs = R.results || [], me = rs.find(r => r.car === car);
@@ -69046,7 +69058,7 @@ const Stats = (() => {
     if (night) c.nightRaces++;
     if (me.dnf) { c.dnfs++; c.winStreak = 0; c.podStreak = 0; }
     else {
-      const pos = me.pos | 0, win = pos === 1, pod = pos <= 3, fl = !!(R.fastestLap && R.fastestLap.car === car);
+      const pos = me.pos | 0, win = pos === 1, pod = pos <= 3, fl = !!final && flMine(R, car);
       c.finSum += pos; c.finN++; c.bestFin = minN(c.bestFin, pos); t.bestFin = minN(t.bestFin, pos);
       c.points += +me.points || 0;
       if ((+me.points || 0) > 0) c.top10++;
@@ -69061,9 +69073,16 @@ const Stats = (() => {
       if (s.pole && win && fl) { c.hat++; if (R.laps > 0 && s.led >= R.laps) c.chelem++; }   // hat-trick; + led every lap = grand chelem
       if (s.pens === 0 && s.tl === 0 && s.contacts === 0) c.clean++;
     }
-    if (R.dotd && R.dotd.car === car) c.dotd++;   // Driver of the Day (awards.js; main sets R.dotd at raceEnd, before this)
+    if (final && R.dotd && R.dotd.car === car) c.dotd++;   // Driver of the Day (awards.js; main sets R.dotd at raceEnd, before this)
     if (G && R.mode === 'championship') champ(G, c);
     commit(s);
+  }
+  // the race's final classified fastest lap (race.fastestLap at raceEnd) is the player's, on a lap that stands: never one
+  // deleted for track limits (lapHist invalid)
+  function flMine(R, car) {
+    const f = R.fastestLap, H = Array.isArray(car.lapHist) ? car.lapHist : [];
+    if (!f || f.car !== car || !num(f.time)) return false;
+    return H.some(e => !e.invalid && num(e.time) && Math.abs(e.time - f.time) < 1e-3 && (f.lap == null || e.lap === f.lap));
   }
   // a championship round: +1 round; the last one: a season, a title when the player's team tops the standings
   function champ(G, c) {
@@ -69181,7 +69200,9 @@ const Awards = (() => {
     if (!Array.isArray(res) || !res.length) return null;
     res = res.slice().sort((a, b) => (a.pos || 99) - (b.pos || 99));
     const lead = res[0], leadLaps = lead && lead.laps != null ? lead.laps : histOf(lead && lead.car).length;
-    const flCar = o.fl && o.fl.car ? o.fl.car : (res.find(r => r.fastestLap) || {}).car || null;
+    // the fastest lap: the race's final one (o.fl = race.fastestLap at raceEnd), never a lap deleted for track limits
+    const flOk = f => { const e = f.lap != null ? histOf(f.car).find(h => h.lap === f.lap && num(h.time) && Math.abs(h.time - f.time) < 1e-3) : null; return !(e && e.invalid); };
+    const flCar = o.fl && o.fl.car ? (flOk(o.fl) ? o.fl.car : null) : (res.find(r => r.fastestLap) || {}).car || null;
     const passes = passCounts(res);
     // a slow stop = a stop lap well over the field's usual stop-lap loss (the lap time over the car's own clean laps)
     const lossOf = new Map(), losses = [];
@@ -69204,18 +69225,20 @@ const Awards = (() => {
       p.pass = 0.4 * Math.min(ov, 12);
       p.result = pos === 1 ? 4 : pos === 2 ? 2.2 : pos === 3 ? 1.2 : pos <= 10 ? 0.3 : 0;
       p.far = pos === 1 && grid != null && grid >= 6 ? 4 : 0;
-      const isFl = flCar === c || r.fastestLap === true;
+      const isFl = !!flCar && flCar === c;   // (one car: o.fl wins over a results row's flag)
       p.fl = isFl ? 2.5 : 0;
       if (!isFl && num(r.bestLap) && bestLaps.length > 2) p.fl = 1.2 * (1 - bestLaps.indexOf(r.bestLap) / (bestLaps.length - 1)) * (pos <= 10 ? 1 : 0);
       // trouble: a penalty (>= 5 s) or a stop well over the usual loss, then how far it climbed back from its low point
       const pen = Math.max(+r.penalty || 0, +c.penalty || 0) + (+r.penaltyServed || 0);
       let trouble = null;
       const slow = lossOf.get(r).filter(e => e.x - usual > 3).sort((a, b) => b.x - a.x)[0];
-      if (pen >= 5) { const e = hist.find(h => (h.pen || 0) > 0 || (h.served || 0) > 0); trouble = { kind: 'pen', lap: e ? e.lap : 1, sec: Math.round(pen) }; }
+      if (pen >= 5) { const ep = hist.filter(h => (h.pen || 0) > 0), e = ep[0] || hist.find(h => (h.served || 0) > 0); trouble = { kind: 'pen', lap: e ? e.lap : 1, sec: Math.round(pen), n: Math.max(1, ep.length) }; }
       else if (slow) trouble = { kind: 'stop', lap: slow.lap };
       let rec = 0, low = pos;
       if (trouble) {
-        for (const e of hist) if (e.lap >= trouble.lap && num(e.pos) && e.pos > low) low = e.pos;   // (the trouble lap itself included: that is where it sank)
+        // (the trouble lap itself included: that is where it sank; for a penalty, pit laps left out - a stop's own dip and the other cars'
+        // stop cycle are no 'recovery', user 2026-10-12: 'back from P9' when the player never ran P9)
+        for (const e of hist) if (e.lap >= trouble.lap && num(e.pos) && e.pos > low && (trouble.kind !== 'pen' || (!(e.pit > 0) && !e.inLap && !e.outLap))) low = e.pos;
         rec = pos <= 10 ? Math.max(0, low - pos) : 0;
         p.rec = pos <= 10 ? 1.5 + Math.min(5, 0.7 * rec) : 0;
       } else p.rec = 0;
@@ -69244,8 +69267,10 @@ const Awards = (() => {
     const add = (v, t) => { if (t) ph.push({ v, t }); };
     if (w.p.far) add(w.p.far + w.p.gain + 3, `WON FROM P${w.grid}`);
     else if (w.gained >= 3) add(w.p.gain + 2, `+${w.gained} PLACES FROM P${w.grid}`);
-    if (w.p.rec > 0 && w.rec >= 2) add(w.p.rec + 1, w.trouble.kind === 'pen' ? `BACK FROM P${w.low} AFTER A ${w.trouble.sec} S PENALTY` : `BACK FROM P${w.low} AFTER A SLOW STOP`);
-    else if (w.p.rec > 0) add(w.p.rec, w.trouble.kind === 'pen' ? `FINISHED P${w.pos} DESPITE A ${w.trouble.sec} S PENALTY` : `FINISHED P${w.pos} AFTER A SLOW STOP`);
+    // (several penalties: '2 PENALTIES (10 S)', not 'A 10 S PENALTY')
+    const penTxt = t => t.n > 1 ? `${t.n} PENALTIES (${t.sec} S)` : `A ${t.sec} S PENALTY`;
+    if (w.p.rec > 0 && w.rec >= 2) add(w.p.rec + 1, w.trouble.kind === 'pen' ? `BACK FROM P${w.low} AFTER ${penTxt(w.trouble)}` : `BACK FROM P${w.low} AFTER A SLOW STOP`);
+    else if (w.p.rec > 0) add(w.p.rec, w.trouble.kind === 'pen' ? `FINISHED P${w.pos} DESPITE ${penTxt(w.trouble)}` : `FINISHED P${w.pos} AFTER A SLOW STOP`);
     if (w.ov >= 5) add(w.p.pass + 0.5, `${w.ov} OVERTAKES`);
     if (w.p.fl >= 2) add(w.p.fl, 'FASTEST LAP');
     if (w.p.wet > 0 && (w.gained >= 2 || w.pos <= 3)) add(w.p.wet + 1, 'WET-RACE DRIVE');
@@ -86645,7 +86670,7 @@ const Menu = (() => {
       E.rsTable.innerHTML = `<div class="agp-rs-board is-tt">${rsHeadHTML('LAP TIMES')}<div class="agp-rs-list">` +
         `<div class="agp-pt-row agp-pt-hd agp-rs-ttr">${HD.map(h => `<span>${h}</span>`).join('')}</div>` +
         (laps.length ? laps.map((t, i) => {
-          const e = lh[i], isB = same(t, best);
+          const e = lh[i], isB = !(e && e.invalid) && same(t, best);
           return `<div class="agp-pt-row agp-rs-ttr is-in${isB ? ' is-best' : ''}${e && e.invalid ? ' is-inv' : ''}" style="animation-delay:${i * 40}ms"><span>${i + 1}</span>` +
             `<span>${isB ? `<b class="agp-pt-fl">${fmtT(t)}</b>` : fmtT(t)}</span><span>${sec(e, 0)}</span><span>${sec(e, 1)}</span><span>${sec(e, 2)}</span>` +
             `<span>${e && e.c ? (e.c0 && e.c0 !== e.c ? ring(e.c0) + '<u>→</u>' : '') + ring(e.c) : '—'}</span><span>${isB ? 'BEST' : '+' + (t - best).toFixed(3)}</span></div>`;
@@ -86823,7 +86848,7 @@ const Menu = (() => {
         return [iv, i === 0 ? 'WINNER' : gapTxt(r, i), lapsOf(r) != null ? String(lapsOf(r)) : '—', isNum(r.time) ? fmtT(r.time) : '—'];
       }
       if (rsView === 'laps') {
-        const b = isNum(r.bestLap) && r.bestLap > 0 ? r.bestLap : c.bestLap, e = isNum(b) ? hist.find(h => Math.abs(h.time - b) < 1e-6) : null, s = (e && e.s) || [];
+        const b = isNum(r.bestLap) && r.bestLap > 0 ? r.bestLap : c.bestLap, e = isNum(b) ? hist.find(h => !h.invalid && Math.abs(h.time - b) < 1e-6) : null, s = (e && e.s) || [];
         const lt = Array.isArray(c.lapTimes) && c.lapTimes.length ? c.lapTimes[c.lapTimes.length - 1] : c.lastLap;
         return [bestTxt(r), e ? 'L' + e.lap : '—'].concat([0, 1, 2].map(k => (isNum(s[k]) && s[k] > 0 && isNum(sbs[k]) && Math.abs(s[k] - sbs[k]) < 5e-4 ? `<b class="agp-rs-sb">${sec(s[k])}</b>` : sec(s[k]))), [tm(lt)]);
       }
@@ -86872,16 +86897,16 @@ const Menu = (() => {
     const night = !!(G && G.weather && G.weather.timeOfDay === 'night');
     const Wx = typeof Weather !== 'undefined' && Weather.iconSVG ? Weather : null;
     const name = nameHTML(carName(c, drv));
-    const pb = hist.reduce((m, e) => (isNum(e.time) && e.time < m ? e.time : m), Infinity);
-    const isFl = e => (e.fl != null && e.fl) || (!!fl && fl.car === c && fl.lap === e.lap && Math.abs(fl.time - e.time) < 1e-6);
+    const pb = hist.reduce((m, e) => (!e.invalid && isNum(e.time) && e.time < m ? e.time : m), Infinity);   // (a deleted lap is never the best)
+    const isFl = e => !e.invalid && ((e.fl != null && e.fl) || (!!fl && fl.car === c && fl.lap === e.lap && Math.abs(fl.time - e.time) < 1e-6));
     let prev = null;
     const cells = hist.map(e => {
-      const f = isFl(e), p = !f && Math.abs(e.time - pb) < 1e-6, pit = e.pit > 0 || e.c !== e.c0;
+      const f = isFl(e), p = !f && !e.invalid && Math.abs(e.time - pb) < 1e-6, pit = e.pit > 0 || e.c !== e.c0;
       const wch = !!prev && (prev.fw !== e.fw || prev.rw !== e.rw);
-      const tags = (pit ? '<em class="t-pit">PIT</em>' : '') + (e.pen > 0 ? `<em class="t-pen">+${Math.round(e.pen)}s PEN</em>` : '')
+      const tags = (e.invalid ? '<em class="t-del" title="Lap time deleted (track limits)">DELETED</em>' : '') + (pit ? '<em class="t-pit">PIT</em>' : '') + (e.pen > 0 ? `<em class="t-pen">+${Math.round(e.pen)}s PEN</em>` : '')
         + (e.served > 0 ? `<em class="t-srv">${Math.round(e.served)}s SERVED</em>` : '') + (f ? '<em class="t-fl">FASTEST</em>' : p ? '<em class="t-pb">BEST</em>' : '');
       prev = e;
-      return lapCellHTML(e, { night, Wx, pos: true, flag: f ? 'fl' : p ? 'pb' : '', tags, wingChg: wch });
+      return lapCellHTML(e, { night, Wx, pos: true, flag: f ? 'fl' : p ? 'pb' : '', invalid: !!e.invalid, tags, wingChg: wch });
     }).join('');
     return `<div class="agp-rl-head"><i style="background:${teamBg(team)}"></i><div><p>${name}</p></div>` +
       `<em><kbd>↑</kbd><kbd>↓</kbd> OR HOVER A DRIVER${hist.length > 7 ? ' · SCROLL SIDEWAYS FOR EVERY LAP' : ''}</em></div>` +
@@ -92119,6 +92144,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-12 12:55 -->
+<!-- Apex GP build 2026-10-12 14:43 -->
 </body>
 </html>
