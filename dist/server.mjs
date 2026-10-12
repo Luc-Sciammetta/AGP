@@ -322,7 +322,8 @@ class RaceSim {
       if (usedNum.has(car.number)) { for (let k = 2; k < 100; k++) if (!usedNum.has(k)) { car.number = k; car.driver.number = k; break; } }
       usedNum.add(car.number);
     }
-    G.world = { track, cars: G.cars, race, events: G.events, weather: G.weather, assists: { tc: true, abs: true }, wearPerMetre: wearPerMetre(S, track) };
+    G.world = { track, cars: G.cars, race, events: G.events, weather: G.weather, assists: { tc: true, abs: true }, wearPerMetre: wearPerMetre(S, track),
+      grassSlip: CFG.grass ? CFG.grass.val(S.grassSlip) : undefined };   // (the room's grass slipperiness: every car, AI included)
     this.byPid = new Map(); for (const car of G.cars) if (car.net) this.byPid.set(car.net.p.id, car);
     this.names = new Set(humans.map(p => nameKey(dname(p))));   // (numberNames: names in this race are not given to a newcomer)
     this.ghost = S.contact === 'ghost';
