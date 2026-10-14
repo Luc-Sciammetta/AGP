@@ -274,22 +274,39 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 .agp-tow[data-l] { color: var(--agp-cyan); border-color: rgba(39, 215, 245, .55); }
 .agp-tow[data-l="1"] i:nth-of-type(1), .agp-tow[data-l="2"] i:nth-of-type(-n+2), .agp-tow[data-l="3"] i { opacity: 1; }
 
-.agp-cl-row { display: flex; align-items: stretch; gap: .28em; filter: drop-shadow(0 .35em .9em rgba(0, 0, 0, .4)); }
+/* PERF (power): the row's drop shadow and panel backgrounds come from a static copy of the three panels underneath
+   (.agp-cl-cast: its own compositor layer that never changes, the shadow painted into it once); the live row on top draws
+   only the content. Before, every value change (speed, pedals, battery: every frame) re-rendered and re-blurred the
+   filtered row (~40 ms of GPU-process CPU a second on an M1). Same picture: the shadow of the same panel shapes. */
+.agp-cl-row { position: relative; z-index: 0; display: flex; align-items: stretch; gap: .28em; }
+.agp-cl-cast { position: absolute; inset: 0; z-index: -1; pointer-events: none; will-change: transform; }
+.agp-cl-cast > div { display: flex; align-items: stretch; gap: .28em; height: 100%; filter: drop-shadow(0 .35em .9em rgba(0, 0, 0, .4)); }
 .agp-cl-tyre, .agp-cl-main, .agp-cl-energy { background: var(--agp-bg); box-sizing: border-box; }
+.agp-cl-row > .agp-cl-tyre, .agp-cl-row > .agp-cl-main, .agp-cl-row > .agp-cl-energy { background: none; border-top-color: transparent; }
 .agp-cl-main { width: 21em; padding: .7em .95em .6em; border-radius: .35em; border-top: .14em solid rgba(255, 255, 255, .14); }
 .agp-cl-tyre { width: 10.8em; display: flex; align-items: center; justify-content: space-between; padding: 0 .9em 0 2em; border-radius: .35em 0 0 .35em;
   clip-path: polygon(1.3em 0, 100% 0, 100% 100%, 0 100%); }
 .agp-cl-energy { width: 12.8em; padding: .72em 2em .7em .9em; border-radius: 0 .35em .35em 0; clip-path: polygon(0 0, 100% 0, calc(100% - 1.3em) 100%, 0 100%); }
 
 .agp-revs { display: flex; justify-content: space-between; margin-bottom: .6em; }
+/* PERF (power): the strips of hud.js REV_STRIPS (0..15 lit, then the pit-limiter pattern) are stacked, each its own
+   compositor layer, and only one is visible (.is-vis; .is-lim shows the limiter strip): a change of the lit count swaps two
+   opacities, nothing is re-rasterised and one layer is drawn. The lights are styled exactly as before. */
+.agp-revs { position: relative; margin-bottom: .6em; }
+.agp-rv { display: flex; justify-content: space-between; opacity: 0; will-change: opacity; }
+.agp-rv + .agp-rv { position: absolute; left: 0; right: 0; top: 0; }
+.agp-rv.is-vis { opacity: 1; }
+.agp-revs.is-lim .agp-rv { opacity: 0; }
+.agp-revs.is-lim .agp-rv-lim { opacity: 1; }
+.agp-revs.is-shift .agp-rv.is-vis { animation: agp-blink .18s linear infinite; }   /* (a shift: all 15 lit, the strip blinks) */
 .agp-revs i { width: 1.02em; height: 1.02em; border-radius: 50%; background: #1b1e25; box-shadow: inset 0 .1em .22em rgba(0, 0, 0, .85); }
 .agp-revs i.on:nth-child(-n+5) { background: var(--agp-green); box-shadow: 0 0 .55em var(--agp-green); }
 .agp-revs i.on:nth-child(n+6):nth-child(-n+10) { background: #ff2a2a; box-shadow: 0 0 .55em #ff2a2a; }
 .agp-revs i.on:nth-child(n+11) { background: var(--agp-blue); box-shadow: 0 0 .55em var(--agp-blue); }
-.agp-revs.is-shift i { background: var(--agp-blue); box-shadow: 0 0 .6em var(--agp-blue); animation: agp-blink .18s linear infinite; }
-.agp-revs.is-lim i { background: #1b1e25; box-shadow: inset 0 .1em .22em rgba(0, 0, 0, .85); }
-.agp-revs.is-lim i:nth-child(odd) { background: var(--agp-yellow); box-shadow: 0 0 .5em var(--agp-yellow); animation: agp-blink .6s linear infinite; }
-.agp-revs.is-lim i:nth-child(even) { background: var(--agp-blue); box-shadow: 0 0 .5em var(--agp-blue); animation: agp-blink .6s linear infinite reverse; }
+.agp-rv-lim i:nth-child(odd) { background: var(--agp-yellow); box-shadow: 0 0 .5em var(--agp-yellow); }
+.agp-rv-lim i:nth-child(even) { background: var(--agp-blue); box-shadow: 0 0 .5em var(--agp-blue); }
+.agp-revs.is-lim .agp-rv-lim i:nth-child(odd) { animation: agp-blink .6s linear infinite; }   /* (only while shown) */
+.agp-revs.is-lim .agp-rv-lim i:nth-child(even) { animation: agp-blink .6s linear infinite reverse; }
 .agp-cl-mid { display: flex; align-items: center; gap: .7em; }
 .agp-spd { flex: 1; display: flex; flex-direction: column; align-items: flex-end; }
 .agp-spd b { font: 700 3.7em/.86 var(--agp-fd); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
@@ -68473,7 +68490,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-12 16:51';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-14 08:22';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -74718,6 +74735,75 @@ const Render3D = (() => {
     }, true, false);
   }
 
+  // ------------------------------------------------------------------------------------------ sun shadow: hardware PCF
+  // PERF (power): three's PCF soft shadow reads 16 texels of an RGBA-packed depth map per shaded pixel (4 x 4 texels around
+  // the point, per axis weights 1 - f, 1, 1, f, / 9) and unpacks + compares each: ~0.3-0.7 W of GPU on an M1 at Retina
+  // size. The sun's map now also has a depth texture with hardware compare (sampler2DShadow, linear filtering): the same
+  // weighted 4 x 4 sum is 4 filtered compares, each tap placed between a texel pair so its bilinear weights give that pair's
+  // weights (pair (1 - f, 1): offset 1 / (2 - f), times 2 - f; pair (1, f): offset f / (1 + f), times 1 + f). Same texels,
+  // same weights (up to the GPU's sub-texel weight precision), same compare (lit when the stored depth >= the biased
+  // depth), same frustum tests. three keeps rendering the map (WebGLShadowMap, into SH.rt); its light uniforms read
+  // light.shadow.map.texture, which is the depth texture through SH.proxy outside the shadow pass (see hwShadowInit).
+  const SH = { on: false, rt: null, proxy: null };
+  function hwShadowChunks() {
+    const C = THREE.ShaderChunk;
+    const decl = 'uniform sampler2D directionalShadowMap[ NUM_DIR_LIGHT_SHADOWS ];';
+    const call = 'getShadow( directionalShadowMap[ i ]';
+    if (!C.shadowmap_pars_fragment.includes(decl) || !C.lights_fragment_begin.includes(call) || !C.shadowmask_pars_fragment.includes(call)) return false;
+    const fn = `
+	float getShadowHW( highp sampler2DShadow shadowMap, vec2 shadowMapSize, float shadowBias, float shadowRadius, vec4 shadowCoord ) {
+		float shadow = 1.0;
+		shadowCoord.xyz /= shadowCoord.w;
+		shadowCoord.z += shadowBias;
+		bool inFrustum = shadowCoord.x >= 0.0 && shadowCoord.x <= 1.0 && shadowCoord.y >= 0.0 && shadowCoord.y <= 1.0;
+		bool frustumTest = inFrustum && shadowCoord.z <= 1.0;
+		if ( frustumTest ) {
+			vec2 sx = shadowCoord.xy * shadowMapSize + 0.5, m = floor( sx ), f = sx - m;
+			vec2 w0 = 2.0 - f, w1 = 1.0 + f;
+			vec2 t0 = ( m - 1.5 + 1.0 / w0 ) / shadowMapSize, t1 = ( m + 0.5 + f / w1 ) / shadowMapSize;
+			float z = shadowCoord.z;
+			shadow = ( w0.x * w0.y * texture( shadowMap, vec3( t0.x, t0.y, z ) ) + w1.x * w0.y * texture( shadowMap, vec3( t1.x, t0.y, z ) )
+				+ w0.x * w1.y * texture( shadowMap, vec3( t0.x, t1.y, z ) ) + w1.x * w1.y * texture( shadowMap, vec3( t1.x, t1.y, z ) ) ) * ( 1.0 / 9.0 );
+		}
+		return shadow;
+	}
+`;
+    C.shadowmap_pars_fragment = C.shadowmap_pars_fragment.replace(decl, 'uniform highp sampler2DShadow directionalShadowMap[ NUM_DIR_LIGHT_SHADOWS ];')
+      .replace('\tfloat texture2DCompare(', fn + '\tfloat texture2DCompare(');
+    if (!C.shadowmap_pars_fragment.includes('getShadowHW')) return false;
+    C.lights_fragment_begin = C.lights_fragment_begin.split(call).join('getShadowHW( directionalShadowMap[ i ]');
+    C.shadowmask_pars_fragment = C.shadowmask_pars_fragment.split(call).join('getShadowHW( directionalShadowMap[ i ]');
+    return true;
+  }
+  function hwShadowInit() {
+    if (!renderer.capabilities.isWebGL2 || !hwShadowChunks()) return;
+    SH.on = true;
+    const SM = renderer.shadowMap, smr = SM.render, gl = renderer.getContext();
+    // the packed-depth colour of the target is no longer read: its writes are masked (three's depth materials are only
+    // used by shadow passes) and it is discarded at the end of the pass instead of being stored (only the depth texture is)
+    const rbd = renderer.renderBufferDirect, srt = renderer.setRenderTarget;
+    let inPass = false;
+    renderer.renderBufferDirect = function (cam, sc, geo, mat) { if (inPass && mat && mat.isMeshDepthMaterial && mat.colorWrite) mat.colorWrite = false; return rbd.apply(this, arguments); };
+    renderer.setRenderTarget = function (t) { if (inPass && SH.rt && t !== SH.rt && renderer.getRenderTarget() === SH.rt) gl.invalidateFramebuffer(gl.FRAMEBUFFER, [gl.COLOR_ATTACHMENT0]); return srt.apply(this, arguments); };
+    SM.render = function () {   // (the pass draws into the real target; the light uniforms see the proxy)
+      const sh = sun.shadow;
+      if (sh.map === SH.proxy && SH.rt) sh.map = SH.rt;
+      inPass = true;
+      try { return smr.apply(this, arguments); } finally { inPass = false; if (SH.rt && sh.map === SH.rt) sh.map = SH.proxy; }
+    };
+  }
+  function hwShadowMap(sz) {   // (re)build the sun's target at sz x sz: colour (three's packed depth, unused) + compare depth texture
+    if (!SH.on) { if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } return; }
+    if (SH.rt) SH.rt.dispose();
+    const dt = new THREE.DepthTexture(sz, sz, THREE.UnsignedIntType);
+    dt.minFilter = THREE.LinearFilter; dt.magFilter = THREE.LinearFilter; dt.compareFunction = THREE.LessEqualCompare;
+    SH.rt = new THREE.WebGLRenderTarget(sz, sz, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthTexture: dt });
+    SH.rt.texture.name = sun.name + '.shadowMap';
+    const rt = SH.rt;
+    SH.proxy = { texture: dt, dispose() { rt.dispose(); dt.dispose(); } };
+    sun.shadow.map = SH.proxy;
+  }
+
   // ------------------------------------------------------------------------------------------ init
   function init(el) {
     if (renderer) return;
@@ -74725,7 +74811,17 @@ const Render3D = (() => {
     // with post-processing (medium and up) the scene is drawn into its own MSAA target and the canvas only receives a
     // full-screen quad, so a multisampled canvas would be pure overhead: only 'low' (direct rendering) asks for one.
     const g0 = globalG(), q0 = (g0 && g0.settings && g0.settings.graphics) || quality;
-    renderer = new THREE.WebGLRenderer({ antialias: q0 === 'low', powerPreference: 'high-performance' });
+    // PERF (power): an opaque canvas (alpha: false; three itself always asks for alpha: true). Every pixel's alpha is 1
+    // anyway (the post pass writes 1, the clear alpha is 1, the mirror quad blends over it), so the picture is the same,
+    // but Chrome then knows the layer is opaque: it no longer draws the page background under the full-screen canvas and
+    // blends the canvas over it every frame. No stencil (never used); depth stays (the 'low' quality draws into the canvas).
+    let ctx0 = null;
+    try {
+      const cv0 = document.createElement('canvas'), at = { alpha: false, depth: true, stencil: false, antialias: q0 === 'low', premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
+      ctx0 = cv0.getContext('webgl2', at);
+    } catch (e) { ctx0 = null; }
+    renderer = ctx0 ? new THREE.WebGLRenderer({ canvas: ctx0.canvas, context: ctx0, antialias: q0 === 'low', powerPreference: 'high-performance' })
+      : new THREE.WebGLRenderer({ antialias: q0 === 'low', powerPreference: 'high-performance' });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -74764,6 +74860,7 @@ const Render3D = (() => {
     sc.left = -SHADOW_EXT; sc.right = SHADOW_EXT; sc.top = SHADOW_EXT; sc.bottom = -SHADOW_EXT; sc.near = 1; sc.far = 700;
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.035;
     scene.add(sun, sun.target);
+    hwShadowInit();
 
     makeSharedTextures();
     makeSky();
@@ -74798,8 +74895,10 @@ const Render3D = (() => {
       time: { value: 0 }, cloudAmt: { value: 0.5 }, toLinear: { value: 0 }, useGround: { value: 0 }, groundCol: { value: new THREE.Vector3(0.1, 0.12, 0.08) },
       dark: { value: 0 }, sunVis: { value: 1 },   // cloudAmt = cover 0..1 (clear .. overcast deck), dark = rain-cloud greyness
     };
+    const hashed = skyHashInit();   // (PERF: lattice hash tables, WebGL2)
+    if (hashed) { skyU.hashTex = { value: SKYH.rt.texture }; skyU.hT = { value: SKYH.tabs.map(t => t.u) }; skyU.hS = { value: SKYH.tabs.map(t => t.S) }; }
     const mat = new THREE.ShaderMaterial({
-      uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false, toneMapped: false,
+      uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false, toneMapped: false, defines: hashed ? { AGP_SKYHASH: 1 } : {},
       vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
       fragmentShader: `
         uniform vec3 zenith, skyMid, horizon, sunCol, sunDir, cloudCol, groundCol; uniform float time, cloudAmt, toLinear, useGround, dark, sunVis; varying vec3 vDir;
@@ -74807,6 +74906,27 @@ const Render3D = (() => {
         float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
           return mix(mix(h2(i), h2(i+vec2(1.0,0.0)), f.x), mix(h2(i+vec2(0.0,1.0)), h2(i+vec2(1.0,1.0)), f.x), f.y); }
         float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a*vn(p); p = p*2.07 + 13.7; a *= 0.5; } return v; }
+        #ifdef AGP_SKYHASH
+        // PERF: the same value noise with the 4 corner hashes of a cell read from table k (no formula fallback in the
+        // shader: GPUs run both sides of such a branch; the tables always cover the reachable cells, see skyHash)
+        uniform sampler2D hashTex; uniform vec4 hT[10]; uniform float hS[10];
+        float vnK(vec2 p, int k){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+          vec4 c = texelFetch(hashTex, ivec2(hT[k].zw + clamp(i - hT[k].xy, vec2(0.0), vec2(hS[k] - 1.0))), 0);
+          return mix(mix(c.x, c.y, f.x), mix(c.z, c.w, f.x), f.y); }
+        float fbmK(vec2 p, int k0){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a*vnK(p, k0 + i); p = p*2.07 + 13.7; a *= 0.5; } return v; }
+        // PERF (power): the cover noise n, stopped once it can no longer reach the cloud threshold th (every octave adds less
+        // than its weight a, as vn < 1): then n < th, so cl = 0 and the clouds change nothing in that pixel - same picture,
+        // the clear sky between the clouds needs 1-2 of the 10 table reads instead of all of them (n2 only under a cloud)
+        float fbmCut(vec2 p, float th){ float v = 0.0, a = 0.5, rest = 0.96875;
+          for (int i = 0; i < 5; i++){ v += a*vnK(p, i); rest -= a; if (v + rest <= th) break; p = p*2.07 + 13.7; a *= 0.5; } return v; }
+        #define FBM_CUT(p, th) fbmCut(p, th)
+        #define FBM_N(p) fbmK(p, 0)
+        #define FBM_N2(p) fbmK(p, 5)
+        #else
+        #define FBM_N(p) fbm(p)
+        #define FBM_N2(p) fbm(p)
+        #define FBM_CUT(p, th) fbm(p)
+        #endif
         void main(){
           vec3 d = normalize(vDir);
           float h = d.y;
@@ -74818,12 +74938,15 @@ const Render3D = (() => {
           if (h > 0.0) {
             // cover: sparse fair-weather puffs -> larger clouds -> a solid deck reaching the horizon (continuous)
             vec2 uv = d.xz / (h + 0.12) * (1.1 - 0.4 * cloudAmt) + vec2(time * 0.004, time * 0.0015);
-            float n = fbm(uv), n2 = fbm(uv * 2.3 + 4.0);
             float th = mix(0.8, 0.16, cloudAmt);
-            cl = smoothstep(th, th + mix(0.14, 0.42, cloudAmt), n) * smoothstep(0.0, mix(0.18, 0.05, cloudAmt), h);
-            float shade = 0.8 + 0.26 * n2 - dark * 0.32 * (1.0 - smoothstep(th, th + 0.5, n));   // darker, mottled bases in rain
-            vec3 cc = cloudCol * shade + sunCol * pow(s, 4.0) * 0.35 * sunVis * (1.0 - 0.6 * cloudAmt);
-            c = mix(c, cc, cl * mix(0.72, 0.97, cloudAmt));
+            float n = FBM_CUT(uv, th);
+            if (n > th) {   // (else cl = 0: no cloud here, see fbmCut)
+              float n2 = FBM_N2(uv * 2.3 + 4.0);
+              cl = smoothstep(th, th + mix(0.14, 0.42, cloudAmt), n) * smoothstep(0.0, mix(0.18, 0.05, cloudAmt), h);
+              float shade = 0.8 + 0.26 * n2 - dark * 0.32 * (1.0 - smoothstep(th, th + 0.5, n));   // darker, mottled bases in rain
+              vec3 cc = cloudCol * shade + sunCol * pow(s, 4.0) * 0.35 * sunVis * (1.0 - 0.6 * cloudAmt);
+              c = mix(c, cc, cl * mix(0.72, 0.97, cloudAmt));
+            }
           }
           float disc = smoothstep(0.9993, 0.99965, s) * sunVis * (1.0 - cl);   // sun / moon disc: behind the clouds
           c += sunCol * disc * 1.5;
@@ -74838,6 +74961,67 @@ const Render3D = (() => {
     skyMesh = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 8, 0, TAU, 0, Math.PI / 2), mat);
     skyMesh.frustumCulled = false; skyMesh.renderOrder = 60;
     scene.add(skyMesh);
+  }
+  // PERF (power): the sky's cloud noise evaluated fract(sin(dot(p, ..)) * 43758.5) at 4 lattice points per value-noise
+  // sample, 40 per sky pixel (2 fbm x 5 octaves), and the precise sin of those large arguments made the sky the costliest
+  // pass: ~0.8 W of GPU on an M1 at Retina size (also drawn in the mirrors / puddle reflections). The GPU now fills, with
+  // the same h2(), one table per fbm octave (5 for n, 5 for n2) over the lattice cells the visible sky can reach at the
+  // current cloud drift; each RGBA16F texel holds the 4 corner hashes of a cell (one texelFetch per sample). Tables are
+  // rebuilt when the drift nears an edge (time * 0.004 a second: every 20+ min).
+  // Same clouds: only the hashes' rounding to half floats (< 5e-4, well under one 8-bit colour step).
+  const SKYH = { rt: null, tabs: [], scene: null, cam: null, mat: null, d: [NaN, NaN] };
+  const SKY_B = 9.3;   // |uv| reach before the drift: d.xz / (h + 0.12) * (1.1 - 0.4 cover) for h > 0 is under 1.1 / 0.12
+  function skyHashInit() {
+    if (!renderer || !renderer.capabilities.isWebGL2) return false;
+    try {
+      const tabs = [];
+      for (let f = 0; f < 2; f++) for (let k = 0; k < 5; k++) {
+        const g = Math.pow(2.07, k), s = g * (f ? 2.3 : 1), c = (f ? 4 * g : 0) + 13.7 * (g - 1) / 1.07;   // p_k = s * uv + c
+        const w = Math.ceil(s * 2 * SKY_B) + 6, S = Math.ceil((w + Math.max(32, w * 0.3)) / 16) * 16;   // (30 % for the drift)
+        tabs.push({ s, c, S, w, ax: 0, ay: 0, ox: 0, oy: 0, u: new THREE.Vector4() });
+      }
+      // shelf-pack the square tables into one atlas (2048 wide)
+      const order = tabs.slice().sort((a, b) => b.S - a.S);
+      let x = 0, y = 0, row = 0;
+      for (const t of order) { if (x + t.S > 2048) { x = 0; y += row; row = 0; } t.ax = x; t.ay = y; x += t.S; row = Math.max(row, t.S); }
+      const H = y + row;
+      SKYH.rt = new THREE.WebGLRenderTarget(2048, H, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+      SKYH.tabs = tabs;
+      SKYH.mat = new THREE.ShaderMaterial({ uniforms: { org: { value: new THREE.Vector2() } }, depthTest: false, depthWrite: false,
+        vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: `uniform vec2 org;
+          float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          void main(){ vec2 i = org + floor(gl_FragCoord.xy); gl_FragColor = vec4(h2(i), h2(i+vec2(1.0,0.0)), h2(i+vec2(0.0,1.0)), h2(i+vec2(1.0,1.0))); }` });
+      const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), SKYH.mat); q.frustumCulled = false;
+      SKYH.scene = new THREE.Scene(); SKYH.scene.add(q); SKYH.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      skyHashBuild(0, 0);
+      return true;
+    } catch (e) { console.error('[Render3D] sky hash tables:', e); SKYH.rt = null; return false; }
+  }
+  function skyHashBuild(dx, dz) {
+    const R = renderer, rt = SKYH.rt, prev = R.getRenderTarget(), ac = R.autoClear;
+    R.autoClear = false;
+    for (const t of SKYH.tabs) {
+      t.ox = Math.floor(t.s * (-SKY_B + dx) + t.c) - 2; t.oy = Math.floor(t.s * (-SKY_B + dz) + t.c) - 2;
+      SKYH.mat.uniforms.org.value.set(t.ox - t.ax, t.oy - t.ay);
+      rt.viewport.set(t.ax, t.ay, t.S, t.S); rt.scissor.set(t.ax, t.ay, t.S, t.S); rt.scissorTest = true;
+      R.setRenderTarget(rt); R.render(SKYH.scene, SKYH.cam);
+      t.u.set(t.ox, t.oy, t.ax, t.ay);
+    }
+    rt.scissorTest = false; rt.viewport.set(0, 0, rt.width, rt.height); rt.scissor.set(0, 0, rt.width, rt.height);
+    R.setRenderTarget(prev); R.autoClear = ac;
+    SKYH.d[0] = dx; SKYH.d[1] = dz;
+  }
+  // per frame: the tables still cover the reachable cells at this drift? (else rebuild at it)
+  function skyHash(time) {
+    if (!SKYH.rt) return;
+    const dx = time * 0.004, dz = time * 0.0015;
+    if (dx === SKYH.d[0] && dz === SKYH.d[1]) return;
+    for (const t of SKYH.tabs) {
+      const x0 = Math.floor(t.s * (-SKY_B + dx) + t.c) - 1, x1 = Math.floor(t.s * (SKY_B + dx) + t.c) + 1;
+      const y0 = Math.floor(t.s * (-SKY_B + dz) + t.c) - 1, y1 = Math.floor(t.s * (SKY_B + dz) + t.c) + 1;
+      if (x0 < t.ox || y0 < t.oy || x1 >= t.ox + t.S || y1 >= t.oy + t.S) { skyHashBuild(dx, dz); return; }
+    }
   }
   const srgbVec = (hex, v) => { _c1.set(hex); _c1.convertLinearToSRGB(); v.set(_c1.r, _c1.g, _c1.b); return v; };
 
@@ -81155,6 +81339,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     skyMesh.position.copy(camera.position);
     const time = G && G.time ? G.time : skyU.time.value + dt;
     skyU.time.value = time;
+    skyHash(time);   // (PERF: sky hash tables cover this drift)
     if (waterMat) waterMat.map.offset.set(time * 0.01, time * 0.006);
     if (crowdMat) crowdMat.userData.t.value = time;
     FU.uTime.value = time;
@@ -81275,18 +81460,20 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
   // Rear view: low-res render targets rendered every 2nd frame without a shadow pass; the player's car is on
   // layer 1 so the mirror cameras don't see it. Chase view: rounded "virtual mirror" strip at the top of the
   // screen (M toggles). Cockpit / T-cam: textures on the car model's mirror glass (model.mirrors = [left, right]).
+  // PERF (power) + side-mirror lag: every mirror image (the top strip and both cockpit / T-cam glasses) is drawn every
+  // frame, in step with the main view (before: the strip every 2nd-3rd frame, the glasses one side per frame or less, so
+  // they lagged), each at the size it covers on screen in canvas pixels (texel = pixel; before 2-2.5x larger targets were
+  // minified without mipmaps: more pixels shaded for an image that shimmered). MSAA 4x on high / ultra as before.
   function ensureMirror() {
     if (mirror) return;
-    // resolution / MSAA / update rate scale with the graphics quality
-    // [strip w, h, glass w, h, MSAA samples, strip every n frames, glass (one side per frame) every n frames]
-    const MQ = { low: [384, 120, 192, 96, 0, 3, 3], medium: [640, 200, 256, 128, 0, 2, 2], high: [1024, 320, 384, 192, 4, 2, 1], ultra: [1280, 400, 512, 256, 4, 2, 1] }[quality] || [1024, 320, 384, 192, 4, 2, 1];
-    const mk = (w, h) => { const t = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, samples: MQ[4] }); t.texture.anisotropy = maxAniso; t.texture.generateMipmaps = false; return t; };
+    const samples = quality === 'high' || quality === 'ultra' ? 4 : 0;
+    const mk = (w, h) => { const t = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, samples }); t.texture.anisotropy = maxAniso; t.texture.generateMipmaps = false; return t; };
     const mask = canvasTex(256, 80, (g, w, h) => {
       g.clearRect(0, 0, w, h); g.fillStyle = '#fff'; const r = 18;
       g.beginPath(); g.moveTo(r, 0); g.lineTo(w - r, 0); g.quadraticCurveTo(w, 0, w, r); g.lineTo(w, h - r); g.quadraticCurveTo(w, h, w - r, h);
       g.lineTo(r, h); g.quadraticCurveTo(0, h, 0, h - r); g.lineTo(0, r); g.quadraticCurveTo(0, 0, r, 0); g.fill();
     }, false, false);
-    const rt = mk(MQ[0], MQ[1]), rtL = mk(MQ[2], MQ[3]), rtR = mk(MQ[2], MQ[3]);
+    const rt = mk(320, 100), rtL = mk(128, 64), rtR = mk(128, 64);   // (sized by layoutMirror / glassSize)
     const oScene = new THREE.Scene(), oCam = new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1);
     const qg = new THREE.PlaneGeometry(1, 1);
     const uv = qg.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setX(k, 1 - uv.getX(k)); // mirrored image
@@ -81294,7 +81481,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const quad = new THREE.Mesh(qg, new THREE.MeshBasicMaterial({ map: rt.texture, alphaMap: mask, transparent: true, depthTest: false, fog: false }));
     quad.renderOrder = 1;
     oScene.add(frame, quad);
-    mirror = { rt, rtL, rtR, oScene, oCam, frame, quad, mask, every: MQ[5], glassEvery: MQ[6], q: quality,
+    mirror = { rt, rtL, rtR, oScene, oCam, frame, quad, mask, q: quality, gw: 0, gh: 0,
       cam: new THREE.PerspectiveCamera(20, 3.2, 0.5, 220), camL: new THREE.PerspectiveCamera(26, 2, 0.3, 220), camR: new THREE.PerspectiveCamera(26, 2, 0.3, 220),
       glassModel: null, glassMats: [] };
     layoutMirror();
@@ -81303,8 +81490,35 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const W = Math.max(1, container.clientWidth || window.innerWidth), H = Math.max(1, container.clientHeight || window.innerHeight);
     const m = mirror, w = Math.round(W * 0.22), h = Math.round(w / 3.2), cx = W / 2, cy = H - 10 - h / 2;
     m.oCam.left = 0; m.oCam.right = W; m.oCam.top = H; m.oCam.bottom = 0; m.oCam.updateProjectionMatrix();
-    m.quad.position.set(cx, cy, 0); m.quad.scale.set(w, h, 1);
+    // the image quad on whole canvas pixels, its target the same size (1 texel = 1 pixel)
+    const pr = renderer.getPixelRatio(), wp = Math.max(16, Math.round(w * pr)), hp = Math.max(8, Math.round(h * pr));
+    const x0 = Math.round((W * pr - wp) / 2), y0 = Math.round((H - 10 - h) * pr);
+    m.quad.position.set((x0 + wp / 2) / pr, (y0 + hp / 2) / pr, 0); m.quad.scale.set(wp / pr, hp / pr, 1);
     m.frame.position.set(cx, cy, 0); m.frame.scale.set(w + 8, h + 8, 1);
+    if (m.rt.width !== wp || m.rt.height !== hp) m.rt.setSize(wp, hp);
+  }
+  // the cockpit / T-cam glass targets: the glasses' on-screen size in canvas pixels (bounding box of the projected quad,
+  // the larger side, 8 px steps; resized only when that changes by more than ~12 % so the head's sway doesn't thrash them)
+  const _gb = new THREE.Box3(), _gc = new THREE.Vector3();
+  function glassSize(glass) {
+    const m = mirror, g = glass[0].geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const bb = g.boundingBox, sz = renderer.getDrawingBufferSize(_v2d);
+    let w = 0, h = 0;
+    for (const gm of glass) {
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (let k = 0; k < 8; k++) {
+        _gc.set(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(gm.matrixWorld).project(camera);
+        x0 = Math.min(x0, _gc.x); x1 = Math.max(x1, _gc.x); y0 = Math.min(y0, _gc.y); y1 = Math.max(y1, _gc.y);
+      }
+      w = Math.max(w, (x1 - x0) * 0.5 * sz.x); h = Math.max(h, (y1 - y0) * 0.5 * sz.y);
+    }
+    const q = v => Math.min(1024, Math.max(16, Math.ceil(v / 8) * 8));
+    const wq = q(w), hq = q(h);
+    if (!m.gw || Math.abs(wq - m.gw) > m.gw * 0.12 || Math.abs(hq - m.gh) > m.gh * 0.12) {
+      m.gw = wq; m.gh = hq;
+      for (const t of [m.rtL, m.rtR]) if (t.width !== wq || t.height !== hq) t.setSize(wq, hq);
+    }
   }
   function mirrorGlass(model) {
     const ms = model && model.mirrors;
@@ -81346,8 +81560,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     frameNo++;
     const ch = Math.cos(player.h), sh = Math.sin(player.h);
     const auto = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
-    const ev = mirror.every, eg = mirror.glassEvery;
-    if (strip && frameNo % ev === 0) {
+    if (strip) {
       const c = mirror.cam;
       const yP = playerView ? playerView.y || 0 : 0, sl = playerView ? playerView.slope || 0 : 0;
       c.position.set(player.x + ch * 0.4, 1.2 + yP, player.z + sh * 0.4);
@@ -81356,10 +81569,10 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       const hid = skyHide(c);
       renderer.setRenderTarget(mirror.rt); renderer.render(scene, c);
       if (hid) skyShow();
-    } else if (glass) {
-      // left / right glass alternate (30 Hz each on high / ultra)
-      if (eg > 1 && frameNo % eg === 1) { renderer.shadowMap.autoUpdate = auto; return strip; }
-      const k = (mirror.gN = (mirror.gN || 0) + 1) & 1, c = k ? mirror.camR : mirror.camL, sd = k ? 1 : -1;
+    }
+    if (glass) glassSize(glass);
+    for (let k = 0; glass && k < 2; k++) {   // (both glasses every frame)
+      const c = k ? mirror.camR : mirror.camL, sd = k ? 1 : -1;
       glass[k].getWorldPosition(_v3);
       c.position.copy(_v3); c.position.y += 0.05;
       const yP = playerView ? playerView.y || 0 : 0, sl = playerView ? playerView.slope || 0 : 0;
@@ -81395,7 +81608,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     SHADOW_SIZE = sz;
     sun.shadow.mapSize.set(sz, sz);
     const sc = sun.shadow.camera; sc.left = -SHADOW_EXT; sc.right = SHADOW_EXT; sc.top = SHADOW_EXT; sc.bottom = -SHADOW_EXT; sc.updateProjectionMatrix();
-    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    hwShadowMap(sz);   // (a new map at the new size: hardware-compare depth texture when available, else three's own)
     const usePost = quality !== 'low';
     if (post) { post.rt.dispose(); for (const t of post.small) t.dispose(); }
     post = usePost ? makePost(quality) : null;
@@ -82184,6 +82397,12 @@ const Render2D = (() => {
 const HUD = (() => {
   const COL = { purple: '#b44cff', green: '#19e06a', yellow: '#ffd400', red: '#ff2a3a', white: '#f4f6fa', f1: '#e10600', cyan: '#27d7f5' };
   const ROW_EM = 2.05, NREV = 15, TOWER_DT = 0.1, TIMING_DT = 0.05;
+  // PERF (power): the 15 rev lights as NREV + 1 pre-rendered strips (0..15 lit) + the pit-limiter pattern, stacked; only the
+  // strip for the current lit count is visible (opacity on its own compositor layer), so the rpm changing every frame
+  // swaps two layers' opacity: no raster of the glows and one drawn layer (a layer per light was ~45 layers composited
+  // every frame). Each strip is the same CSS as the lights always had (.on = lit colour + glow).
+  const REV_STRIPS = Array.from({ length: NREV + 1 }, (_, k) => '<div class="agp-rv">' + Array.from({ length: NREV }, (_, j) => j < k ? '<i class="on"></i>' : '<i></i>').join('') + '</div>').join('')
+    + '<div class="agp-rv agp-rv-lim">' + '<i></i>'.repeat(NREV) + '</div>';
   const PIT_IDLE = /^(none|idle|racing|out|exit|exiting|leaving|released|done|finished|off)$/i;
   const COMP_IDS = ['S', 'M', 'H', 'I', 'W'];
   const COMP_FALLBACK = { S: '#ff2a3a', M: '#ffd12e', H: '#f2f2f2', I: '#43b02a', W: '#1e6fd9' };
@@ -82362,13 +82581,14 @@ const HUD = (() => {
       <div class="agp-pill agp-pen" data-r="pen"><span data-r="penTxt"></span></div>
     </div>
     <div class="agp-cl-row">
+      <div class="agp-cl-cast" aria-hidden="true"><div><div class="agp-cl-tyre"></div><div class="agp-cl-main"></div><div class="agp-cl-energy"></div></div></div>
       <div class="agp-cl-tyre" data-r="tyre">
         <div class="agp-ring agp-ring-lg" data-r="tyreRing">M</div>
         <div class="agp-tyre-car"><i></i><i></i><i></i><i></i><b></b></div>
         <div class="agp-tyre-wear"><b data-r="tyreWear">0%</b><span class="agp-lbl">WEAR</span></div>
       </div>
       <div class="agp-cl-main">
-        <div class="agp-revs" data-r="revs">${'<i></i>'.repeat(NREV)}</div>
+        <div class="agp-revs" data-r="revs">${REV_STRIPS}</div>
         <div class="agp-cl-mid">
           <div class="agp-spd"><b data-r="spd">0</b><span class="agp-lbl">KM/H</span></div>
           <div class="agp-gear" data-r="gearBox"><b data-r="gear">N</b></div>
@@ -82425,7 +82645,7 @@ const HUD = (() => {
     E.pcT = E.pitClock.querySelector('[data-pc="t"]'); E.pcBar = E.pitClock.querySelector('[data-pc="bar"]'); E.pcNote = E.pitClock.querySelector('[data-pc="note"]');
     E.hud.appendChild(E.pitClock);
     E.hud.appendChild(E.limSign);
-    revEls = Array.from(E.revs.children);
+    revEls = Array.from(E.revs.children);   // (PERF: the NREV + 1 lit-count strips + the pit-limiter strip, see REV_STRIPS)
     lampEls = Array.from(root.querySelectorAll('.agp-lamp'));
     secEls = Array.from(E.tmSecs.children);
     secTimeEls = secEls.map(s => s.querySelector('b'));
@@ -82523,7 +82743,7 @@ const HUD = (() => {
     const rpmG = gr > 0 && C.gearTop[gr] ? Math.min(C.rpmMax, C.rpmMax * kmhG / C.gearTop[gr]) : 0;
     const rpm = Math.max(car.rpm || 0, rpmG), lo = C.rpmShiftUp - (C.rpmMax - C.rpmIdle) * 0.45, shiftAt = C.rpmShiftUp - 250;
     const lit = clamp(Math.ceil(NREV * (rpm - lo) / (shiftAt - lo)), 0, NREV);
-    if (st.revLit !== lit) { st.revLit = lit; for (let i = 0; i < NREV; i++) setC(revEls[i], 'on', i < lit); }
+    if (st.revLit !== lit) { if (st.revLit >= 0) setC(revEls[st.revLit], 'is-vis', false); st.revLit = lit; setC(revEls[lit], 'is-vis', true); }
     setC(E.revs, 'is-shift', rpm >= shiftAt && gr > 0 && gr < topGear && !car.pitLimiter);
     setC(E.revs, 'is-lim', !!car.pitLimiter);
     setC(E.gearBox, 'is-shift', rpm >= shiftAt && gr > 0 && gr < topGear);
@@ -83277,7 +83497,7 @@ const HUD = (() => {
   // board's POS column), placed so the tags don't sit on each other. Menu calls pauseMap(canvas) while the pause screen is up
   // and pauseMap(null) when it closes; update() paints it every ~50 ms (single player: nothing moves while paused; multiplayer: it does).
   const PM = { cv: null, bg: null, w: 0, h: 0, dpr: 1, sc: 1, ox: 0, oz: 0, u: 1, k: 1.3, track: null, key: '', t: 0, chk: 0 };
-  function pauseMap(cv) { PM.cv = cv || null; PM.track = null; PM.key = ''; PM.t = 0; PM.chk = 0; }
+  function pauseMap(cv) { PM.cv = cv || null; PM.track = null; PM.key = ''; PM.t = 0; PM.chk = 0; PM.sig = null; }
   function pauseMapFrame(G, dt) {
     const cv = PM.cv, tr = G && G.track;
     if (!tr || !cv.isConnected) return;
@@ -83299,11 +83519,25 @@ const HUD = (() => {
       PM.track = tr;
     }
     if (!PM.key) return;
+    // PERF (power): repainted only when a dot would move / change (paused single player: never) - each canvas update made
+    // Chrome redraw the pause screen's full-screen backdrop blur
+    const sig = pmSig(G);
+    if (sig === PM.sig && PM.key === PM.sigKey) return;
+    PM.sig = sig; PM.sigKey = PM.key;
     const g = cv.getContext('2d');
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, PM.w, PM.h);
     g.drawImage(PM.bg, 0, 0);
     paintDots(g, G, PM);   // (no position tags: the user preferred the plain dots, 2026-10-11 - paintTags kept for reuse)
+  }
+  // what paintDots draws: every car's position (to 1/100 of a map pixel), team, dnf / player / qualifying flags, the ghost
+  function pmSig(G) {
+    const cars = G.cars || [], k = PM.sc * 100, qf = !!(G.race && G.race.qs && G.race.phase === 'quali');
+    let h = 'u' + PM.u + (qf ? 'q' : '') + (G.player ? G.player.id : '-') + ':';
+    for (let i = 0; i < cars.length; i++) { const c = cars[i]; h += (c.dnf ? 'x' : '') + (qf && c.qPush ? 'p' : '') + Math.round((c.x || 0) * k) + ',' + Math.round((c.z || 0) * k) + (c.team ? c.team.id : '') + ';'; }
+    const gh = G.ghost;
+    if (gh && gh.visible !== false) h += 'g' + Math.round((gh.x || 0) * k) + ',' + Math.round((gh.z || 0) * k);
+    return h;
   }
   // each car's position (the player's in a white tag) beside its dot: the player first, then by position; a tag that would sit on
   // an earlier one or outside the map tries the other sides of its dot, and is left out when none is free
@@ -88644,7 +88878,7 @@ const SFX = (() => {
     // straight-cut gearbox whine
     E.gear = osc('sine', 0); drive(E.gear, 19 / 3); E.gGearW = gain(0); chain(E.gear, E.gGearW, engBus);
     // overrun pops / shift cracks: 4 gated noise voices + one low "bang"
-    E.popBus = gain(1); chain(E.popBus, bq('lowpass', 6500, 0.6), engBus);
+    E.popBus = gain(1); E.popLp = bq('lowpass', 6500, 0.6); chain(E.popBus, E.popLp, engBus);
     E.pops = [];
     for (let i = 0; i < 4; i++) { const g = gain(0), bp = bq('bandpass', 1200, 2); chain(nEng, g, bp, E.popBus); E.pops.push({ g, bp }); }
     E.bang = osc('sine', 70); E.gBang = gain(0); chain(E.bang, E.gBang, E.popBus);
@@ -88657,18 +88891,18 @@ const SFX = (() => {
     chain(slow(14, 10), gain(45), T.osc.frequency);
     T.gTone = gain(0); T.bpTone = bq('bandpass', 950, 4); chain(T.osc, T.gTone, T.bpTone, fxBus);
     T.gNoise = gain(0); T.bpNoise = bq('bandpass', 1300, 3); chain(nFx, T.gNoise, T.bpNoise, fxBus);
-    T.gScrub = gain(0); chain(nFx, T.gScrub, bq('lowpass', 450, 0.7), fxBus);
+    T.gScrub = gain(0); T.lpScrub = bq('lowpass', 450, 0.7); chain(nFx, T.gScrub, T.lpScrub, fxBus);
     const K = {};   // kerbs: bump pulses at a rate ∝ speed + pulsed rattle
     K.osc = osc(null, 30, W_BUMP); K.gate = gain(0); K.gate.connect(fxBus);
     chain(K.osc, bq('lowpass', 320, 0.8), gain(0.8), K.gate);
     K.am = gain(0.4); chain(K.osc, gain(0.4), K.am.gain);
     chain(nFx, K.am, bq('bandpass', 420, 0.8), gain(3), K.gate);
     const S = {};   // surfaces: grass swish, gravel crunch (granular), low rumble; wall scrape reuses gravel
-    S.gGrass = gain(0); chain(nFx, S.gGrass, bq('lowpass', 520, 0.6), fxBus);
+    S.gGrass = gain(0); S.lpGrass = bq('lowpass', 520, 0.6); chain(nFx, S.gGrass, S.lpGrass, fxBus);
     S.gGravel = gain(0); S.bpGravel = bq('bandpass', 1700, 0.8); S.amGravel = gain(0);
-    chain(nFx, S.gGravel, S.bpGravel, S.amGravel, bq('lowpass', 5000, 0.7), fxBus);
+    S.lpGravel = bq('lowpass', 5000, 0.7); chain(nFx, S.gGravel, S.bpGravel, S.amGravel, S.lpGravel, fxBus);
     chain(noise(700 / sr), bq('lowpass', 160, 0.7), gain(4), shaper(rectCurve(1.6)), S.amGravel.gain);
-    S.gRumble = gain(0); chain(nFx, S.gRumble, bq('lowpass', 150, 0.8), fxBus);
+    S.gRumble = gain(0); S.lpRumble = bq('lowpass', 150, 0.8); chain(nFx, S.gRumble, S.lpRumble, fxBus);
     const Wd = {};  // wind ∝ speed², slow gusts, tow buffeting
     Wd.g = gain(0); Wd.lp = bq('lowpass', 800, 0.5); Wd.am = gain(1);
     chain(nFx, Wd.g, Wd.lp, bq('lowpass', 3500, 0.5), bq('peaking', 700, 0.7, 3), Wd.am, fxBus);
@@ -88696,18 +88930,56 @@ const SFX = (() => {
       AIV.push(v);
     }
 
+    // ---------- PERF (power): voice gating
+    // WebAudio computes every running source + filter that feeds the output, even at gain 0 (~40 sources, ~60 filters
+    // in a race). A sub-graph that is silent (tyres, kerbs, surfaces, rain, beeper, MGU-K, pops, the AI voices, the event /
+    // UI one-shot voices, the crowd, the wheel guns) is taken off its bus once its level is below -100 dB (12 time
+    // constants after its level target went to 0, or after the end of a one-shot envelope) and put back in the same JS
+    // turn as the next automation that makes it heard, so nothing is cut or delayed (~60 ms of audio-thread CPU a second
+    // saved in a race). Gated level targets within their smoothing step of 0 go to 0 (else they could never be quiet).
+    // While a gate is closed its other parameters (pitch, filter) only remember their latest target and snap to it when
+    // the gate opens: automation sent to a node nobody processes would pile up. Live contexts, or opt.gate (tests).
+    const GATE = !!(opt.realtime || opt.gate);
+    const gates = [];
+    function gate(src, bus) { const g = { src, bus, on: true, q: 0, sms: [], deps: [] }; gates.push(g); return g; }
+    function wake(g, until) {
+      if (!GATE || !g) return;
+      if (until > g.q) g.q = until;
+      if (g.on) return;
+      g.on = true;
+      try { g.src.connect(g.bus); } catch (e) { /* */ }
+      for (const d of g.deps) if (d.pend) { d.pend = false; d.p.cancelScheduledValues(now); d.p.setValueAtTime(d.v, now); }
+    }
+    function gateTick() {
+      if (!GATE) return;
+      const t = ctx.currentTime;
+      for (let i = 0; i < gates.length; i++) {
+        const g = gates[i];
+        if (!g.on || t < g.q) continue;
+        let quiet = true;
+        for (let k = 0; k < g.sms.length; k++) if (!(t >= g.sms[k].q)) { quiet = false; break; }
+        if (!quiet) continue;
+        g.on = false;
+        try { g.src.disconnect(g.bus); } catch (e) { /* */ }
+      }
+    }
+    // one-shot envelope end (env(): attack a, hold h, then a setTarget decay with time constant d / 4.5) -> gate busy until
+    // its level is ~1e-5 of the peak
+    const envEnd = (t, a, h, d) => t + a + h + 12 * Math.max(d, 0.003) / 4.5 + 0.01;
+
     // ---------- one-shot voice pools (persistent, round-robin with soft stealing)
     const mkTone = bus => {
       const v = { busy: 0, t0: 0 };
       v.o1 = osc('sine', 440); v.o2 = osc('sine', 880); v.m2 = gain(0); v.vca = gain(0);
       v.f = bq('lowpass', 16000, 0.7); v.pan = panner();
       v.o1.connect(v.vca); chain(v.o2, v.m2, v.vca); v.vca.connect(v.f); toBus(v.f, v.pan, bus);
+      v.gt = gate(v.pan || v.f, bus);
       return v;
     };
     const nEv = noise(1);
     const mkNoiseV = bus => {
       const v = { busy: 0, t0: 0 }; v.vca = gain(0); v.f = bq('bandpass', 1000, 1); v.pan = panner();
-      chain(nEv, v.vca, v.f); toBus(v.f, v.pan, bus); return v;
+      chain(nEv, v.vca, v.f); toBus(v.f, v.pan, bus); v.gt = gate(v.pan || v.f, bus); return v;
     };
     const tonesEv = [0, 1, 2, 3, 4, 5].map(() => mkTone(evBus));
     const tonesUi = [0, 1, 2].map(() => mkTone(uiBus));
@@ -88716,7 +88988,7 @@ const SFX = (() => {
 
     // ---------- crowd: two decorrelated formant banks (L/R) with slow swells + applause grains
     const CR = { envs: [], until: 0, peak: 0 };
-    CR.bus = gain(1); CR.bus.connect(evBus);
+    CR.bus = gain(1); CR.bus.connect(evBus); CR.gt = gate(CR.bus, evBus);
     for (const side of [-0.55, 0.55]) {
       const env = gain(0); noise(0.97 + 0.06 * rnd()).connect(env); CR.envs.push(env);
       const sum = gain(1), am = gain(0.75), drift = slow(0.35, 0.3);
@@ -88737,20 +89009,30 @@ const SFX = (() => {
       const g = { env: gain(0), am: gain(0.3) };
       g.lfo = osc(null, i ? 29 : 25, W_PULSE); chain(g.lfo, gain(0.7), g.am.gain);
       chain(nEv, g.env, bq('bandpass', i ? 2300 : 2750, 2.2), bq('peaking', i ? 4700 : 5200, 8, 7), g.am);
-      toBus(g.am, panner(i ? 0.45 : -0.45), evBus);
+      g.pan = panner(i ? 0.45 : -0.45); toBus(g.am, g.pan, evBus); g.gt = gate(g.pan || g.am, evBus);
       GUN.push(g);
     }
 
     // ---------- smoothed parameters: setTargetAtTime only when the target moved (no zipper, few events)
     class Sm {
-      constructor(p, eps) { this.p = p; this.v = NaN; this.e = eps; }
+      constructor(p, eps) { this.p = p; this.v = NaN; this.e = eps; this.g = null; this.q = 0; this.dg = null; this.pend = false; }
       set(v, tau) {
         if (!fin(v)) return;
         const e = this.e < 0 ? -this.e * Math.abs(v) : this.e;
-        if (Math.abs(v - this.v) <= e) return;
-        this.v = v; this.p.setTargetAtTime(v, now, tau);
+        if (this.g && Math.abs(v) <= e) { if (this.v === 0) return; v = 0; }   // (gated level: near 0 -> 0, PERF voice gating)
+        else if (Math.abs(v - this.v) <= e) return;
+        this.v = v;
+        if (this.dg && !this.dg.on) { this.pend = true; return; }   // (its gate is closed: applied when it opens)
+        this.p.setTargetAtTime(v, now, tau);
+        if (this.g) { if (v === 0) this.q = now + 12 * tau; else { this.q = Infinity; wake(this.g, 0); } }
       }
-      snap(v) { if (!fin(v)) return; this.v = v; this.p.cancelScheduledValues(now); this.p.setValueAtTime(v, now); }
+      snap(v) {
+        if (!fin(v)) return;
+        this.v = v;
+        if (this.dg && !this.dg.on) { this.pend = true; return; }
+        this.p.cancelScheduledValues(now); this.p.setValueAtTime(v, now);
+        if (this.g) { this.q = v === 0 ? now : Infinity; if (v !== 0) wake(this.g, 0); }
+      }
     }
     const P = (p, e) => new Sm(p, e);
     const sm = {
@@ -88776,6 +89058,24 @@ const SFX = (() => {
       v.sF1 = P(v.o1.frequency, -0.002); v.sF2 = P(v.o2.frequency, -0.002); v.sVol = P(v.vol.gain, 0.0005);
       v.sLp = P(v.lp.frequency, -0.01); v.sPan = v.pan ? P(v.pan.pan, 0.01) : null;
     }
+
+    // PERF voice gates on smoothed levels: gateSm(gate, level Sms, dependent Sms (pitch / filter of the same sub-graph))
+    const gateSm = (g, lv, dep) => { if (!GATE) return; for (const s of lv) { s.g = g; g.sms.push(s); } for (const s of dep || []) { s.dg = g; g.deps.push(s); } };
+    gateSm(gate(T.bpTone, fxBus), [sm.tyT], [sm.tyF, sm.tyBt]);
+    gateSm(gate(T.bpNoise, fxBus), [sm.tyN], [sm.tyBn]);
+    gateSm(gate(T.lpScrub, fxBus), [sm.tyS]);
+    gateSm(gate(K.gate, fxBus), [sm.kGate], [sm.kF]);
+    gateSm(gate(S.lpGrass, fxBus), [sm.grass]);
+    gateSm(gate(S.lpGravel, fxBus), [sm.gravel], [sm.gravBp]);
+    gateSm(gate(S.lpRumble, fxBus), [sm.rumble]);
+    gateSm(gate(Rn.hiss, fxBus), [sm.rH]);
+    gateSm(gate(Rn.pat, fxBus), [sm.rP]);
+    gateSm(gate(Rn.roar, fxBus), [sm.rR]);
+    gateSm(gate(Rn.sprayBp, fxBus), [sm.rS], [sm.rSf]);
+    gateSm(gate(E.bpK, engBus), [sm.kG], [sm.k1, sm.k2, sm.kBp]);
+    for (const v of AIV) gateSm(gate(v.pan || v.lp, aiBus), [v.sVol], [v.sF1, v.sF2, v.sLp].concat(v.sPan ? [v.sPan] : []));
+    Bp.gt = gate(Bp.g, fxBus);
+    E.popGt = gate(E.popLp, engBus);
 
     { const t0 = ctx.currentTime + 0.03; for (const s of toStart) { if (s.buffer) s.start(t0, s._off || 0); else s.start(t0); } }
 
@@ -88838,6 +89138,7 @@ const SFX = (() => {
       ramp(v.f.frequency, t, s.fc || 16000, 1); v.f.Q.cancelScheduledValues(t); v.f.Q.setValueAtTime(s.q || 0.7, t);
       setPan(v, t, s.pan);
       const a = s.a || 0.005, h = s.h || 0, d = s.d || 0.15;
+      wake(v.gt, envEnd(t, a, h, d));
       env(v.vca.gain, t, s.v || 0.2, a, h, d);
       v.busy = t + a + h + d; stats.cues++;
     }
@@ -88847,6 +89148,7 @@ const SFX = (() => {
       ramp(v.f.frequency, t, s.fc || 1000, 1); v.f.Q.cancelScheduledValues(t); v.f.Q.setValueAtTime(s.q || 1, t);
       setPan(v, t, s.pan);
       const a = s.a || 0.002, h = s.h || 0, d = s.d || 0.1;
+      wake(v.gt, envEnd(t, a, h, d));
       env(v.vca.gain, t, s.v || 0.2, a, h, d);
       v.busy = t + a + h + d; stats.cues++;
     }
@@ -88854,12 +89156,14 @@ const SFX = (() => {
     // ---------- engine one-shots
     function popAt(t, amp, fc, q, dec) {
       const v = E.pops[st.popIdx++ & 3];
+      wake(E.popGt, t + 0.002 + 12 * dec / 3 + 0.01);
       v.bp.frequency.setValueAtTime(fc, t); v.bp.Q.setValueAtTime(q, t);
       const g = v.g.gain; g.cancelScheduledValues(t);
       g.setTargetAtTime(amp, t, 0.0004); g.setTargetAtTime(0, t + 0.002, dec / 3);
     }
     function bangAt(t, amp) {
       const f = E.bang.frequency, g = E.gBang.gain;
+      wake(E.popGt, t + 0.006 + 12 * 0.025 + 0.01);
       f.cancelScheduledValues(t); f.setValueAtTime(110 + 50 * rnd(), t); f.exponentialRampToValueAtTime(45, t + 0.07);
       g.cancelScheduledValues(t); g.setTargetAtTime(amp, t, 0.001); g.setTargetAtTime(0, t + 0.006, 0.025);
     }
@@ -88900,6 +89204,7 @@ const SFX = (() => {
       const t = now + 0.02;
       if (now < CR.until && peak < CR.peak) return;      // a lap cheer never cuts a finish cheer short
       CR.peak = peak; CR.until = t + hold + 1.5;
+      wake(CR.gt, t + hold + (big ? 0.8 + 12 * 1.5 : 12 * 0.9) + 0.05);
       for (const e of CR.envs) { const g = e.gain; g.cancelScheduledValues(t); g.setTargetAtTime(peak, t, big ? 0.45 : 0.3); g.setTargetAtTime(0, t + hold, big ? 1.5 : 0.9); }
       const cg = CR.clap.gain; cg.cancelScheduledValues(t);
       cg.setTargetAtTime(peak * (big ? 0.5 : 0.2), t + 0.25, big ? 0.5 : 0.3); cg.setTargetAtTime(0, t + hold + (big ? 0.8 : 0), big ? 1.4 : 0.8);
@@ -88912,7 +89217,7 @@ const SFX = (() => {
     function airGuns(t, dur) {
       const k = dur > 1 ? clamp(dur / 2.6, 0.7, 1.6) : 1;
       const plan = [[0, 0, 0.34], [1, 0.07, 0.3], [0, 1.05 * k, 0.4], [1, 1.12 * k, 0.36]];   // loosen, then tighten
-      for (const g of GUN) g.env.gain.cancelScheduledValues(t);
+      for (const g of GUN) { g.env.gain.cancelScheduledValues(t); wake(g.gt, t + 1.25 * k + 0.5 + 12 * 0.012); }
       for (const [gi, s, len] of plan) {
         const g = GUN[gi], tb = t + s + rnd() * 0.04, f = g.lfo.frequency, f0 = gi ? 29 : 25;
         g.env.gain.setTargetAtTime(1.3, tb, 0.004); g.env.gain.setTargetAtTime(0, tb + len, 0.012);
@@ -89097,10 +89402,11 @@ const SFX = (() => {
     // pit limiter: steady beeps scheduled slightly ahead
     function limiter(c) {
       const on = !!c.pitLimiter, g = Bp.g.gain;
-      if (on && !Bp.on) { Bp.on = true; Bp.next = now + 0.03; } else if (!on && Bp.on) { Bp.on = false; g.cancelScheduledValues(now); g.setTargetAtTime(0, now, 0.005); }
+      if (on && !Bp.on) { Bp.on = true; Bp.next = now + 0.03; } else if (!on && Bp.on) { Bp.on = false; g.cancelScheduledValues(now); g.setTargetAtTime(0, now, 0.005); wake(Bp.gt, now + 12 * 0.005 + 0.01); }
       if (!Bp.on) return;
       while (Bp.next < now + 0.15) {
         const t = Math.max(Bp.next, now + 0.005);
+        wake(Bp.gt, t + 0.085 + 12 * 0.006 + 0.01);
         g.setTargetAtTime(0.075, t, 0.002); g.setTargetAtTime(0, t + 0.085, 0.006);
         Bp.next = t + 0.29;
       }
@@ -89135,7 +89441,7 @@ const SFX = (() => {
 
     function silenceCar() {
       for (const k of ['level', 'tG', 'tA', 'kG', 'gw', 'tyT', 'tyN', 'tyS', 'kGate', 'grass', 'gravel', 'rumble', 'wG', 'wTurb', 'rH', 'rP', 'rR', 'rS']) sm[k].set(0, 0.06);
-      if (Bp.on) { Bp.on = false; Bp.g.gain.cancelScheduledValues(now); Bp.g.gain.setTargetAtTime(0, now, 0.005); }
+      if (Bp.on) { Bp.on = false; Bp.g.gain.cancelScheduledValues(now); Bp.g.gain.setTargetAtTime(0, now, 0.005); wake(Bp.gt, now + 12 * 0.005 + 0.01); }
       st.fade = 0; st.nextPop = 0;
     }
     function resetCar() {
@@ -89203,7 +89509,7 @@ const SFX = (() => {
       dt = clamp(num(dt, 1 / 60), 0, 0.1);
       lastWall = wallNow(); stats.updates++;
       let dirty = stats.updates === 1;
-      linkTick();
+      linkTick(); gateTick();
       if (stalled) { stalled = false; dirty = true; }
       const gp = !!G.paused; if (gp !== lastGPaused) { lastGPaused = gp; paused = gp; dirty = true; }
       const scr = G.screen, ok = scr == null || scr === 'race' || scr === 'results';
@@ -89255,7 +89561,7 @@ const SFX = (() => {
     }
     if (opt.realtime && typeof setInterval !== 'undefined') {
       // the game stopped calling update (attract mode, hidden tab, stopped loop): fade the car sounds out
-      setInterval(() => { if (!stalled && stats.updates > 0 && wallNow() - lastWall > 400) { stalled = true; applyGame(0.12); } linkTick(); }, 200);
+      setInterval(() => { if (!stalled && stats.updates > 0 && wallNow() - lastWall > 400) { stalled = true; applyGame(0.12); } linkTick(); gateTick(); }, 200);
     }
     setVolume(vol);
     return {
@@ -92199,6 +92505,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-12 16:51 -->
+<!-- Apex GP build 2026-10-14 08:22 -->
 </body>
 </html>
