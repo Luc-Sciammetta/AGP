@@ -1886,6 +1886,35 @@ html.agp-touch .agp-stp-who { margin: -.2em 0 .7em; }
 html.agp-touch .agp-stp-grid { grid-template-columns: repeat(auto-fill, minmax(17em, 1fr)); }
 html.agp-touch .agp-stp-cards { grid-template-columns: repeat(auto-fill, minmax(23em, 1fr)); }
 
+/* ---------------------------------------------------------------- proximity arrows (hud.js updateProx)
+   A pool of chevron pairs around the player's car, each turned outward at the car it points to. The ring's centre is a point
+   (the same 64 % height in every camera: the chase view's car; the cockpit / T-cam bottom centre); hud.js moves each arrow on its ellipse with a transform.
+   PERF: only opacity + transform ever change, on composited layers: the arrow (fade + move + turn), and a red copy of the glyph
+   stacked over the white one (its opacity = the red blend; no colour change = no repaint). The glyph is rasterised once. */
+.agp-prox-ring { position: absolute; left: 50%; top: 64%; width: 0; height: 0; pointer-events: none; }
+.agp-prox { --pw: max(4em, 32px); position: absolute; left: calc(var(--pw) * -.5); top: calc(var(--pw) * -.5); width: var(--pw); height: var(--pw);
+  pointer-events: none; opacity: 0; will-change: opacity, transform; }
+.agp-prox-w, .agp-prox-r { display: block; }
+.agp-prox-r { position: absolute; inset: 0; opacity: 0; will-change: opacity; }
+.agp-prox svg { display: block; width: 100%; height: 100%; fill: none; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.agp-prox-w svg { stroke: #fff; filter: drop-shadow(0 0 .1em rgba(0, 0, 0, .95)) drop-shadow(0 .12em .3em rgba(0, 0, 0, .6)); }   /* (a tight dark rim: legible on the white nose too) */
+.agp-prox-r svg { stroke: #ff2433; filter: drop-shadow(0 .12em .3em rgba(0, 0, 0, .6)) drop-shadow(0 0 .45em rgba(255, 36, 51, .55)); }
+
+/* ---------------------------------------------------------------- loading screen (main.js withLoading)
+   Shown for a wait over ~250 ms only: the fade-in is a CSS animation with a 250 ms delay, so a shorter wait never shows it,
+   and once it is up the compositor keeps the fade and the bar moving while the main thread is busy with the build. */
+.agp-load { position: fixed; inset: 0; z-index: 80; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 60%, #1b2233 0%, #07080c 70%); opacity: 0; will-change: opacity; touch-action: none;
+  animation: agp-ld-in .25s ease-out .25s forwards; user-select: none; -webkit-user-select: none; }
+@keyframes agp-ld-in { to { opacity: 1; } }
+.agp-ld-logo { font: italic 900 clamp(40px, 9vmin, 64px)/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: -2px; color: #fff; }
+.agp-ld-logo span { color: #e10600; }
+.agp-ld-sub { margin-top: 14px; font: 600 13px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 4px; color: #8a93a6; text-transform: uppercase; }
+.agp-ld-name { margin-top: 9px; min-height: 15px; font: 600 15px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: 1.5px; color: #dfe4ee; text-transform: uppercase; text-align: center; padding: 0 16px; }
+.agp-ld-bar { margin-top: 22px; width: 220px; height: 3px; background: #222a3a; overflow: hidden; border-radius: 2px; }
+.agp-ld-bar i { display: block; width: 40%; height: 100%; background: #e10600; animation: agp-ld-move 1.1s ease-in-out infinite; will-change: transform; }
+@keyframes agp-ld-move { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
 </style>
 </head>
 <body>
@@ -68490,7 +68519,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-14 08:22';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-16 14:01';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -69342,7 +69371,8 @@ const Awards = (() => {
     const c = w.car, d = c.driver || {};
     return { car: c, teamIndex: c.teamIndex != null ? c.teamIndex : w.r.teamIndex, code: c.code || w.r.code || '', name: w.r.name || ((d.first ? d.first + ' ' : '') + (d.last || c.name || '')).trim(),
       pos: w.pos, grid: w.grid, gained: w.gained, passes: w.ov, passed: w.lost, earned: w.earned, paceRank: w.paceRank, score: w.score, reason,
-      ranked: cands.map(x => ({ car: x.car, pos: x.pos, score: x.score, base: x.base, fan: x.fan, p: x.p })) };
+      ranked: cands.map(x => ({ car: x.car, pos: x.pos, score: x.score, base: x.base, fan: x.fan, p: x.p,
+        grid: x.grid, gained: x.gained, ov: x.ov, lost: x.lost, earned: x.earned, credit: x.credit, paceRank: x.paceRank, posR: x.posR, rec: x.rec, low: x.low, gap: x.gap, wetFrac: x.wetFrac, isFl: x.isFl })) };   // (the inputs of each term: the dev overlay, src/devinfo.js)
   }
 
   // the race's Driver of the Day, once per results array (G.race.dotd); null: time trial / no classification
@@ -69447,7 +69477,8 @@ const Awards = (() => {
     return { left: R, total, avail, maxRound: M, leader: L.ti, rows: out, clinched: clinchedRow ? clinchedRow.ti : null, clinchNext: cn, blurb, counts };
   }
 
-  return { dotd, driverOfDay, titleMaths, roundMax, _passCounts: passCounts, _passTally: passTally, _table: table };
+  return { dotd, driverOfDay, titleMaths, roundMax, _passCounts: passCounts, _passTally: passTally, _table: table, BONUS,
+    WEIGHTS: { RESULT, FREE, FAR_WIN, FAR_POD, PACE_UP, PACE_DOWN, PACE_FLOOR, PACE_TIE, FL_FINAL, FL_FAST, FAN_SD } };   // (WEIGHTS: the dev overlay)
 })();
 
 
@@ -74723,15 +74754,7 @@ const Render3D = (() => {
         const x = 512 + k * 256, y = 832; g.fillStyle = '#111418'; g.fillRect(x, y, 256, 128);
         g.fillStyle = c; g.fillRect(x, y + 100, 256, 18); fitText(g, t, x + 128, y + 54, 220, 60, '#fff'); reg(name, x, y, 256, 128);
       });
-      // team garage signs 128x16 (8 per row, 4 rows: up to 32 teams) at y=960 (before: 256x21, 4 per row, which ran
-      // off the atlas from the 13th team on)
-      TEAMS.slice(0, 32).forEach((t, k) => {
-        const x = (k % 8) * 128, y = 960 + Math.floor(k / 8) * 16;
-        g.fillStyle = t.primary; g.fillRect(x, y, 128, 16);
-        g.fillStyle = t.accent; g.fillRect(x, y + 14, 128, 2);
-        fitText(g, t.name.toUpperCase(), x + 64, y + 7.5, 120, 12, t.secondary);
-        shared.uv['team' + k] = [(x + 1) / W, 1 - (y + 16) / H, (x + 127) / W, 1 - y / H];
-      });
+      // (the garage team signs are drawn per track load: boxSigns)
     }, true, false);
   }
 
@@ -75026,12 +75049,46 @@ const Render3D = (() => {
   const srgbVec = (hex, v) => { _c1.set(hex); _c1.convertLinearToSRGB(); v.set(_c1.r, _c1.g, _c1.b); return v; };
 
   function globalG() { try { return typeof G !== 'undefined' ? G : null; } catch (e) { return null; } }
-  // the team using pit box k this race (Race.boxMap: a team from the bigger pool borrows the box of one that sits out;
-  // a custom livery races in its slot) -> [team, TEAMS index of the sign], else the box's own team
+  // the team using pit box k this race (Race.boxMap: a team from the bigger pool borrows the box of one that sits out; a custom
+  // livery races in its slot, in its own colours / name) -> { t: the car's team object, i: its TEAMS index }, or null: nobody
+  // uses this box (a team sitting the race out), its garage stays closed and bare. No cars at all (a bare track load, tests):
+  // every box shows its own team.
   function boxTeam(k) {
     const g = globalG(), cs = g && g.cars;
-    if (cs) for (const c of cs) if ((c.box != null ? c.box : c.teamIndex) === k) return [c.team || TEAMS[c.teamIndex] || TEAMS[0], c.teamIndex | 0];
-    return [TEAMS[k] || TEAMS[0], k];
+    if (cs && cs.length) {
+      for (const c of cs) if ((c.box != null ? c.box : c.teamIndex) === k) return { t: c.team || TEAMS[c.teamIndex] || TEAMS[0], i: c.teamIndex | 0 };
+      return null;
+    }
+    return { t: TEAMS[k] || TEAMS[0], i: k };
+  }
+  // team signs for the garage lintels, drawn for the teams in this race (a custom livery's own name too; the shared atlas only has
+  // the 30 pool names): a code badge (the logo) and the name on the team's colour. list: [{ k: box, t: team }] -> { tex, uv: {box: [u0, v0, u1, v1]} }
+  function boxSigns(list) {
+    const CW = 256, CH = 32, W = CW * 2, uv = {};
+    let H = 32; while (H < CH * Math.ceil(list.length / 2)) H *= 2;
+    const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const ink = (bg, ...pref) => { for (const h of pref) if (ratio(col(h), bg) >= 3) return h; return lum(bg) > 0.3 ? '#14161a' : '#ffffff'; };
+    const tex = canvasTex(W, H, g => {
+      g.fillStyle = '#14161a'; g.fillRect(0, 0, W, H);
+      list.forEach(({ k, t }, n) => {
+        const x = (n % 2) * CW, y = Math.floor(n / 2) * CH, bg = col(t.primary), c1 = ink(bg, t.secondary, t.accent), c2 = ink(bg, t.accent, t.secondary);
+        g.fillStyle = t.primary; g.fillRect(x, y, CW, CH);
+        g.fillStyle = c2; g.fillRect(x, y + CH - 4, CW, 2);
+        g.fillStyle = c1; g.beginPath(); g.arc(x + 20, y + 14, 11, 0, TAU); g.fill();
+        const fit = (txt, cx, cy, maxW, px, color) => {
+          const f = q => `italic 900 ${q}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+          g.font = f(px); const w = g.measureText(txt).width; if (w > maxW) { px = Math.floor(px * maxW / w); g.font = f(px); }
+          g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, cx, cy);
+        };
+        fit(String(t.short || t.name || '').slice(0, 3).toUpperCase(), x + 20, y + 14.5, 19, 10, t.primary);
+        fit(String(t.name || '').toUpperCase(), x + 142, y + 14, 200, 22, c1);
+        uv[k] = [(x + 2) / W, 1 - (y + CH - 2) / H, (x + CW - 2) / W, 1 - (y + 2) / H];
+      });
+    }, true, false);
+    tex.name = 'boxSigns'; tex.userData.boxes = list.map(x => x.k);   // (cell n = the n-th box: tests read it back)
+    own(tex);
+    return { tex, uv };
   }
   function readEnv(g) {
     const w = g && g.weather, st = g && g.settings;
@@ -76817,7 +76874,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
         }
       }
       (pit.boxS || []).forEach((bs, k) => {
-        const tc = col(boxTeam(k)[0].primary), bd = pit.boxD != null ? pit.boxD : (pitLaneAt(bs) || 0) + sd * 2.5;
+        const bt = boxTeam(k), tc = bt ? col(bt.t.primary) : col('#b8bcc2'), bd = pit.boxD != null ? pit.boxD : (pitLaneAt(bs) || 0) + sd * 2.5;   // (nobody in it: plain grey ends)
         const L = 6.4, Wd = 2.6;
         q(bs - L / 2, bs + L / 2, bd - Wd / 2, bd - Wd / 2 + 0.18, white);
         q(bs - L / 2, bs + L / 2, bd + Wd / 2 - 0.18, bd + Wd / 2, white);
@@ -77220,7 +77277,8 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     // deck ends ~0.2 m past the lane's inner edge, and its two poles stand on the wall side of that edge, >= 0.8 m clear of the lane
     const lhwW = pit.laneHalfW || 5, edgeE = s => { const v = pitLaneAt(s); return v == null ? Infinity : Math.abs(v) - lhwW; };
     (pit.boxS || []).forEach((bs, t) => {
-      const i = idxOf(bs), yaw = yawAt(i), tc = natural(boxTeam(t)[0].primary, 0.9), e0 = e0At(bs), e1 = e0 + th;
+      const bt = boxTeam(t); if (!bt) return;   // (no team in this box: no stand)
+      const i = idxOf(bs), yaw = yawAt(i), tc = natural(bt.t.primary, 0.9), e0 = e0At(bs), e1 = e0 + th;
       const sh = clamp(e1 + 1.65 - (edgeE(bs) + 0.2), 0, th - 0.25);
       const p = T.toWorld(bs, sd * (e1 + 0.9 - sh));
       S.box(p.x, 1.2, p.z, 4.0, 0.1, 1.5, yaw, cDark);
@@ -77229,8 +77287,10 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     });
   }
 
-  // Pit building. Ground floor: one open garage per team (epoxy floor, team-colour back wall + side partitions,
-  // tool cabinets, ceiling light strips), concrete pilasters between bays, team-colour lintel with the team name.
+  // Pit building. Ground floor: one open garage per team in the race (epoxy floor, back wall in the team's primary with a band
+  // in its secondary and accent colours, team-colour side partitions, tool cabinets, ceiling light strips), concrete
+  // pilasters between bays, team-colour lintel with the team's sign (logo badge + name; boxTeam / boxSigns: the car using the
+  // box this race, a custom livery in its own colours). A box nobody uses has a closed grey roller shutter and no sign.
   // Level 1: glass curtain wall (reflective GL material, mullions) behind a cantilevered balcony with a glass
   // balustrade. Level 2: set-back hospitality glass box with its own terrace. On top a canopy roof overhanging the
   // lane with a sponsor fascia and down-lights; stair cores at both ends.
@@ -77252,10 +77312,11 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     };
     const W = (s, e, y) => { const p = T.toWorld(s, sd * e); return [p.x, y, p.z]; };
     const nrm = (s, sgn) => { const i = idxOf(s); return [-sd * T.nx[i] * sgn, 0, -sd * T.nz[i] * sgn]; };
-    const bays = pit.boxS.map((b, k) => ({ s: b, k }));
+    const bays = pit.boxS.map((b, k) => ({ s: b, k, bt: boxTeam(k) }));   // (bt null: nobody in this box)
     const bayHalf = Math.min(sp * 0.5, 8);
     const bayAt = s => { for (const b of bays) if (Math.abs(T.deltaS(b.s, s)) < bayHalf - 0.8) return b; return null; };
-    const teamC = b => natural(boxTeam(b.k)[0].primary, 0.9);
+    const teamC = b => natural(b.bt.t.primary, 0.9);
+    const cShut = col('#8a9097'), cShutD = col('#6b7178');
     // front face strip between heights y0..y1 at outward offset de from the facade (negative = towards the lane)
     const face = (g, s0, s1, e0, e1, de, y0, y1, n, c) => g.quad(W(s0, e0 + de, y0), W(s1, e1 + de, y0), W(s1, e1 + de, y1), W(s0, e0 + de, y1), n, c);
     const flat = (g, s0, s1, e0, e1, a, b, y, up, c) => g.quad(W(s0, e0 + a, y), W(s1, e1 + a, y), W(s1, e1 + b, y), W(s0, e0 + b, y), [0, up, 0], c);
@@ -77265,13 +77326,18 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       const e0 = frontE(s0), e1 = frontE(s1), bay = bayAt(mid);
       const nF = nrm(mid, 1), nB = nrm(mid, -1);
       // ground floor
-      if (bay) {
-        const tc = teamC(bay);
+      if (bay && !bay.bt) {   // closed: a roller shutter with slats, plain lintel
+        face(S, s0, s1, e0, e1, 0, 0, openH, nF, cShut);
+        for (let y = 0.45; y < openH - 0.2; y += 0.45) face(S, s0, s1, e0, e1, -0.03, y, y + 0.08, nF, cShutD);
+        face(S, s0, s1, e0, e1, 0, openH, lin1, nF, cConc);
+      } else if (bay) {
+        const tc = teamC(bay), tb = natural(bay.bt.t.secondary, 0.9), ta = natural(bay.bt.t.accent, 0.9);
         flat(S, s0, s1, e0, e1, 0, gDep, 0.012, 1, cFloor);
         flat(S, s0, s1, e0, e1, gDep - 0.6, gDep, 1.1, 1, cCabTop);
         face(S, s0, s1, e0, e1, gDep - 0.6, 0, 1.1, nF, scaled(cCab, 1.25));
         face(S, s0, s1, e0, e1, gDep, 1.1, openH, nF, scaled(tc, 0.72));
-        face(S, s0, s1, e0, e1, gDep - 0.02, 2.6, 3.3, nF, scaled(cSlab, 0.9));
+        face(S, s0, s1, e0, e1, gDep - 0.02, 2.6, 3.3, nF, tb);   // (livery bands: secondary, accent line above)
+        face(S, s0, s1, e0, e1, gDep - 0.02, 3.3, 3.45, nF, ta);
         flat(S, s0, s1, e0, e1, 0, gDep, openH, -1, scaled(cUnder, 0.55));
         for (const le of [2.5, 6.0, 9.5]) flat(E, s0 + 0.05, s1 - 0.05, e0, e1, le, le + 0.35, openH - 0.02, -1, cLight);
         face(S, s0, s1, e0, e1, 0, openH, lin1, nF, tc);
@@ -77310,7 +77376,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     }
     for (let u = 2; u < len; u += 4) { const s = g0 + u, e = frontE(s); beam(S, W(s, e - 2.3, sl1), W(s, e - 2.3, sl1 + 1.05), 0.05, 0.05, cMull); }
     // bay partitions (team colour), pilaster accents
-    for (const b of bays) for (const edge of [-1, 1]) {
+    for (const b of bays) if (b.bt) for (const edge of [-1, 1]) {
       const se = b.s + edge * (bayHalf - 0.8), ee = frontE(se), i = idxOf(se), n = [T.tx[i] * -edge, 0, T.tz[i] * -edge];
       S.quad(W(se, ee, 0), W(se, ee + gDep, 0), W(se, ee + gDep, openH), W(se, ee, openH), n, mixc(teamC(b), cWall, 0.45));
       const sa = se + edge * 0.15, sb = se + edge * 0.45, ea = frontE(sa);
@@ -77326,12 +77392,21 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       GL.quad(W(s + sg * 6.21, e + depth * 0.62 - 2.5, 2), W(s + sg * 6.21, e + depth * 0.62 + 2.5, 2), W(s + sg * 6.21, e + depth * 0.62 + 2.5, H + 1.5), W(s + sg * 6.21, e + depth * 0.62 - 2.5, H + 1.5), n, cGl1);
     }
     // team name boards on the lintels (readable from the lane) + sponsor banners along the canopy fascia
-    for (const b of bays) {
-      const uv = shared.uv['team' + boxTeam(b.k)[1]]; if (!uv) continue;
-      const e = frontE(b.s) - 0.05, hw = Math.min(bayHalf - 1.2, 6);
-      const y0 = openH + 0.18, y1 = openH + 0.84;
-      const L = W(b.s + hw * sd, e, 0), R = W(b.s - hw * sd, e, 0);
-      B.quad([L[0], y0, L[2]], [R[0], y0, R[2]], [R[0], y1, R[2]], [L[0], y1, L[2]], nrm(b.s, 1), col('#ffffff'), [uv[0], uv[1], uv[2], uv[1], uv[2], uv[3], uv[0], uv[3]]);
+    {
+      const used = bays.filter(b => b.bt), SG = new Geo();
+      if (used.length) {
+        const sg = boxSigns(used.map(b => ({ k: b.k, t: b.bt.t })));
+        for (const b of used) {
+          const uv = sg.uv[b.k], hw = Math.min(bayHalf - 1.2, 6), y0 = openH + 0.18, y1 = openH + 0.84, NS = 6;
+          // (in NS pieces, each on the facade where it is: the front line is not always parallel to the track)
+          for (let j = 0; j < NS; j++) {
+            const sa = b.s + hw * sd * (1 - 2 * j / NS), sb = b.s + hw * sd * (1 - 2 * (j + 1) / NS);
+            const L = W(sa, frontE(sa) - 0.06, 0), R = W(sb, frontE(sb) - 0.06, 0), ua = uv[0] + (uv[2] - uv[0]) * j / NS, ub = uv[0] + (uv[2] - uv[0]) * (j + 1) / NS;
+            SG.quad([L[0], y0, L[2]], [R[0], y0, R[2]], [R[0], y1, R[2]], [L[0], y1, L[2]], nrm(b.s, 1), col('#ffffff'), [ua, uv[1], ub, uv[1], ub, uv[3], ua, uv[3]]);
+          }
+        }
+        addMesh(SG, lambert({ vertexColors: true, map: sg.tex }), { cast: true, chunk: CHUNK });
+      }
     }
     let bk = 0;
     for (let u = 5; u + 5 < len; u += 11) {
@@ -77361,7 +77436,9 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       const i = idxOf(bs), yaw = yawAt(i);
       const e = fe(bs) + dep + 13, p = T.toWorld(bs, sd * e);
       if (!clearOf(p.x, p.z, yaw, 5.5, 4, 3)) return;
-      const t = boxTeam(k)[0];
+      const bt = boxTeam(k);
+      if (!bt) { occRect(p.x, p.z, yaw, 8, 6, true); return; }   // (no team in this box: no motorhome, the plot stays free of scenery)
+      const t = bt.t;
       S.box(p.x, 3.0, p.z, 11, 6.0, 8, yaw, natural(t.primary, 0.9), col('#e8e8e8'));
       const p2 = T.toWorld(bs, sd * (e - 4.05)); S.box(p2.x, 5.2, p2.z, 10, 0.8, 0.1, yaw, natural(t.secondary, 0.9));
       occRect(p.x, p.z, yaw, 8, 6, true);
@@ -82268,12 +82345,12 @@ const Render2D = (() => {
     g.lineWidth = 0.45; g.stroke(S.limiter);
     for (const b of S.boxes) {
       // the car using this box this race (Race.boxMap: a team from the bigger pool borrows a free one; a custom livery
-      // races in its slot: its colours), else the box's own team
-      let tm = (typeof TEAMS !== 'undefined' && TEAMS[b.team]) || null;
+      // races in its slot: its colours); nobody in it (a team sitting the race out): plain grey. No cars at all: the box's own team
       const cs = typeof G !== 'undefined' && G.cars;
-      if (cs) for (const c of cs) if ((c.box != null ? c.box : c.teamIndex) === b.team) { tm = c.team || tm; break; }
-      g.fillStyle = tm ? tm.primary : '#888'; g.globalAlpha = 0.55; g.fill(b.box); g.globalAlpha = 1;
-      g.fillStyle = tm ? tm.primary : '#888'; g.fill(b.front);
+      let tm = !(cs && cs.length) && typeof TEAMS !== 'undefined' ? TEAMS[b.team] || null : null;
+      if (cs) for (const c of cs) if ((c.box != null ? c.box : c.teamIndex) === b.team) { tm = c.team || (typeof TEAMS !== 'undefined' ? TEAMS[c.teamIndex] : null) || null; break; }
+      g.fillStyle = tm ? tm.primary : '#888'; g.globalAlpha = tm ? 0.55 : 0.2; g.fill(b.box); g.globalAlpha = 1;
+      g.fillStyle = tm ? tm.primary : '#6d727a'; g.fill(b.front);
     }
     g.fillStyle = '#f4f4f4'; g.fill(S.chequerW);
     g.fillStyle = '#111214'; g.fill(S.chequerB);
@@ -82417,6 +82494,7 @@ const HUD = (() => {
   let tTower = 9, tTiming = 9;
   let revEls = [], lampEls = [], secEls = [], secTimeEls = [], secFillEls = [], tyreEls = [], pitOpts = {};
   let st = null;          // per-race transient state
+  const PX = { s: null, rm: false, u: 1, k: null, root: null, view: '', vis: true, mv: null, pj: null };   // proximity arrows (a pool around the car): see updateProx
 
   // ---------- tiny helpers: write only on change ----------
   const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -82645,6 +82723,7 @@ const HUD = (() => {
     E.pcT = E.pitClock.querySelector('[data-pc="t"]'); E.pcBar = E.pitClock.querySelector('[data-pc="bar"]'); E.pcNote = E.pitClock.querySelector('[data-pc="note"]');
     E.hud.appendChild(E.pitClock);
     E.hud.appendChild(E.limSign);
+    proxInit();
     revEls = Array.from(E.revs.children);   // (PERF: the NREV + 1 lit-count strips + the pit-limiter strip, see REV_STRIPS)
     lampEls = Array.from(root.querySelectorAll('.agp-lamp'));
     secEls = Array.from(E.tmSecs.children);
@@ -82679,7 +82758,7 @@ const HUD = (() => {
     shown = !!v;
     if (!root) return;
     root.classList.toggle('agp-off', !shown);
-    if (shown) { MAP.dirty = true; tTower = tTiming = 9; }
+    if (shown) { MAP.dirty = true; tTower = tTiming = 9; } else proxReset();
   }
 
   function resetRace(G) {
@@ -82694,6 +82773,7 @@ const HUD = (() => {
     towerCars = null;
     cueHold = 0; cueIdle = 0; cueLast = '';   // (braking cue)
     ZM.h = null;                              // (zoomed minimap: the heading snaps to the new session's car)
+    proxReset();                              // (proximity arrows: off)
     gbOrd.clear();                            // (give-back orders)
     if (E.banners) { E.banners.textContent = ''; banners.length = 0; E.rc.textContent = ''; feed.length = 0; }
   }
@@ -82719,6 +82799,7 @@ const HUD = (() => {
     if ((tTiming += dt) >= TIMING_DT) { tTiming = 0; updateTiming(G, car); updateTurn(G, car); }
     if ((tTower += dt) >= TOWER_DT) { tTower = 0; updateTower(G); }
     updateMap(G, fdt);   // every frame: blit-free overlay of ~20 dots (full map: static track on its own canvas; zoomed: drawZoom)
+    updateProx(G, car, dt > 0 ? Math.min(dt, 0.1) : 0);
     tickBanners(fdt);
   }
 
@@ -84290,6 +84371,149 @@ const HUD = (() => {
   }
   // ==================== end qualifying ====================
 
+  // ==================== proximity arrows ====================
+  // Arrows around the player's car pointing at the cars beside / close behind it (as in the F1 games): each arrow sits on an
+  // ellipse around where the car is on screen, at the other car's bearing in the player's frame (0 = ahead, +90 = right,
+  // 180 = behind), turned to point outward (radially) at it: right, left, behind-left, behind-right, ahead-right ...
+  // One arrow per car from a pool of PX_N (made once, never created per frame). A car's strength, in the player's frame
+  // (f ahead, l to the right, metres, between body centres; a car is 5.6 x 1.9 m):
+  //   - in line (|l| < ~1 m) it is no side car; beside (|l| >= ~1.9 m) from there out to ~4.6 m the arrow is full, then
+  //     it fades to nothing by ~7.8 m (a car-width or two of grass / track between);
+  //   - along the car: full from 4.6 m behind to 4.6 m ahead (bodies overlapping), fading in over the 9 m behind and out
+  //     over the 5 m ahead (you see a car ahead);
+  //   - it turns red while the cars overlap (|f| < ~5.6 m) and are within ~4.8 m laterally (alongside).
+  // Opacity eases (quick in, slow out), the red blend eases, and both are Schmitt-triggered (arm 0.06 / drop 0.02; red 0.7 / 0.3
+  // of the alongside score) so a car hovering at a threshold cannot flicker; the bearing is smoothed too (tau 0.08 s, no jitter).
+  // The arrow sits further out the weaker it is (it slides in from outside the ellipse as it fades in, up to 20 % out). The
+  // ring's centre is a fixed spot (CSS .agp-prox-ring, 50 % x 64 %: where the chase car sits, the bottom centre of the cockpit /
+  // T-cam view); the ellipse is per camera (PX_RING) and scales with the window (PX.u).
+  // A car the player can already SEE in the main view needs no arrow: each held arrow's car is projected with the last drawn main
+  // camera (Render3D.camera; its centre, one projection per arrow, no allocation). In front of the camera and inside the screen
+  // (soft edge: fully in to 90 % of the half-screen, out from 110 %, so a car on the screen edge counts half) the arrow fades to
+  // 1 - PXC.seen = 18 % (the red copy is its child, so it fades with it); beside / behind off the screen = full. Eased (PXC.visTau),
+  // and a new arrow starts at its car's current value: nothing pops as a car crosses the screen edge or the camera cuts.
+  // PERF: opacity + transform of 2 composited layers per arrow only (no layout, no paint); nothing is written while idle.
+  // Race and qualifying on-track laps only (not paused, in the pit lane, garage, top view, replays / menus).
+  const PXC = { reach2: 484, latA: 0.7, latB: 1.9, latC: 4.6, latD: 7.8, full: 4.6, back: 9, ahead: 5, ovA: 4.8, ovB: 6.4, alA: 4.0, alB: 5.6, tau: 0.08, seen: 0.82, visTau: 0.14, vIn: 0.9, vOut: 1.1, vNear: 0.3, vLift: 0.45 };
+  const PX_N = 4;
+  const PX_RING = { chase: [180, 112], cockpit: [320, 95], tcam: [320, 95] };   // semi-axes (x, y) in px of a 1280 x 720 window
+  const PX_DEG = 180 / Math.PI;
+  const _px = { w: 0, al: 0, f: 0, l: 0, ch: 1, sh: 0 };
+  const sstep = (x, a, b) => { x = (x - a) / (b - a); return x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x); };
+  function proxInit() {
+    const svg = '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 31 32 9 54 31M10 55 32 33 54 55"/></svg>';   // chevron pair pointing up
+    const root = document.createElement('div');
+    root.className = 'agp-prox-ring';
+    PX.s = [];
+    for (let i = 0; i < PX_N; i++) {
+      const el = document.createElement('div');
+      el.className = 'agp-prox';
+      el.innerHTML = '<div class="agp-prox-w">' + svg + '</div><div class="agp-prox-r">' + svg + '</div>';
+      root.appendChild(el);
+      PX.s.push({ el, red: el.lastChild, car: null, vw: null, vis: 0, arm: false, hit: false, v: 0, r: 0, b: 0, ov: 0, or: 0, ot: '', x: 0, y: 0, th: 0 });
+    }
+    E.hud.appendChild(root);
+    PX.root = root; PX.view = ''; PX.k = PX_RING.chase;
+    PX.rm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;   // (no sliding)
+    const size = () => { PX.u = Math.min(innerHeight / 720, innerWidth / 1280) || 1; };
+    size(); addEventListener('resize', size);
+  }
+  function proxReset() {
+    if (!PX.s) return;
+    for (const s of PX.s) {
+      s.car = null; s.vw = null; s.vis = 0; s.arm = s.hit = false; s.v = s.r = 0;
+      if (s.ov || s.or || s.ot) { s.ov = s.or = 0; s.ot = ''; s.el.style.opacity = '0'; s.red.style.opacity = '0'; s.el.style.transform = ''; }
+    }
+  }
+  function proxOn(G, car) {
+    const r = G.race;
+    if (G.settings && G.settings.proxArrows === false) return false;   // (Settings > Display > Proximity arrows)
+    if (!r || G.paused || G.attract || G.screen !== 'race' || G.view === 'top' || r.mode === 'timetrial' || car.finished || car.dnf || car.inPitLane) return false;
+    if (r.phase === 'racing') return true;
+    if (r.phase !== 'quali' || r.awaitConfirm) return false;
+    const q = car.qSt;
+    return q === 'out' || q === 'push' || q === 'cool' || q === 'in';   // (qualifying: out on the track, not in the garage / a break / knocked out)
+  }
+  // o as a source for the player's car: false (no source / out of reach) or true with _px = { w: strength, al: alongside, f, l }
+  function proxScore(car, o) {
+    if (o === car || o.dnf || o.ghosted || o.inPitLane || o.qSt === 'garage' || o.qSt === 'parked') return false;
+    const dx = o.x - car.x, dz = o.z - car.z, K = PXC;
+    if (!(dx * dx + dz * dz < K.reach2)) return false;
+    const f = dx * _px.ch + dz * _px.sh, l = dz * _px.ch - dx * _px.sh, a = l < 0 ? -l : l, af = f < 0 ? -f : f;
+    _px.f = f; _px.l = l;
+    _px.w = sstep(a, K.latA, K.latB) * (1 - sstep(a, K.latC, K.latD)) * (f < 0 ? 1 - sstep(-f, K.full, K.full + K.back) : 1 - sstep(f, K.full, K.full + K.ahead));
+    _px.al = (1 - sstep(af, K.ovA, K.ovB)) * (1 - sstep(a, K.alA, K.alB));
+    return true;
+  }
+  // how much of the main view car o (view vw: {y}, the drawn height) is in: 0 = off the screen / behind the camera, 1 = well inside it.
+  // The car's centre through the last drawn main camera (PX.mv = matrixWorldInverse, PX.pj = projectionMatrix, column-major).
+  function proxVis(vw, o) {
+    const m = PX.mv, p = PX.pj, K = PXC;
+    if (!m) return 0;
+    const x = o.x, y = (vw && vw.y || 0) + K.vLift, z = o.z;
+    const vx = m[0] * x + m[4] * y + m[8] * z + m[12], vy = m[1] * x + m[5] * y + m[9] * z + m[13], vz = m[2] * x + m[6] * y + m[10] * z + m[14];
+    const w = p[3] * vx + p[7] * vy + p[11] * vz + p[15];
+    if (!(w > K.vNear)) return 0;   // (behind the camera, or right beside it)
+    let nx = (p[0] * vx + p[4] * vy + p[8] * vz + p[12]) / w, ny = (p[1] * vx + p[5] * vy + p[9] * vz + p[13]) / w;
+    if (nx < 0) nx = -nx;
+    if (ny < 0) ny = -ny;
+    return 1 - sstep(nx > ny ? nx : ny, K.vIn, K.vOut);
+  }
+  function updateProx(G, car, dt) {
+    const S = PX.s;
+    if (!S) return;
+    const on = proxOn(G, car);
+    if (on) {
+      _px.ch = Math.cos(car.h); _px.sh = Math.sin(car.h);
+      const vw = G.view === 'cockpit' || G.view === 'tcam' ? G.view : 'chase';
+      if (vw !== PX.view) { PX.view = vw; PX.k = PX_RING[vw]; PX.root.dataset.v = vw; }
+      const cars = G.cars, r3 = PX.vis && typeof Render3D !== 'undefined' ? Render3D : null, cm = r3 && r3.camera;
+      PX.mv = cm ? cm.matrixWorldInverse.elements : null; PX.pj = cm ? cm.projectionMatrix.elements : null;
+      const vs = cm ? r3.views : null;
+      for (let i = 0; i < cars.length; i++) {   // a car that lights up takes a free (fully faded) arrow, unless it has one already
+        const o = cars[i];
+        if (!proxScore(car, o) || !(_px.w > 0.06)) continue;
+        let held = false, free = null;
+        for (let j = 0; j < PX_N; j++) { if (S[j].car === o) { held = true; break; } if (!free && !S[j].car) free = S[j]; }
+        if (!held && free) {
+          free.car = o; free.b = Math.atan2(_px.l, _px.f);
+          let cv = vs && vs[i] && vs[i].car === o ? vs[i] : null;   // (the car's drawn view: its height; views follow G.cars)
+          if (!cv && vs) for (let k = 0; k < vs.length; k++) if (vs[k].car === o) { cv = vs[k]; break; }
+          free.vw = cv; free.vis = PX.mv ? proxVis(cv, o) : 0;
+        }
+      }
+    }
+    for (let j = 0; j < PX_N; j++) proxSlot(S[j], on ? car : null, dt);
+  }
+  function proxSlot(s, car, dt) {
+    let w = 0, al = 0, vt = 0;
+    if (s.car && car && proxScore(car, s.car)) {
+      w = _px.w; al = _px.al; if (PX.mv) vt = proxVis(s.vw, s.car);
+      let d = Math.atan2(_px.l, _px.f) - s.b;
+      d -= Math.round(d / 6.283185307179586) * 6.283185307179586;   // (the short way round)
+      s.b += d * (1 - Math.exp(-dt / PXC.tau));
+    }
+    s.vis += (vt - s.vis) * (1 - Math.exp(-dt / PXC.visTau));   // (0 = off screen: full arrow; 1 = in plain view: 18 %)
+    s.arm = s.arm ? w > 0.02 : w > 0.06;
+    const tg = s.arm ? w : 0;
+    s.v += (tg - s.v) * (1 - Math.exp(-dt / (tg > s.v ? 0.09 : 0.28)));
+    s.hit = s.hit ? al > 0.3 : al > 0.7;
+    const rt = s.arm && s.hit ? 1 : 0;
+    s.r += (rt - s.r) * (1 - Math.exp(-dt / (rt > s.r ? 0.07 : 0.26)));
+    if (!tg && s.v < 0.004) { s.v = 0; if (s.car && !s.arm) { s.car = null; s.vw = null; s.vis = 0; } }   // (faded out: the arrow is free again)
+    if (!rt && s.r < 0.004) s.r = 0;
+    const op = Math.round(s.v * (1 - PXC.seen * s.vis) * 250) / 250, ro = Math.round(s.r * 250) / 250;   // (whole 0.4 % steps: no write for less)
+    if (op !== s.ov) { s.ov = op; s.el.style.opacity = op; }
+    if (ro !== s.or) { s.or = ro; s.red.style.opacity = ro; }
+    if (op > 0) {   // on the ellipse at the bearing (slid in from outside while it fades in), turned along the radius
+      const k = PX.k, u = PX.u, sn = Math.sin(s.b), cs = Math.cos(s.b), sc = PX.rm ? 1 : 1 + (1 - s.v) * 0.2;
+      const x = Math.round(k[0] * u * sn * sc * 10) / 10, y = Math.round(-k[1] * u * cs * sc * 10) / 10, th = Math.round(Math.atan2(k[0] * sn, k[1] * cs) * PX_DEG * 10) / 10;
+      const tr = 'translate(' + x + 'px,' + y + 'px) rotate(' + th + 'deg)';
+      if (tr !== s.ot) { s.ot = tr; s.x = x; s.y = y; s.th = th; s.el.style.transform = tr; }
+    }
+  }
+  // ==================== end proximity arrows ====================
+
   // (tests) the minimap's mode + the zoomed map's last transform: world (x, z) -> canvas px X = a*x - b*z + e, Y = b*x + a*z + f
   function mapInfo() {
     const a = Math.cos(ZM.rot) * ZM.k, b = Math.sin(ZM.rot) * ZM.k;
@@ -84309,6 +84533,8 @@ const HUD = (() => {
     },
     view: (G, car) => sectorView(G, car || G.player).map(v => ({ time: v.time, flag: v.flag, fill: v.fill })),
     get st() { return st; }, DL,
+    proxVis: on => { PX.vis = !!on; },   // (tests) false = no 'car in plain view' fade (the arrows as before it)
+    prox: () => (PX.s || []).map(s => ({ v: s.v, r: s.r, arm: s.arm, hit: s.hit, held: !!s.car, vis: s.vis, op: s.ov, red: s.or, bd: s.b * PX_DEG, x: s.x, y: s.y, th: s.th })),   // proximity arrows: eased opacity / red blend / bearing + what is written
   };
 
   return { init, update, setVisible, flash, onEvent, rewound, teamColor, teamColor2, teamBar, mapInfo, pauseMap,
@@ -84888,6 +85114,7 @@ const Menu = (() => {
     maxFps: 60,   // frame rate limit: 30 | 60 | 120 | 0 = unlimited (main.js frame cap)
     reflections: 'auto',   // puddle reflections: 'auto' | 'on' | 'off' (render3d)
     minimap: 'full',   // HUD minimap: 'full' (whole circuit) | 'zoom' (heading-up close-up around your car) | 'off'
+    proxArrows: true,   // HUD proximity arrows around your car (hud.js proxOn)
     engineer: true, engVoice: true, engVisual: true, engVerbosity: 'normal', engVoiceVol: 1, engVoiceName: '',   // race engineer (engineer_ui.js)
     music: true, musicVolume: 0.7,   // menu / pause / results music (Music; scaled by the master volume)
     engineMenus: false,   // the car's sounds on the pre-race entry list / grid + time-trial garage (results: always silent)
@@ -85285,6 +85512,7 @@ const Menu = (() => {
     { k: 'view', label: 'Default camera', type: 'cycle', opts: OPT.view, tab: 'display' },
     { k: 'mirror', label: 'Rear-view mirror', type: 'toggle', tab: 'display' },
     { k: 'minimap', label: 'Minimap', type: 'cycle', opts: OPT.minimap, tab: 'display' },   // full circuit / zoomed heading-up / off
+    { k: 'proxArrows', label: 'Proximity arrows', type: 'toggle', tab: 'display' },   // arrows around your car pointing at cars close by
     { k: 'fullscreen', label: 'Fullscreen', type: 'button', text: 'ON / OFF', tab: 'display', act: () => { if (window.AGP_toggleFullscreen) window.AGP_toggleFullscreen(); } },
     { k: 'graphics', label: 'Graphics quality', type: 'cycle', opts: OPT.graphics, tab: 'graphics' },
     { k: 'reflections', label: 'Puddle reflections', type: 'cycle', opts: OPT.reflections, tab: 'graphics' },
@@ -90681,6 +90909,7 @@ const Net = (() => {
   function emote(k) { send({ t: 'emote', k }); }
 
   // ---------------------------------------------------------------- session (main.js glue)
+  let ldPass = false;   // (startRace re-entered from behind the loading screen)
   function startRace(setup) {
     if (setup.resume && S && lastSetup && lastSetup.seed === setup.seed) {   // same session still running (network blip)
       if (setup.sched) S.sched = setup.sched; if (setup.t0 != null) S.raceT0 = setup.t0;
@@ -90691,6 +90920,9 @@ const Net = (() => {
     if (!api || !api.Game) return;
     // (playing a single-player session meanwhile: not pulled out of it — the AI drives this car in the room's race)
     if (!S && !scr && !api.G.attract && (api.G.screen === 'race' || api.G.screen === 'results')) { flash('YOUR ROOM STARTED A SESSION', 'OPEN MULTIPLAYER WHEN YOU ARE DONE HERE', '#27d7f5', 4); return; }
+    // the build blocks the page for seconds: the loading screen first (painted before the build), then this again for the build
+    const LDG = api.Game.loading;
+    if (LDG && !ldPass) { LDG.run('Loading race', '', () => { ldPass = true; try { startRace(setup); } finally { ldPass = false; } }); return; }
     if (S) endSession(true);
     const G = api.G, base = settings();
     const s = NC.sessionSettings(base, setup);
@@ -91625,6 +91857,484 @@ const Net = (() => {
 window.Net = Net;
 
 
+// ===== src/devinfo.js =====
+// Apex GP — developer-info overlay (the \ key). Declares only `DevInfo`.
+//   \ shows / hides it, Shift+\ cycles its pages (a screen with more than one). Text only (monospace, semi-transparent, a corner),
+//   rebuilt about 4 times a second while shown; hidden = nothing runs but the key handler and a tiny event log. It reads game
+//   state and never writes it. It leaves out what the normal screen already shows (speed, gear, rpm, pedals, gaps, laps, times,
+//   points): only internals, computations and breakdowns.
+// main.js hooks: DevInfo.init(G, M, params) once; DevInfo.event(ev) for every game event (the log of penalties / deleted laps);
+//   DevInfo.on (a bool) gates the frame timing: when on, main calls DevInfo.frame(now, dt, simMs, renderMs, hudMs, totalMs, drawMode).
+// Pages: always a header (fps, frame split, draw calls, resolution, preset, heap, build, screen, seeds); race CAR / AI / WEATHER /
+//   PIT, qualifying QUALI / CAR / WEATHER, menus MENU, results DOTD / INPUTS / POINTS / CLASS / TITLE, NET while connected.
+const DevInfo = (() => {
+  let G = null, M = null, params = null, el = null, on = false;
+  const RING = 600;                                    // frames of history (10 s at 60 fps): average fps, 1 % low
+  const ring = new Float32Array(RING), scratch = new Float32Array(RING);
+  let rn = 0, rIdx = 0, frames = 0, lastN = 0, lastT = 0, fpsNow = 0, nextT = 0;
+  const ms = { sim: 0, render: 0, hud: 0, total: 0 };  // smoothed
+  let drawMode = '', page = 0, pageName = '', clipH = 0;
+  // ---- the log of what the stewards did (penalties, deleted laps, pit stops of the player) ----
+  const LOGGED = new Set(['penalty', 'penaltyApplied', 'penaltyServed', 'trackLimits', 'lapDeleted', 'giveBack', 'giveBackDone', 'jumpStart', 'fastestLap', 'pbRevoked', 'pitEntry', 'pitStop', 'pitExit', 'pitReady']);
+  const PIT_EV = new Set(['pitEntry', 'pitStop', 'pitExit', 'pitReady']);
+  let log = [], logRace = null, stats0 = null, lsT = 0, lsCache = null;
+  const num = v => typeof v === 'number' && isFinite(v);
+  const f = (v, d = 2) => (num(v) ? v.toFixed(d) : '-');
+  const pad = (s, n) => { s = String(s); return s.length >= n ? s : ' '.repeat(n - s.length) + s; };
+  const padR = (s, n) => { s = String(s); return s.length >= n ? s : s + ' '.repeat(n - s.length); };
+  const tm = t => (num(t) ? (typeof U !== 'undefined' ? U.fmtTime(t, 3) : t.toFixed(3)) : '-');
+  const kb = n => (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+  const SURFN = ['TRACK', 'KERB', 'RUNOFF', 'GRASS', 'GRAVEL', 'PIT', 'WALL'];
+  const teamCode = ti => { for (const c of (G && G.cars) || []) if (c.teamIndex === ti && c.code) return c.code; const t = typeof TEAMS !== 'undefined' ? TEAMS[ti] : null; return t ? t.driver.code : String(ti); };
+  const codeOf = c => (c && (c.code || (c.team && c.team.driver && c.team.driver.code))) || '???';
+
+  // ---------------------------------------------------------------- hooks
+  function init(g, m, p) {
+    G = g; M = m; params = p;
+    addEventListener('keydown', e => {
+      if (e.code !== 'Backslash' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))) return;
+      if (e.shiftKey) { if (on) { page++; refresh(true); } } else toggle();
+    });
+  }
+  function toggle() {
+    on = !on;
+    if (on && !el) {
+      el = document.createElement('div');
+      el.id = 'agp-dev';
+      el.style.cssText = 'position:fixed;left:6px;top:6px;font:11px/1.32 ui-monospace,Menlo,Consolas,monospace;color:#9f9;background:rgba(0,0,0,.6);padding:4px 8px;border-radius:4px;z-index:60;pointer-events:none;white-space:pre;overflow:hidden;max-width:calc(100vw - 12px);max-height:calc(100vh - 12px)';
+      document.body.appendChild(el);
+    }
+    if (el) el.style.display = on ? 'block' : 'none';
+    if (on) { rn = rIdx = frames = lastN = 0; lastT = 0; nextT = 0; refresh(true); }
+  }
+  // game event (main's event loop): keep what the debug pages need to explain a result
+  function event(ev) {
+    if (!G || G.attract || !G.race) return;
+    if (G.race !== logRace) { logRace = G.race; log = []; stats0 = snapStats(); }
+    if (!LOGGED.has(ev.type)) return;
+    const c = ev.car;
+    if (PIT_EV.has(ev.type) && !(c && c.isPlayer)) return;
+    if (ev.type === 'trackLimits' && ev.invalid == null && ev.n == null) return;
+    const parts = [];
+    for (const k of Object.keys(ev)) { const v = ev[k]; if (k === 'type' || k === 'car' || v == null || typeof v === 'object') continue; if (parts.length < 8) parts.push(k + '=' + (typeof v === 'number' ? (Math.abs(v) < 1000 ? +v.toFixed(3) : Math.round(v)) : v)); }
+    log.push({ t: G.race.t || 0, type: ev.type, car: c || null, code: codeOf(c), lap: ev.lap != null ? ev.lap : c ? c.lap : 0, txt: parts.join(' ') });
+    if (log.length > 400) log.splice(0, 100);
+  }
+  const profName = () => (G.settings && G.settings.playerName) || 'Player';
+  function snapStats() {   // the player's career numbers at the session's start (the results page diffs them: what the session committed)
+    try {
+      const S = typeof Stats !== 'undefined' ? Stats : null;
+      if (!S) return null;
+      const db = S._db, p = db && db.profiles && db.profiles[S.pid(profName())];
+      return p && p.c ? Object.assign({}, p.c) : { _none: 1 };
+    } catch (e) { return null; }
+  }
+  // main's frame loop (only while on): timings in ms
+  function frame(now, dt, simMs, renderMs, hudMs, totalMs, mode) {
+    ring[rIdx] = dt; rIdx = (rIdx + 1) % RING; if (rn < RING) rn++;
+    frames++;
+    const k = 0.1;
+    ms.sim += (simMs - ms.sim) * k; ms.render += (renderMs - ms.render) * k; ms.hud += (hudMs - ms.hud) * k; ms.total += (totalMs - ms.total) * k;
+    drawMode = mode || '';
+    if (now < nextT) return;
+    nextT = now + 250;
+    if (lastT) fpsNow = (frames - lastN) / ((now - lastT) / 1000);
+    lastT = now; lastN = frames;
+    refresh(false);
+  }
+  function refresh(force) {
+    if (!el || !on || !G) return;
+    let t;
+    try { t = build(); } catch (e) { t = 'DEV INFO error: ' + (e && e.message) + '\n' + String(e && e.stack || '').split('\n').slice(1, 3).join('\n'); }
+    if (force || t !== el._t) { el._t = t; el.textContent = t; }
+    // results / garage / final pages: end above the buttons so they are never covered
+    const cn = ctxName(), low = (cn === 'race' || cn === 'quali') && !(M.menu && M.menu.visible && M.menu.visible());
+    const bg = low ? 'rgba(0,0,0,.6)' : 'rgba(0,0,0,.86)';
+    if (bg !== el._bg) { el._bg = bg; el.style.background = bg; }
+    if (low !== el._low) { el._low = low; el.style.top = low ? 'auto' : '6px'; el.style.bottom = low ? '6px' : 'auto'; }
+    const b = cn === 'results' ? document.querySelector('.agp-rs-btns') : null;
+    const h = b && b.getBoundingClientRect ? Math.max(120, Math.floor(b.getBoundingClientRect().top - 14)) : 0;
+    if (h !== clipH) { clipH = h; el.style.maxHeight = h ? h + 'px' : 'calc(100vh - 12px)'; }
+  }
+
+  // ---------------------------------------------------------------- context + header
+  function ctxName() {
+    if (G.screen === 'results') return 'results';
+    if (G.screen === 'race' && !G.attract) {
+      const r = G.race;
+      return r && r.phase === 'quali' ? 'quali' : 'race';
+    }
+    return 'menu';
+  }
+  const netOn = () => !!(M.net && M.net.state && M.net.state.conn === 'open');
+  function pagesFor(c) {
+    const p = c === 'race' ? ['CAR', 'AI', 'WEATHER', 'PIT'] : c === 'quali' ? ['QUALI', 'CAR', 'WEATHER', 'PIT'] : c === 'results' ? ['DOTD', 'INPUTS', 'POINTS', 'CLASS', 'TITLE'] : ['MENU'];
+    if (netOn()) p.push('NET');
+    return p;
+  }
+  function fpsStats() {
+    let avg = 0, low = 0;
+    if (rn > 4) {
+      let sum = 0;
+      for (let i = 0; i < rn; i++) { const v = ring[i]; scratch[i] = v; sum += v; }
+      avg = rn / sum;
+      const a = scratch.subarray(0, rn); a.sort();
+      const w = Math.max(1, Math.floor(rn * 0.01));
+      let s = 0; for (let i = rn - w; i < rn; i++) s += a[i];
+      low = w / s;
+    }
+    return { avg, low };
+  }
+  function buildId() {
+    if (buildId_ !== null) return buildId_;
+    let b = '?';
+    try { const w = document.createTreeWalker(document, 128); for (let n = w.nextNode(); n; n = w.nextNode()) if (/Apex GP build/.test(n.data)) { b = n.data.replace(/[\s\S]*build\s*/, '').trim(); break; } } catch (e) { /* */ }
+    return (buildId_ = b + (typeof AGP_VERSION !== 'undefined' ? ' v' + AGP_VERSION : ''));
+  }
+  let buildId_ = null;
+  function header(c, names) {
+    const L = [];
+    const s = fpsStats();
+    L.push('DEV  ' + names.map((n, i) => (i === page ? '[' + n + ']' : n)).join(' ') + '   (\\ hide, Shift+\\ page)');
+    L.push('fps ' + f(fpsNow, 0) + '  avg ' + f(s.avg, 1) + '  1% low ' + f(s.low, 0) + '  | cpu ' + f(ms.total, 1) + ' ms = sim ' + f(ms.sim, 1) + ' + render ' + f(ms.render, 1) + ' + hud ' + f(ms.hud, 1) + ' + other ' + f(Math.max(0, ms.total - ms.sim - ms.render - ms.hud), 1) + '  | draw ' + (drawMode || '-') + ' cap ' + (G.settings && G.settings.maxFps));
+    const r = M.r3d, st = r && r.stats ? r.stats() : null, rr = r && r.renderer;
+    let res = '-';
+    if (rr) { const cv = rr.domElement; res = cv.width + 'x' + cv.height + ' @' + f(rr.getPixelRatio(), 2) + ' (dpr ' + f(window.devicePixelRatio, 2) + ')'; }
+    const mem = performance.memory;
+    L.push((st ? 'calls ' + st.calls + '  tris ' + (st.triangles >= 1e5 ? f(st.triangles / 1e3, 0) + 'k' : st.triangles) + '  geo ' + st.geometries + ' tex ' + st.textures + ' prog ' + st.programs : 'calls -') + '  | ' + res + '  | ' + String((r && r.quality) || (G.settings && G.settings.graphics) || '-').toUpperCase() +
+      (mem ? '  | heap ' + f(mem.usedJSHeapSize / 1048576, 0) + '/' + f(mem.totalJSHeapSize / 1048576, 0) + ' MB' : ''));
+    const race = G.race, W = G.weather;
+    let scr = G.screen + (G.attract ? ' (attract)' : '') + (G.paused ? ' PAUSED' : '');
+    if (M.menu && M.menu.visible && M.menu.visible() && M.menu.screen) scr += ' / menu:' + M.menu.screen();
+    if (race) scr += ' | ' + (race.mode || '') + (race.phase ? ' phase ' + race.phase : '');
+    L.push('build ' + buildId() + '  | ' + scr + '  | race seed ' + (race && race.seed != null ? race.seed : '-') + '  wx seed ' + (W && W.seed != null ? W.seed : '-'));
+    return L;
+  }
+  // lines longer than MAXW break at a ' | ' / double space, the rest indented (the overlay stays a narrow block in its corner)
+  const MAXW = 100;
+  function fit(lines) {
+    const out = [];
+    for (const ln of lines) {
+      let s = ln;
+      while (s.length > MAXW) {
+        let k = s.lastIndexOf(' | ', MAXW);
+        if (k < 30) k = s.lastIndexOf('  ', MAXW);
+        if (k < 30) k = s.lastIndexOf(' ', MAXW);
+        if (k < 30) k = MAXW;
+        out.push(s.slice(0, k));
+        s = '    ' + s.slice(k).replace(/^[\s|]+/, '');
+      }
+      out.push(s);
+    }
+    return out;
+  }
+  function build() {
+    const c = ctxName(), names = pagesFor(c);
+    const key = c + ':' + names.join();
+    if (key !== build._k) { const i = names.indexOf(pageName); page = i >= 0 ? i : 0; build._k = key; }
+    page = ((page % names.length) + names.length) % names.length;
+    pageName = names[page];
+    const L = header(c, names);
+    L.push('');
+    const fn = PAGES[pageName];
+    if (fn) fn(L);
+    return fit(L).join('\n');
+  }
+
+  // ---------------------------------------------------------------- pages
+  const PAGES = {};
+  const carOf = () => G.player || null;
+
+  PAGES.CAR = L => {
+    const c = carOf(), T = G.track, race = G.race;
+    if (!c || !T) { L.push('no player car'); return; }
+    const rc = c._race || {}, W = G.weather, C = CFG.car;
+    L.push('CAR #' + c.id + ' ' + codeOf(c) + '  ' + (c.team && c.team.short || '') + '  grid ' + (c.grid != null ? c.grid : '-') + (c.kinematic ? '  KINEMATIC' : '') + (c.ghosted ? '  GHOST ' + f(c.ghostT, 1) + 's' : '') + (c.reverse ? '  REVERSE' : ''));
+    L.push(' accel long ' + f(c.aLong / CFG.g, 2) + ' g  lat ' + f(c.aLat / CFG.g, 2) + ' g | v long ' + f(c.vLong, 1) + ' lat ' + f(c.vLat, 1) + ' m/s | yaw r ' + f(c.r, 3) + ' rad/s');
+    L.push(' slip F ' + f(c.slipF, 3) + ' R ' + f(c.slipR, 3) + '  slide ' + f(c.slide, 2) + '  lockup ' + f(c.lockup, 2) + '  wheelspin ' + f(c.wheelspin, 2) + ' | steer in ' + f(c.steer, 2) + ' -> wheel ' + f(c.steerAngle * 180 / Math.PI, 1) + ' deg  kbCap ' + f(c.kbCap, 2) + ' stab ' + f(c.stability, 2));
+    // tyres + the surface under each wheel
+    const t = c.tyre || {}, ws = c.wetSlide;
+    const wetHere = W && typeof Weather !== 'undefined' && Weather.wetAt ? Weather.wetAt(W, c.s, c.d) : W ? W.wet : 0;
+    L.push(' tyre ' + (t.compound || '-') + ' wear ' + f(t.wear, 4) + ' laps ' + f(t.laps, 2) + ' grip x' + f(c.grip, 3) + (num(ws) ? ' wetSlide ' + f(ws, 2) : '') + ' | wet at car ' + f(wetHere, 2));
+    const A = C.cgToFront, B = C.cgToRear, hw = 0.8, tab = CFG.surface || [];
+    const wh = [['FL', c.s + A, c.d - hw], ['FR', c.s + A, c.d + hw], ['RL', c.s - B, c.d - hw], ['RR', c.s - B, c.d + hw]];
+    const sf = wh.map(w => { const k = T.surface(T.wrapS ? T.wrapS(w[1]) : w[1], w[2]); return w[0] + ' ' + (SURFN[k] || k) + (tab[k] ? ' g' + f(tab[k].grip, 2) : ''); });
+    L.push(' wheels ' + sf.join(' | ') + '  (car: ' + (SURFN[c.surface] || c.surface) + (c.onKerb ? ' on kerb' : '') + (c.offTrack ? ' OFF TRACK' : '') + ')');
+    // ERS + aero
+    L.push(' ers ' + f(c.battery, 3) + ' / ' + f(c.batteryCap, 2) + ' MJ  boost ' + (c.boosting ? 1 : 0) + ' harvest ' + (c.harvesting ? 1 : 0) + ' ot ' + (c.overtake ? 1 : 0) + '/next ' + (c.overtakeNext ? 1 : 0) + ' | aero ' + c.aero + (c.inStraightZone ? ' (straight zone)' : '') + ' | tow ' + f(c.tow, 2) + ' dirty ' + f(c.dirty, 2));
+    L.push(' track s ' + f(c.s, 1) + ' d ' + f(c.d, 2) + ' idx ' + c.idx + '/' + T.N + ' | race dist ' + f(rc.dist, 1) + ' m  laps done ' + c.lapsDone);
+    // track limits, penalties, deleted laps
+    if (race && race.pen) {
+      const tl = race.pen.tl || {};
+      const off = rc.tlOff;
+      L.push(' limits [' + race.penaltyLevel + '] strikes ' + (c.tlWarn | 0) + '/' + tl.warn + ' (' + tl.sec + ' s each after, gain>' + tl.gain + ' cut>' + tl.cut + ')' + (off ? '  OFF NOW ' + f(race.t - off.t0, 1) + ' s' : '') + (rc.h && rc.h.bad ? '  THIS LAP DELETED' : '') + ' | pen ' + f(c.penalty, 1) + ' served ' + f(c.penaltyServed, 1) + (c.penPending ? ' pending' : ''));
+    } else L.push(' limits: penalties off');
+    const dl = (c.lapHist || []).filter(e => e.invalid);
+    L.push(' deleted laps ' + dl.length + (dl.length ? ': ' + dl.slice(-4).map(e => 'L' + e.lap + ' ' + tm(e.time) + (e.late ? '*' : '')).join('  ') : ''));
+    const pl = log.filter(e => e.car === c && e.type !== 'fastestLap' && !PIT_EV.has(e.type)).slice(-4);
+    for (const e of pl) L.push('   L' + e.lap + ' ' + e.type + ' ' + e.txt);
+    if (c.inPitLane || c.pitState) { L.push(''); pitBlock(L, c); }
+  };
+
+  function pitBlock(L, c) {
+    const T = G.track, race = G.race, rc = c._race || {}, ps = rc.pit, vL = CFG.race.pitSpeedLimit;
+    const spd = c.speed * 3.6;
+    L.push('PIT LANE  state ' + (c.pitState || '-') + '  limiter ' + (c.pitLimiter ? 'ON' : 'off') + (c.limiterWarn ? ' (WARN)' : '') + '  limit ' + f(vL * 3.6, 0) + ' km/h (+' + f(race.pitTolKmh, 1) + ' tol)  now ' + f(spd - vL * 3.6, 1) + ' over  assist ' + f(c.pitAssist, 2) + (c.pitCap ? ' cap ' + f(c.pitCap * 3.6, 0) : ''));
+    L.push(' box ' + (c.box != null ? c.box : c.teamIndex) + (T.pit && T.pit.boxS ? '/' + T.pit.boxS.length : '') + '  stops ' + (c.pitStops | 0) + '  wantPit ' + (c.wantPit ? 1 : 0) + '  box call ' + (c.boxCall ? 1 : 0) + '  next tyre ' + (c.pitCompound || c.nextCompound || '-') + '  wings ' + (c.pitWings ? JSON.stringify(c.pitWings) : '-'));
+    if (ps) L.push(' phase ' + ps.state + '  u ' + f(ps.u, 1) + ' / box ' + f(ps.uBox, 1) + ' / lane ' + f(ps.uL0, 0) + '-' + f(ps.uL1, 0) + '  in lane ' + f(race.t - ps.enterT, 1) + ' s  service ' + f(ps.service, 2) + ' / ' + f(ps.serviceDur, 2) + ' s  pen served ' + f(ps.penServed, 1) + (ps.speeding ? '  SPEEDING (AI roll)' : ''));
+    L.push(' last: lane ' + f(c.lastPitTime, 2) + ' s, service ' + f(c.lastServiceTime, 2) + ' s | pit loss est ' + f(race.pitLossEst, 1) + ' s (' + f(race.pitLossEst / Math.max(20, race.lapTimeEst), 2) + ' laps)');
+    const pe = log.filter(e => PIT_EV.has(e.type)).slice(-4);
+    for (const e of pe) L.push('   t ' + f(e.t, 1) + ' ' + e.type + ' ' + e.txt);
+  }
+  PAGES.PIT = L => {
+    const c = carOf();
+    if (!c || !G.race) { L.push('no player car'); return; }
+    if (c.inPitLane || c.pitState) { pitBlock(L, c); return; }
+    L.push('PIT  the car is on the track.  limit ' + f(CFG.race.pitSpeedLimit * 3.6, 0) + ' km/h  tol ' + f(G.race.pitTolKmh, 1) + '  box ' + (c.box != null ? c.box : c.teamIndex) + '  pit loss est ' + f(G.race.pitLossEst, 1) + ' s');
+    L.push(' stops ' + (c.pitStops | 0) + '  last lane ' + f(c.lastPitTime, 2) + ' s  service ' + f(c.lastServiceTime, 2) + ' s  wantPit ' + (c.wantPit ? 1 : 0));
+    for (const e of log.filter(e => PIT_EV.has(e.type)).slice(-6)) L.push('   t ' + f(e.t, 1) + ' ' + e.type + ' ' + e.txt);
+    const st = G.cars.filter(x => x.pitState).map(x => codeOf(x) + ':' + x.pitState + (x._race && x._race.pit ? ' ' + f(x._race.pit.service, 1) + '/' + f(x._race.pit.serviceDur, 1) : ''));
+    L.push(' in the pit lane now: ' + (st.length ? st.join('  ') : 'nobody'));
+  };
+
+  // nearest AI car: intent, attack phase, lines, speed plan, personality / difficulty, ERS plan; then the adaptive dial
+  PAGES.AI = L => {
+    const c = carOf(), T = G.track;
+    let best = null, bd = 1e9;
+    if (c && T) for (const o of G.cars) { if (o === c || o.dnf) continue; const d = Math.abs(T.deltaS(c.s, o.s)); if (d < bd) { bd = d; best = o; } }
+    const b = best && G.brains ? G.brains.get(best) : null;
+    if (!b) L.push('AI: no AI brain near the player');
+    else {
+      const ds = T.deltaS(c.s, best.s);
+      const intent = b.yieldOn ? 'YIELD' : b.defOn ? 'DEFEND' : b.atk ? 'ATTACK' : b.vLimCar && isFinite(b.trafLim) && b.trafLim < 900 ? 'FOLLOW' : 'FREE';
+      L.push('NEAREST AI  ' + codeOf(best) + ' #' + best.id + '  ' + f(Math.abs(ds), 0) + ' m ' + (ds > 0 ? 'ahead' : 'behind') + '  P' + best.pos + '  intent ' + intent);
+      L.push(' attack: target ' + (b.atk ? codeOf(b.atk) : '-') + ' phase ' + (b.atkPh | 0) + ' (1 approach, 2 pull out, 3 alongside) side ' + (b.atkSide | 0) + ' pull ' + (b.atkPull | 0) + ' cool ' + f(b.atkCool, 1) + ' | defend ' + (b.defOn ? 'on' : 'off') + ' car ' + (b.defC >= 0 ? b.defC : '-') + ' | yield ' + (b.yieldOn ? 'on' : 'off'));
+      L.push(' lines: d now ' + f(best.d, 2) + ' offset ' + f(b.off, 2) + ' -> ' + f(b.offT, 2) + '  abs side ' + (b.absSide | 0) + ' w ' + f(b.w, 2) + ' -> ' + f(b.wT, 2) + '  free ' + (b.free ? 1 : 0) + '  cons ' + b.nCons);
+      L.push(' speed plan: target ' + f(b.vT * 3.6, 0) + ' km/h  limit ' + f(Math.min(b.vLim, 999) * 3.6, 0) + '  traffic ' + (b.trafLim != null && isFinite(b.trafLim) ? f(b.trafLim * 3.6, 0) : '-') + '  pace ' + f(b.pace, 3) + ' (dPace ' + f(b.dPace, 3) + ' fix ' + f(b.paceFix, 3) + ')  late brk ' + f(b.lateBrk, 2));
+      L.push(' persona: diff ' + (b.diff && b.diff.id) + '  aggr ' + f(b.aggr, 2) + '  atkGap ' + f(b.atkGap, 2) + ' defGap ' + f(b.defGap, 2) + '  reaction +' + f(b.reactT, 2) + ' s  noise ' + f(b.nA, 2) + '  kerb ' + f(b.kw, 2) + '  lim ' + f(b.lim, 2) + (b.bogT ? '  bog ' + f(b.bogT, 1) : ''));
+      L.push(' ers plan: soc ' + f(best.battery, 2) + ' MJ  target ' + f(b.ersT0, 2) + ' -> ' + f(b.ersT1, 2) + '  budget ' + f(b.ersB, 2) + '  mode ' + (b.ersMode | 0) + '  last ' + (b.ersLast ? 1 : 0) + ' | stats atk ' + b.stat.atk + ' def ' + b.stat.def + ' dep ' + b.stat.dep + (b.stat.atkPl != null ? ' (vs you ' + b.stat.atkPl + '/' + b.stat.defPl + '/' + b.stat.depPl + ')' : ''));
+    }
+    L.push('');
+    const st = M.ai && M.ai.adaptiveState;
+    if (G.attract) L.push('ADAPTIVE: off (menu background)');
+    else if (G.settings.difficulty !== 'adaptive') L.push('ADAPTIVE: not used this race (' + G.settings.difficulty + ') - still learning your pace for next time');
+    else if (!st) L.push('ADAPTIVE: waiting for data');
+    else {
+      L.push('ADAPTIVE  pace k ' + f(st.k, 3) + (st.target != null ? '  target ' + f(st.target, 3) : '') + (st.ratio != null ? '  you ' + f(st.ratio, 3) : ''));
+      const extra = Object.keys(st).filter(k => num(st[k]) && !/^(k|target|ratio|t)$/.test(k)).slice(0, 8).map(k => k + ' ' + f(st[k], 3)).join('  ');
+      if (extra) L.push(' ' + extra);
+      if (b) L.push(' battle band (nearest): band ' + f(b.band, 3) + ' e ' + f(b.e, 3) + ' rb ' + f(b.rb, 3) + ' kc ' + f(b.kc, 3) + (b.bandE != null ? ' bandE ' + f(b.bandE, 3) : ''));
+    }
+  };
+
+  PAGES.WEATHER = L => {
+    const W = G.weather, race = G.race, c = carOf();
+    if (!W) { L.push('no weather'); return; }
+    L.push('WEATHER  mode ' + W.mode + (W.dynamic ? ' (dynamic)' : '') + '  clock ' + W.clock + '  tod ' + W.timeOfDay + '  x ' + f(W.x, 2) + ' / span ' + f(W.span, 0) + '  laps ' + W.laps + '  lapT ' + f(W.lapT, 1));
+    L.push(' rain ' + f(W.rain, 3) + '  wet ' + f(W.wet, 3) + '  peak rain ' + f(W.peakRain, 2) + ' wet ' + f(W.peakWet, 2) + '  trend ' + f(W.trend, 3) + '  now ' + (typeof Weather !== 'undefined' && Weather.now ? Weather.now(W).label : '-'));
+    if (c && G.track && typeof Weather !== 'undefined') {
+      const loc = Weather.wetAt(W, c.s, c.d), water = Weather.waterAt ? Weather.waterAt(W, c.s, c.d) : 0, F = W.field;
+      L.push(' at the car: wet ' + f(loc, 3) + ' (uniform ' + f(W.wet, 3) + ', dry line ' + f(loc - W.wet, 3) + ')  standing water ' + f(water, 3) + (F ? '  | field ' + (F.on ? 'on' : 'off') + ' off ' + f(F.off, 3) + ' lineW ' + f(F.lineW, 2) + ' maxLv ' + f(F.maxLv, 2) : '  | no field'));
+    }
+    if (W.dynamic && W.fc && typeof Weather !== 'undefined' && Weather.probRain) {
+      const o = { p: 0, r: 0, w: 0 }, parts = [];
+      for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 4], [4, 6], [6, 9]]) { Weather.probRain(W, W.x + a, W.x + b, o); parts.push('+' + a + '..' + b + ': ' + f(o.p * 100, 0) + '% r' + f(o.r, 2) + ' w' + f(o.w, 2)); }
+      L.push(' forecast odds (rain prob, intensity, wetness) in laps: ' + parts.join(' | '));
+      L.push(' forecast: ens ' + (W.ens ? W.ens.length : 0) + ' members  radar ' + f(W.radar, 1) + ' laps  cross I ' + f(W.cross && W.cross.I, 2) + ' W ' + f(W.cross && W.cross.W, 2) + (W.climate ? '  climate ' + Object.keys(W.climate).filter(k => num(W.climate[k])).slice(0, 5).map(k => k + ' ' + f(W.climate[k], 2)).join(' ') : ''));
+    }
+    if (race && race.wxOdds) {
+      const o = race.wxOdds, N = ['slick', 'inter', 'wet'];
+      L.push(' start: field picked ' + (race.wxStart || '-') + ' (' + N[o.b] + ')  gambles ' + (race.gambles ? 'on' : 'off') + '  odds at x=' + f(o.x, 2) + ': ' + (o.alt || []).map((a, i) => (a ? N[i] + ' P' + f(a.p * 100, 0) + '% +' + f(a.g, 1) + '/-' + f(a.l, 1) + ' s' : null)).filter(Boolean).join('  '));
+    } else if (race) L.push(' start tyre ' + (race.wxStart || '-') + (race.gambles === false ? ' (gambles off)' : ''));
+    const gam = G.cars.filter(x => x.wxGamble);
+    if (gam.length) {
+      L.push(' start-tyre gambles (' + gam.length + ' of ' + G.cars.length + ' cars):');
+      L.push('  car  grid tyre vs   p     p+err  gain  loss   rho   err   state');
+      for (const x of gam.slice(0, 20)) { const g = x.wxGamble; L.push('  ' + codeOf(x) + '  ' + pad(x.grid, 3) + '  ' + g.c + '    ' + g.vs + '  ' + pad(f(g.p, 3), 5) + ' ' + pad(f(g.pp, 3), 6) + ' ' + pad(f(g.g, 2), 5) + ' ' + pad(f(g.l, 2), 5) + ' ' + pad(f(g.rho, 2), 5) + ' ' + pad(f(g.e, 3), 6) + '  ' + g.st + (g.lap ? ' L' + g.lap : '')); }
+    } else if (race && race.wx) L.push(' no start-tyre gambles this race (consensus start)');
+    const pc = race && race.wxPlayer;
+    if (pc && pc.c1) L.push(' engineer call: pit ' + pc.pit + ' tyre ' + pc.c1 + ' in ' + pc.j + ' laps, gain ' + f(pc.gain, 3));
+  };
+
+  PAGES.QUALI = L => {
+    const race = G.race, Q = typeof Quali !== 'undefined' ? Quali : null, qs = race && race.qs;
+    if (!qs || !Q) { L.push('no qualifying session'); return; }
+    const rem = Q.remaining(G), me = carOf(), st = me && Q.status ? Q.status(G, me) : null;
+    L.push('QUALI  ' + (rem.name || '') + ' (' + (rem.idx + 1) + '/' + qs.len.length + ') state ' + rem.st + '  left ' + f(rem.left, 1) + ' s of ' + f(rem.len, 0) + '  clock ' + f(rem.clock, 1) + '  speed x' + (Q.speed ? Q.speed(G) : 1) + (Q.garageMode && Q.garageMode(G) ? '  GARAGE MODE (lap model)' : '  live'));
+    if (st) L.push(' you: ' + st.st + '  pos ' + (st.pos == null ? '-' : st.pos) + '  cut ' + (st.cut == null ? '-' : st.cut) + '  gap to cut ' + f(st.gapCut, 3) + '  lock ' + f(st.lock, 1) + ' s');
+    const cnt = {};
+    for (const x of G.cars) { const k = (x.qSt || '-') + (x.qSim ? '(sim)' : ''); cnt[k] = (cnt[k] || 0) + 1; }
+    L.push(' cars: ' + Object.keys(cnt).map(k => k + ' ' + cnt[k]).join('  ') + '  | knocked out ' + G.cars.filter(x => x.qOut >= 0).length);
+    const W = G.weather;
+    if (W) {
+      const F = W.field;
+      L.push(' track evolution: wet ' + f(W.wet, 3) + ' rain ' + f(W.rain, 3) + (F ? ' | dry line field ' + (F.on ? 'on' : 'off') + ' off ' + f(F.off, 3) + ' lineW ' + f(F.lineW, 2) + ' maxLv ' + f(F.maxLv, 2) : '') + ' | marks ' + G.cars.filter(x => x.wxMark).length + ' cars counting');
+    }
+    const lane = G.cars.filter(x => x.qSt === 'lane' || (x.qLock > rem.clock && x.qSt === 'garage'));
+    lane.sort((a, b) => (a.qLock || 0) - (b.qLock || 0));
+    L.push(' pit exit queue (' + lane.filter(x => x.qSt === 'lane').length + ' in lane, ' + lane.filter(x => x.qSt === 'garage').length + ' held in garage): ' + lane.slice(0, 10).map(x => codeOf(x) + (x.qSt === 'lane' ? '' : ' g') + ' +' + f(Math.max(0, (x.qLock || 0) - rem.clock), 1)).join('  '));
+    L.push(' sessions: ' + qs.res.map((r, i) => (qs.fmt.names[i] || 'Q' + (i + 1)) + ' ' + r.length + ' cars').join(', ') + ' | penalties ' + Object.keys(qs.pen || {}).length + ' warnings ' + Object.keys(qs.warn || {}).length + ' impeding events ' + (qs.imp ? qs.imp.length : 0));
+    if (qs.imp && qs.imp.length) for (const e of qs.imp.slice(-3)) L.push('   ' + f(e.clock, 0) + ' s ' + e.kind + ' by car ' + e.by + ' on ' + e.vic + ' places ' + e.places + ' ' + (e.why || ''));
+  };
+
+  PAGES.MENU = L => {
+    const race = G.race;
+    if (G.attract && race) {
+      const p = G.player;
+      L.push('ATTRACT RACE  ' + (G.track ? G.track.id : '-') + '  phase ' + race.phase + '  t ' + f(race.t, 0) + ' s  cars ' + G.cars.length + '  featured ' + codeOf(p) + ' lap ' + (p ? p.lap : '-') + ' (done ' + (p ? p.lapsDone : '-') + ')  weather ' + (G.weather ? G.weather.mode + ' wet ' + f(G.weather.wet, 2) : '-'));
+    } else L.push('no attract race running' + (race ? ' (race object kept: ' + race.mode + ')' : ''));
+    const mu = typeof Music !== 'undefined' ? Music : null, ms_ = mu && mu.stats;
+    if (ms_) L.push('MUSIC  ' + Object.keys(ms_).filter(k => { const v = ms_[k]; return v == null ? false : typeof v !== 'object'; }).slice(0, 16).map(k => k + ' ' + (num(ms_[k]) ? +ms_[k].toFixed(3) : ms_[k])).join('  '));
+    else L.push('MUSIC  not running' + (mu ? ' (ready ' + mu.ready + ')' : ''));
+    const ctx = M.sfx && M.sfx.context;
+    if (ctx) L.push('AUDIO  ctx ' + ctx.state + '  ' + ctx.sampleRate + ' Hz  t ' + f(ctx.currentTime, 1) + ' s  base latency ' + f((ctx.baseLatency || 0) * 1000, 1) + ' ms' + (ctx.outputLatency ? '  output ' + f(ctx.outputLatency * 1000, 1) + ' ms' : ''));
+    else L.push('AUDIO  not started (waiting for a click / key)');
+    const now = performance.now();
+    if (!lsCache || now - lsT > 2000) { lsT = now; lsCache = storage(); }
+    L.push('STORAGE (localStorage, chars as KB): total ' + kb(lsCache.total) + ' of about 5000 KB');
+    for (const g of lsCache.groups) L.push('  ' + padR(g.name, 11) + pad(kb(g.n), 10) + (g.keys > 1 ? '  (' + g.keys + ' keys)' : ''));
+  };
+  function storage() {
+    const groups = [['stats', /^apexgp\.stats$/], ['ghosts', /^apexgp\.ghost\./], ['liveries', /^apexgp\.liveries$/], ['champ', /^apexgp\.champ$/], ['settings', /^apexgp\.settings$/], ['skill', /^apexgp\.skill/], ['net', /^apexgp\.net/]].map(([name, re]) => ({ name, re, n: 0, keys: 0 }));
+    const other = { name: 'other', n: 0, keys: 0 };
+    let total = 0;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i), v = localStorage.getItem(k), n = k.length + (v ? v.length : 0);
+        total += n;
+        const g = groups.find(x => x.re.test(k)) || other;
+        g.n += n; g.keys++;
+      }
+    } catch (e) { /* blocked */ }
+    return { total, groups: groups.concat([other]).filter(g => g.keys > 0 || g.name !== 'other').map(g => ({ name: g.name, n: g.n, keys: g.keys })) };
+  }
+
+  PAGES.NET = L => {
+    const N = M.net, s = N && N.state, S = N && N.session;
+    if (!s) { L.push('no multiplayer'); return; }
+    const secs = Math.max(0.001, s.secs || 0);
+    const cl = S && S.clock;
+    let jit = '-', rt = '-';
+    if (cl && cl.rtts && cl.rtts.length > 1) { const a = cl.rtts, m = a.reduce((x, y) => x + y, 0) / a.length; jit = f(Math.sqrt(a.reduce((x, y) => x + (y - m) * (y - m), 0) / a.length), 1); rt = f(cl.rtt, 0); }
+    L.push('NET  ' + s.conn + '  room ' + (typeof s.room === 'object' ? (s.room && (s.room.code || s.room.id)) || '-' : s.room || '-') + '  id ' + s.id + '  ping ' + f(s.ping, 0) + ' ms (median)  last rtt ' + rt + '  jitter sd ' + jit + ' ms  clock off ' + f(s.off, 1) + ' ms');
+    L.push(' down ' + f(s.bytesIn / 1024 / secs, 1) + ' KB/s  up ' + f(s.bytesOut / 1024 / secs, 2) + ' KB/s  over ' + f(secs, 0) + ' s' + (s.cpu ? '  cpu msg ' + f(s.cpu.msg, 0) + ' tick ' + f(s.cpu.tick, 0) + ' frame ' + f(s.cpu.frame, 0) + ' post ' + f(s.cpu.post, 0) + ' ms' : ''));
+    if (S && S.stats) {
+      const st = S.stats, a = st.lat && st.lat.length ? st.lat.slice(-300).sort((x, y) => x - y) : null;
+      L.push(' snapshots ' + f(st.snaps / secs, 1) + ' /s (server tick ' + (M.net.core && M.net.core.HZ ? M.net.core.HZ.snap : '?') + ' Hz)  avg ' + f(st.snaps ? st.snapBytes / st.snaps : 0, 0) + ' B  state uploads ' + f(st.sent / secs, 1) + ' /s' + (a ? '  one-way age p50 ' + f(a[a.length >> 1], 0) + ' p95 ' + f(a[Math.floor(a.length * 0.95)], 0) + ' ms' : ''));
+      const o = S.off;
+      L.push(' prediction correction: ' + (o ? 'x ' + f(o.x, 3) + ' z ' + f(o.z, 3) + ' h ' + f(o.h, 3) + '  |' + f(Math.hypot(o.x || 0, o.z || 0), 3) + '| m' : '-') + '  mode ' + S.mode + '  follow ' + (S.follow ? 1 : 0));
+    }
+  };
+
+  // ------------------------------------------------------------ results pages
+  const resRows = () => (G.race && Array.isArray(G.race.results) ? G.race.results.slice().sort((a, b) => (a.pos || 99) - (b.pos || 99)) : null);
+  const dotdOf = () => { try { return typeof Awards !== 'undefined' && G.race && G.race.mode !== 'timetrial' ? Awards.dotd(G) : null; } catch (e) { return null; } };
+  const TERMS = ['result', 'gain', 'far', 'farPod', 'pace', 'fl', 'rec', 'def', 'wet'];
+  PAGES.DOTD = L => {
+    const d = dotdOf();
+    if (!d) { L.push('DRIVER OF THE DAY: none (' + (G.race && G.race.mode === 'timetrial' ? 'time trial' : 'no classification') + ')'); return; }
+    L.push('DRIVER OF THE DAY  ' + d.code + '  P' + d.pos + ' from P' + d.grid + '  score ' + f(d.score, 3) + '  reason "' + d.reason + '"');
+    L.push('score = result + gain + far + farPod + pace + fl + rec + def + wet + fan (seeded vote, sd ' + f(Awards.WEIGHTS.FAN_SD, 1) + ')');
+    L.push(pad('#', 4) + '  COD' + pad('fin', 4) + ['res', 'gain', 'far', 'pod', 'pace', 'fl', 'rec', 'def', 'wet'].map(h => pad(h, 6)).join('') + ' |' + pad('fan', 6) + ' |' + pad('score', 7) + '  check');
+    let n = 0;
+    for (const x of d.ranked) {
+      const p = x.p, sum = TERMS.reduce((a, k) => a + (p[k] || 0), 0) + x.fan, ok = Math.abs(sum - x.score) < 1e-9;
+      L.push(pad(++n, 4) + '  ' + codeOf(x.car) + ' ' + pad('P' + x.pos, 3) + TERMS.map(k => pad(f(p[k], 2), 6)).join('') + ' |' + pad(f(x.fan, 2), 6) + ' |' + pad(f(x.score, 2), 7) + '  ' + (ok ? 'ok' : 'DIFF ' + f(sum - x.score, 6)) + (x.car === d.car ? '  <- WINNER' : ''));
+    }
+  };
+  PAGES.INPUTS = L => {
+    const d = dotdOf();
+    if (!d) { L.push('DRIVER OF THE DAY: none'); return; }
+    const w = Awards.WEIGHTS;
+    L.push('DOTD INPUTS  (a term = weight x input; credit = (earned + ' + w.FREE + ' x (gained - earned)) / gained)');
+    L.push(' weights: result P1-10 ' + w.RESULT.map(x => +x.toFixed(2)).join(' ') + ' | far win ' + w.FAR_WIN + ' far pod ' + w.FAR_POD + ' | pace up ' + w.PACE_UP + ' down ' + w.PACE_DOWN + ' floor ' + w.PACE_FLOOR + ' tie ' + w.PACE_TIE + ' s | fl final ' + w.FL_FINAL + ' top-10 ' + w.FL_FAST);
+    L.push(pad('#', 4) + '  COD' + pad('grid', 5) + pad('fin', 4) + pad('gain', 5) + pad('made/lost', 10) + pad('earned', 7) + pad('credit', 7) + pad('paceRk/pos', 11) + pad('rec(low)', 10) + pad('gap s', 7) + pad('wet%', 6));
+    let n = 0;
+    for (const x of d.ranked) L.push(pad(++n, 4) + '  ' + codeOf(x.car) + pad(x.grid != null ? 'P' + x.grid : '-', 5) + pad('P' + x.pos, 4) + pad(x.gained > 0 ? '+' + x.gained : x.gained, 5) + pad(x.ov + '/' + x.lost, 10) + pad(x.earned, 7) + pad(f(x.credit, 2), 7) + pad(x.paceRank != null ? x.paceRank + '/' + x.posR : '-', 11) + pad(x.rec ? x.rec + '(P' + x.low + ')' : '-', 10) + pad(x.gap != null && x.gap < 1.5 ? f(x.gap, 2) : '-', 7) + pad(f(x.wetFrac * 100, 0), 6) + (x.isFl ? '  FL' : ''));
+  };
+  PAGES.POINTS = L => {
+    const race = G.race, res = resRows();
+    if (!res) { L.push('no classification yet'); return; }
+    const tab = typeof POINTS !== 'undefined' ? POINTS : [];
+    L.push('POINTS  scale ' + tab.join(' ') + '  | round bonus (Awards.BONUS) ' + (typeof Awards !== 'undefined' ? Awards.BONUS : '-') + '  | no fastest-lap / sprint point | DNF scores 0');
+    const odd = res.filter(r => (r.dnf ? 0 : r.pos <= tab.length ? tab[r.pos - 1] : 0) !== r.points);
+    L.push(' rows scored: ' + res.filter(r => r.points > 0).length + '  total handed out ' + res.reduce((a, r) => a + (r.points || 0), 0) + '  scale mismatches ' + odd.length + (odd.length ? ': ' + odd.slice(0, 5).map(r => codeOf(r.car) + ' P' + r.pos + ' got ' + r.points).join(', ') : ''));
+    const ch = race.mode === 'championship' ? G.champ || race.championship : null;
+    if (!ch) { L.push(' not a championship race: no standings change'); return; }
+    L.push(' championship: round ' + ch.round + '/' + (ch.rounds ? ch.rounds.length : '?') + '  applied ' + (race._champApplied ? 'yes' : 'NO') + '  history ' + (ch.history ? ch.history.length : 0) + ' rounds');
+    const hist = ch.history && ch.history.length ? ch.history[ch.history.length - 1] : null, add = new Map();
+    if (hist && race._champApplied) for (const r of hist.results || []) add.set(r.teamIndex, r.points || 0);
+    const tb = typeof Awards !== 'undefined' ? Awards._table(ch) : [];
+    L.push(' pos  team   before  +round  after |  wins pod best     (tie-break: pts, wins, podiums, best finish)');
+    let i = 0;
+    for (const e of tb.slice(0, 20)) { const a = add.get(e.ti) || 0; L.push(pad(++i, 6) + '    ' + padR(teamCode(e.ti), 5) + pad(e.pts - a, 8) + pad('+' + a, 8) + pad(e.pts, 7) + ' |' + pad(e.wins, 4) + pad(e.pod, 4) + pad(e.best === 99 ? '-' : e.best, 5)); }
+  };
+  PAGES.CLASS = L => {
+    const race = G.race, res = resRows();
+    if (!res) { L.push('no classification yet'); return; }
+    const lead = res[0];
+    L.push('CLASSIFICATION  classified = finish + penalties; laps first, then time; a tie: first over the line');
+    const odd = res.filter(r => r.penalty > 0 || r.penaltyServed > 0 || r.estimated || r.dnf || r.lapsDown > 0);
+    L.push(' ' + (res.length - odd.length) + ' clean finishers not listed; leader ' + codeOf(lead.car) + ' ' + lead.laps + ' laps');
+    for (const r of odd.slice(0, 10)) {
+      const rc = r.car._race || {}, road = rc.finPos != null ? 'road P' + rc.finPos + ' -> ' : '';
+      L.push('  P' + pad(r.pos, 2) + ' ' + codeOf(r.car) + (r.dnf ? ' DNF at lap ' + r.laps : ' raw ' + tm(r.rawTime) + (r.penalty ? ' + pen ' + f(r.penalty, 1) + ' (served in pit ' + f(r.penaltyServed, 1) + ')' : '') + ' = ' + tm(r.time) + (r.estimated ? ' (ESTIMATED: not finished)' : '')) + '  laps ' + r.laps + (r.lapsDown ? ' (-' + r.lapsDown + ')' : '') + '  ' + road + 'P' + r.pos);
+    }
+    // fastest lap: valid laps only
+    const all = [];
+    for (const c of G.cars) for (const e of c.lapHist || []) if (num(e.time) && e.time > 0 && !e.inLap && !e.outLap || (num(e.time) && e.time > 0 && race.mode !== 'timetrial')) all.push({ c, e });
+    all.sort((a, b) => a.e.time - b.e.time);
+    const fl = race.fastestLap;
+    L.push('FASTEST LAP  decided over valid laps only (a deleted lap never counts)  chosen: ' + (fl ? codeOf(fl.car) + ' L' + fl.lap + ' ' + tm(fl.time) : 'none'));
+    for (const x of all.slice(0, 4)) L.push('  ' + codeOf(x.c) + ' L' + x.e.lap + ' ' + tm(x.e.time) + (x.e.invalid ? '  DELETED' + (x.e.late ? ' (after the line)' : '') + ' - not eligible' : fl && fl.car === x.c && fl.lap === x.e.lap ? '  valid - FASTEST LAP' : '  valid'));
+    // deleted laps + the stewards' log
+    const dels = [];
+    for (const c of G.cars) for (const e of c.lapHist || []) if (e.invalid) dels.push({ c, e });
+    L.push('DELETED LAPS  ' + dels.length);
+    for (const x of dels.slice(0, 8)) {
+      const lapOf = l => { const m = /\bdel=(\d+)/.exec(l.txt); return m ? +m[1] : l.lap; };
+      const why = log.filter(l => l.car === x.c && lapOf(l) === x.e.lap && (l.type === 'trackLimits' || l.type === 'lapDeleted' || l.type === 'giveBack' || l.type === 'penalty')).map(l => l.type + ' ' + l.txt).join(' / ');
+      L.push('  ' + codeOf(x.c) + ' L' + x.e.lap + ' ' + tm(x.e.time) + (x.e.late ? ' (deleted after the line)' : '') + '  ' + (why || 'no event logged (before this overlay saw the race)'));
+    }
+    const pens = log.filter(l => l.type === 'penalty' || l.type === 'penaltyApplied' || l.type === 'jumpStart');
+    L.push('PENALTIES  ' + pens.length + ' logged');
+    for (const l of pens.slice(-8)) L.push('  L' + l.lap + ' ' + l.code + ' ' + l.type + ' ' + l.txt);
+  };
+  PAGES.TITLE = L => {
+    const race = G.race, ch = race && race.mode === 'championship' ? G.champ || race.championship : null;
+    if (!ch || typeof Awards === 'undefined') L.push('TITLE MATHS  not a championship race');
+    else {
+      const tmx = Awards.titleMaths(ch, { name: ti => teamCode(ti) || 'LEADER' });
+      if (!tmx) L.push('TITLE MATHS  no standings');
+      else {
+        L.push('TITLE MATHS  rounds left ' + tmx.left + ' of ' + tmx.total + '  max a round ' + tmx.maxRound + '  points left ' + tmx.avail + '  in it ' + tmx.counts.alive + '  clinched ' + tmx.counts.clinched + '  out ' + tmx.counts.out + '  clinches next round with ' + (tmx.clinchNext ? 'P' + tmx.clinchNext : 'nothing'));
+        L.push(' "' + tmx.blurb + '"');
+        L.push(' rank code  pts  max  gap  wins | status   need  note');
+        for (const r of tmx.rows.slice(0, 12)) L.push(pad(r.rank, 5) + ' ' + padR(teamCode(r.ti), 5) + pad(r.pts, 4) + pad(r.max, 5) + pad(r.gap, 5) + pad(r.wins, 5) + ' | ' + padR(r.status, 8) + pad(r.need != null ? r.need + (r.tie ? 't' : '') : '-', 4) + '  ' + r.note);
+      }
+    }
+    L.push('');
+    L.push('STATS this session committed to the career (' + profName() + ')');
+    const S = typeof Stats !== 'undefined' ? Stats : null;
+    if (!S || !stats0) { L.push('  no stats module / snapshot'); return; }
+    const p = S._db && S._db.profiles && S._db.profiles[S.pid(profName())], c1 = p && p.c;
+    if (!c1) { L.push('  nothing saved (no finished session for this profile)'); return; }
+    const d = [];
+    for (const k of Object.keys(c1)) { const b0 = stats0._none ? 0 : stats0[k]; if (num(c1[k]) && num(b0) && Math.abs(c1[k] - b0) > 1e-9) d.push(k + ' ' + (c1[k] >= b0 ? '+' : '') + +(c1[k] - b0).toFixed(2)); }
+    L.push('  ' + (d.length ? d.join('  ') : 'no change yet (a race counts at the flag, a championship round when the race ends)') + (S._live ? '  [session copy pending]' : ''));
+    L.push('  Driver of the Day career count ' + (c1.dotd || 0) + (race.dotd ? '; this race: ' + codeOf(race.dotd.car) + (race.dotd.car === G.player ? ' (you)' : '') : ''));
+  };
+
+  return {
+    init, event, frame, toggle,
+    get on() { return on; },
+    get page() { return pageName; },
+    _build: () => { try { return build(); } catch (e) { return 'ERR ' + e.stack; } },   // (tests)
+    _log: () => log,
+  };
+})();
+
+
 // ===== src/main.js =====
 // Apex GP — main: global game state, fixed-step loop, glue between all modules.
 const G = {
@@ -91660,7 +92370,7 @@ const Game = (() => {
   const params = new URLSearchParams(location.search);
   const M = {};                       // optional modules (present once their agents deliver)
   let acc = 0, lastT = 0, resultsTimer = -1, audioReady = false, errShown = false;
-  let fpsEl = null, fpsAcc = 0, fpsN = 0, adaptEl = null, adaptT = 0, wxSeedNext = null, raceSeedNext = null, sndT = 0, sndLock = null;
+  let fpsEl = null, fpsAcc = 0, fpsN = 0, wxSeedNext = null, raceSeedNext = null, sndT = 0, sndLock = null;
 
   const el = id => document.getElementById(id);
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -91774,6 +92484,7 @@ const Game = (() => {
     M.rewind = typeof Rewind !== 'undefined' ? Rewind : null;  // pause menu REWIND (rewind.js; see the rewind section)
     M.stats = typeof Stats !== 'undefined' ? Stats : null;     // player stats for the menu STATS page (stats.js, localStorage 'apexgp.stats')
     if (M.stats) { try { M.stats.init(localStorage); } catch (e) { M.stats = null; } }
+    M.dev = typeof DevInfo !== 'undefined' ? DevInfo : null; if (M.dev) M.dev.init(G, M, params);   // (developer-info overlay, \ key)
     M.awards = typeof Awards !== 'undefined' ? Awards : null;   // Driver of the Day + championship title maths (awards.js)
 
     G.settings = loadSettings();
@@ -91783,7 +92494,7 @@ const Game = (() => {
     if (M.r2d) M.r2d.init(el('view2d'));
     if (M.hud) M.hud.init(el('hud'));
     if (M.engUI) M.engUI.init(el('hud'));
-    if (M.menu) M.menu.init(el('menu'), { onStart, onResume, onRestart, onQuit, onBack, onSettings, onNextRound, onResetSkill, onClearTTBests, onClearAll, onChampChange: saveChamp,   // (onChampChange: the menu edited G.champ.conds)
+    if (M.menu) M.menu.init(el('menu'), { onStart: uiStart, onResume, onRestart: uiRestart, onQuit: uiQuit, onBack: uiBack, onSettings, onNextRound: uiNextRound, onResetSkill, onClearTTBests, onClearAll, onChampChange: saveChamp,   // (onChampChange: the menu edited G.champ.conds; the session builds run behind the loading screen)
       onQualiPause, onQualiReturn, onQualiGo, onRewind });   // (qualifying garage / session result: see the qualifying section)
     Input.init();
     if (M.mobile) { try { M.mobile.init({ G, Game, M }); } catch (e) { console.error('touch controls init failed', e); M.mobile = null; } }
@@ -91816,12 +92527,7 @@ const Game = (() => {
     document.addEventListener('fullscreenchange', fsChange);
     if (!('onfullscreenchange' in document)) document.addEventListener('webkitfullscreenchange', fsChange);   // (older Safari)
     // [/UF fullscreen Esc]
-    // hidden debug readout for adaptive difficulty: press \ to toggle
-    addEventListener('keydown', e => {
-      if (e.code !== 'Backslash' || e.repeat || (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))) return;
-      if (!adaptEl) { adaptEl = document.createElement('div'); adaptEl.style.cssText = 'position:fixed;left:50%;top:6px;transform:translateX(-50%);font:12px/1.35 monospace;color:#9f9;background:rgba(0,0,0,.72);padding:4px 10px;border-radius:4px;z-index:60;pointer-events:none;white-space:pre'; document.body.appendChild(adaptEl); }
-      adaptEl.style.display = adaptEl.style.display === 'none' ? 'block' : adaptEl.style.display ? 'none' : 'block';
-    });
+    // developer-info overlay (\ toggles, Shift+\ pages; src/devinfo.js): its own key handler, frame timing and event log
     addEventListener('resize', resize);
     document.addEventListener('visibilitychange', () => { if (document.hidden && G.screen === 'race' && !G.paused && !G.attract && !params.has('nopause')) setPaused(true); });
     const unlock = () => { initAudio(); };
@@ -91856,6 +92562,68 @@ const Game = (() => {
     try { M.sfx.init(); M.sfx.setVolume(G.settings.volume); audioReady = true; } catch (e) { console.warn('audio init failed', e); }
     if (M.music) M.music.init(M.sfx.context);   // (same AudioContext, own chain; volume from settings in update)
   }
+
+  // ---------- loading screen ----------
+  // A session's track + scene build blocks the page for 0.5-7 s (and the first frame after it 0.3-0.8 s), a graphics change for
+  // ~2 s. withLoading puts a full-screen "APEX GP / loading" overlay up first: its fade-in is a CSS animation delayed 250 ms
+  // (opacity + transform only), so a wait under that never shows it (no flash), and once it is up the compositor keeps it
+  // fading and the bar sliding while the main thread is busy. The work starts after the browser has painted it (rAF, then a
+  // timeout: the overlay is committed before the thread blocks) and the overlay goes after two frames of the new scene.
+  // The sync API (Game.startSession / onStart / onQuit: tests, multiplayer's glue) is unchanged; only the menu's handlers defer.
+  const LD = { el: null, id: 0, busy: false };
+  function loadingShow(label, sub) {
+    if (LD.el) LD.el.remove();
+    const e = document.createElement('div');
+    e.className = 'agp-load';
+    e.innerHTML = '<div class="agp-ld-logo">APEX<span>GP</span></div><div class="agp-ld-sub"></div><div class="agp-ld-name"></div><div class="agp-ld-bar"><i></i></div>';
+    e.children[1].textContent = label || 'Loading';
+    e.children[2].textContent = sub || '';
+    document.body.appendChild(e);
+    LD.el = e; LD.busy = true;
+    return ++LD.id;
+  }
+  function loadingHide(id) {
+    if (id != null && id !== LD.id) return;   // (a later load owns the overlay now)
+    const e = LD.el;
+    LD.el = null; LD.busy = false;
+    if (!e) return;
+    let op = 0;
+    try { op = +getComputedStyle(e).opacity || 0; } catch (err) { /* ignore */ }
+    if (op < 0.05) { e.remove(); return; }   // never showed (a wait under ~250 ms): gone without a flash
+    e.style.animation = 'none'; e.style.opacity = String(op);   // (fades out from where the fade-in was)
+    e.style.transition = 'opacity .3s ease-out';
+    requestAnimationFrame(() => { e.style.opacity = '0'; });
+    setTimeout(() => e.remove(), 400);
+  }
+  // fn after the overlay has been painted; busy (a load already running): fn at once, no second overlay
+  function withLoading(label, sub, fn) {
+    if (LD.busy) { fn(); return; }
+    const id = loadingShow(label, sub);
+    let ran = false;
+    const go = () => {
+      if (ran) return; ran = true;
+      let err = null;
+      try { fn(); } catch (e) { err = e; }
+      requestAnimationFrame(() => requestAnimationFrame(() => loadingHide(id)));
+      setTimeout(() => loadingHide(id), 3000);   // (a hidden tab never runs rAF)
+      if (err) setTimeout(() => { throw err; }, 0);   // (reported as before, after the overlay is released)
+    };
+    requestAnimationFrame(() => setTimeout(go, 0));
+    setTimeout(go, 250);
+  }
+  const trackName = id => (typeof TRACK_DATA !== 'undefined' && TRACK_DATA[id] && TRACK_DATA[id].name) || '';
+  const champTrack = () => (G.champ && Array.isArray(G.champ.rounds) && G.champ.round < G.champ.rounds.length ? G.champ.rounds[G.champ.round] : null);
+  const sessionName = s => trackName(s.mode === 'championship' ? champTrack() : s.trackId);
+  // menu handlers: one load at a time (a second click / Enter while it runs is dropped)
+  function uiStart(settings) { if (!LD.busy) withLoading('Loading circuit', sessionName(settings), () => onStart(settings)); }
+  function uiRestart() {
+    if (LD.busy) return;
+    if (M.net && M.net.onRestart()) return;   // (multiplayer: back to the room's lobby instead)
+    withLoading('Loading circuit', sessionName(G.settings), restartSession);
+  }
+  function uiNextRound() { if (!LD.busy) withLoading('Loading circuit', trackName(champTrack()), onNextRound); }
+  function uiQuit() { if (!LD.busy) withLoading('Loading menu', '', onQuit); }
+  function uiBack() { if (!LD.busy) withLoading('Loading menu', '', onBack); }
 
   // ---------- sessions ----------
   // menu background: a rotating showcase with a random circuit, conditions, featured team and grid slot
@@ -92021,8 +92789,7 @@ const Game = (() => {
     if (M.sfx && audioReady) M.sfx.pause(false);
   }
   function onResume() { setPaused(false); }
-  function onRestart() {
-    if (M.net && M.net.onRestart()) return;   // multiplayer: back to the room's lobby instead
+  function restartSession() {   // (uiRestart: after the multiplayer check, behind the loading screen)
     // championship: undo this race's points/round advance so Restart replays the same round
     if (G.settings.mode === 'championship' && G.champSnap) { G.champ = clone(G.champSnap); saveChamp(); }
     wxSeedNext = G.weather && G.weather.seed != null ? G.weather.seed : null;   // same forecast / outcome again
@@ -92048,7 +92815,7 @@ const Game = (() => {
     if (M.menu) { if (M.menu.showSetup) M.menu.showSetup(G.settings); else M.menu.showMain(G.settings); }
   }
   function onSettings(settings) {
-    const view0 = G.settings.view;
+    const view0 = G.settings.view, gfx0 = G.settings.graphics || 'high';
     G.settings = { ...G.settings, ...settings, assists: { ...G.settings.assists, ...(settings.assists || {}) } };
     saveSettings();
     if (M.sfx && audioReady) M.sfx.setVolume(G.settings.volume);
@@ -92056,7 +92823,10 @@ const Game = (() => {
     // camera: only when the Camera / Default camera row itself changed (the menu sends all of its settings on any change:
     // a volume or wing tweak must not snap the view back)
     if (settings.view && settings.view !== view0 && !G.attract) { G.view = settings.view; applyView(); }
-    if (settings.graphics && M.r3d && M.r3d.setQuality) M.r3d.setQuality(settings.graphics);
+    if (settings.graphics && M.r3d && M.r3d.setQuality) {   // (a new quality rebuilds the render targets + the track's bake: ~2 s, behind the loading screen)
+      const q = settings.graphics;
+      if (q !== gfx0) withLoading('Applying graphics', '', () => M.r3d.setQuality(q)); else M.r3d.setQuality(q);
+    }
     if ('mirror' in settings && M.r3d && M.r3d.toggleMirror && !G.attract) M.r3d.toggleMirror(settings.mirror !== false);
   }
   function onNextRound() {
@@ -92140,6 +92910,8 @@ const Game = (() => {
     const dt = Math.min(0.1, lastT ? (now - lastT) / 1000 : 1 / 60);
     lastT = now;
     G.frameDt = dt;
+    const dv = M.dev && M.dev.on ? M.dev : null, t0 = dv ? performance.now() : 0;   // (dev overlay: frame split, only while shown)
+    let t1 = 0, t2 = 0, t3 = 0;
     try {
       const inp = Input.poll(dt, G.player ? G.player.speed : 0, G.player);   // (player car: keyboard-assist steer limit)
       if (M.mobile) M.mobile.merge(inp, dt);   // touch pedals / tilt / on-screen buttons on top of keys + pad
@@ -92158,6 +92930,7 @@ const Game = (() => {
           if (n >= 12) acc = 0;
         }
       }
+      if (dv) t1 = performance.now();
       G.renderLead = acc;                   // (s: how far the drawn scene is ahead of the physics state, see leadPoses)
       if (M.net) M.net.frame(G, dt, now - acc * 1000);   // multiplayer: remote cars' poses (at the time of the physics state: frame - step remainder), state upload
       leadPoses(acc, true);
@@ -92169,12 +92942,15 @@ const Game = (() => {
         }
         if (M.net) M.net.postRender(G, dt);   // multiplayer: name tags, ping, leaderboard
       } finally { leadPoses(acc, false); }
+      if (dv) t2 = performance.now();
       if (M.hud && G.screen !== 'menu' && !G.attract) M.hud.update(G, dt);
       if (M.engUI) { try { M.engUI.update(G, dt); } catch (e) { engErr('engineer UI', e); } }   // (logged, the engineer keeps going)
+      if (dv) t3 = performance.now();
       if (M.sfx && audioReady && !G.attract) M.sfx.update(G, dt);
       if (M.music) M.music.update(G);        // menus / pause / results: music; racing: fades out
       for (let i = 0; i < G.events.length; i++) {
         const ev = G.events[i];
+        if (M.dev) M.dev.event(ev);   // (dev overlay: the log of penalties / deleted laps)
         if (!G.attract) { if (M.hud) M.hud.onEvent(ev); if (M.sfx && audioReady) M.sfx.onEvent(ev); }
         onEvent(ev);
       }
@@ -92186,18 +92962,7 @@ const Game = (() => {
         const done = (G.player.lapsDone || Math.max(0, (G.player.lap || 0) - 1));
         if (done >= 3 || G.time > 420) fadeToNewScene();
       }
-      if (adaptEl && adaptEl.style.display !== 'none' && (adaptT -= dt) <= 0) {
-        adaptT = 0.25;
-        const st = M.ai && M.ai.adaptiveState;
-        if (G.attract) adaptEl.textContent = 'ADAPTIVE: off (menu background)';
-        else if (G.settings.difficulty !== 'adaptive') adaptEl.textContent = 'ADAPTIVE: not used this race (' + G.settings.difficulty + ') · still learning your pace for next time';
-        else if (!st) adaptEl.textContent = 'ADAPTIVE: waiting for data';
-        else {
-          const f = (v, d = 3) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '—');
-          const extra = Object.keys(st).filter(k => typeof st[k] === 'number' && !/^(k|target|ratio|t)$/.test(k)).slice(0, 6).map(k => k + ' ' + f(st[k])).join('  ');
-          adaptEl.textContent = 'ADAPTIVE  pace k ' + f(st.k) + (st.target != null ? '  target ' + f(st.target) : '') + (st.ratio != null ? '  you ' + f(st.ratio) : '') + '\n' + extra;
-        }
-      }
+      if (dv) dv.frame(now, dt, t1 - t0, t2 - t1, t3 - t2, performance.now() - t0, PF.mode);   // (dev overlay: fps ring + the page, ~4 Hz)
       // home: "CLICK ANYWHERE OR PRESS ANY KEY FOR SOUND" while the browser still holds the audio back (autoplay policy)
       if ((sndT -= dt) <= 0) {
         sndT = 0.25;
@@ -92498,13 +93263,14 @@ const Game = (() => {
 
   // a championship's race settings, fixed for the season (menu.js shows them locked)
   function seasonCfg(s) { const o = {}; for (const k of ['laps', 'difficulty', 'fieldSize', 'grid', 'qualiLen', 'qualiCustom', 'qualiDay', 'tyreWear', 'twoCompound', 'penaltyLevel', 'penalties', 'grassSlip']) if (s[k] !== undefined) o[k] = JSON.parse(JSON.stringify(s[k])); return o; }
-  return { boot, startSession, onStart, onQuit, setPaused, getTrack, rebuildBrains, get modules() { return M; } };
+  return { boot, startSession, onStart, onQuit, setPaused, getTrack, rebuildBrains, get modules() { return M; },
+    loading: { run: withLoading, show: loadingShow, hide: loadingHide, get busy() { return LD.busy; } } };   // (the loading screen: net.js wraps its session build)
 })();
 
 window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-14 08:22 -->
+<!-- Apex GP build 2026-10-16 14:01 -->
 </body>
 </html>
