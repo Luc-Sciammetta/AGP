@@ -33,7 +33,7 @@ const log = (...a) => { if (!QUIET) console.log(new Date().toISOString().slice(1
 const now = () => performance.now();
 
 // ---------------------------------------------------------------- game logic (same code as the browser)
-const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'damage.js', 'ai.js', 'race.js', 'quali.js', 'ghost.js', 'netcore.js'];
+const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'damage.js', 'racecontrol.js', 'ai.js', 'race.js', 'quali.js', 'ghost.js', 'netcore.js'];
 function loadLogic() {
   const bundle = path.join(HERE, 'logic.js');
   let src;
@@ -42,11 +42,11 @@ function loadLogic() {
     const dir = ARG.src || process.env.AGP_SRC || path.join(HERE, '..', 'src');
     src = LOGIC.map(f => `// ===== ${f}\n` + fs.readFileSync(path.join(dir, f), 'utf8')).join('\n;\n');
   }
-  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'Damage', 'AI', 'Race', 'Quali', 'Ghost', 'NetCore'];
+  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'Damage', 'RaceControl', 'AI', 'Race', 'Quali', 'Ghost', 'NetCore'];
   return new Function(src + '\n;return {' + names.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : undefined`).join(',') + '};')();
 }
 const L = loadLogic();
-const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, Damage, AI, Race, Quali, Ghost, NetCore: N } = L;
+const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, Damage, RaceControl, AI, Race, Quali, Ghost, NetCore: N } = L;   // (RaceControl: the info block's r.rc - it was never bound here, clients got no flags)
 // a player's custom livery (src/livery.js): sanitised here (hex colours, name / code lengths, a known pattern), shown to
 // everyone (room players, race entry list, time-trial roster / leaderboard); the car keeps its team slot (p.team)
 const LV = L.Livery, cleanLivery = o => (o && LV ? LV.clean(o) : null);
@@ -275,7 +275,7 @@ class RaceSim {
     const diffId = DIFFICULTY[S.difficulty] ? S.difficulty : 'medium';
     this.diff = DIFFICULTY[diffId];
     Race.create(G, { mode: 'race', laps: S.laps, difficulty: diffId, playerTeam: humans.length ? humans[0].team : field[0], playerCompound: 'M', tyreWear: S.tyreWear, twoCompound: S.twoCompound,
-      penalties: S.penalties, penaltyLevel: S.penaltyLevel, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n });
+      penalties: S.penalties, penaltyLevel: S.penaltyLevel, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
     const race = this.race = G.race;
     if (race.qs) {
       race.qs.mp = true;   // (no garage speed-up; humans drive in at a session's end)
@@ -437,6 +437,22 @@ class RaceSim {
       Damage.hit(car, lx, lz, nlx, nlz, vn, vt, w, 'wall', null);
     }
   }
+  onBarHit(p, m) {   // (race control, phase 6: a client's car pushed a tyre wall / TecPro / armco back; RaceControl.barHit judges it)
+    const car = this.byPid.get(p.id), n = car && car.net, race = this.race;
+    if (!car || !n || n.auth !== 'client' || !race || (race.phase !== 'racing' && race.phase !== 'quali') || !Array.isArray(m.h)) return;
+    const tNow = now();
+    if (tNow - (n.bhT || 0) > 1000) { n.bhT = tNow; n.bhN = 0; }
+    for (const h of m.h.slice(0, 8)) if (n.bhN++ < 40) RaceControl.barHit(this.G, car, h);
+  }
+  onRft(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c) && typeof RaceControl !== 'undefined') RaceControl.chooseTyre(this.G, car, m.c); }   // (the red flag: the restart's tyres)
+  onRcx(p, m) {   // (tests only: node server.mjs --rc-test, tools/rc_mp_test.mjs) race control on demand: m.cfg the switches, m.n AI cars (<= 3) retired where they are
+    const race = this.race, G = this.G;
+    if (!ARG['rc-test'] || !race || !race.rc || !race.rc.on || race.phase !== 'racing' || typeof RaceControl === 'undefined') return;
+    if (m.cfg && typeof m.cfg === 'object') race.rc.cfg = RaceControl.clean(m.cfg);
+    const T = G.track, onT = c => { const i = T.idxAt(c.s); return Math.abs(c.d || 0) < T.halfW[i] - 2 ? 0 : 1; };   // (well on the asphalt first: it stops on the track)
+    const L = G.cars.filter(c => !c.net && !c.dnf && !c.finished && !c.inPitLane && !(c._race && c._race.pit)).sort((a, b) => onT(a) - onT(b));
+    for (const c of L.slice(0, Math.min(3, m.n | 0))) Race.retire(G, race, c, 'Engine');
+  }
   onPitc(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c)) { car.nextCompound = m.c; car.wxStop = true; } }
   // ---- control hand-over (epochs): the client ignores / the server rejects everything from an older epoch
   ctl(car, stT) {   // stT: the time of the car's state (its last physics step) when handing it back
@@ -478,7 +494,9 @@ class RaceSim {
       const car = cars[i], n = car.net;
       if (n) {
         const on = connected(n.p) && n.p.room === this.room && !n.left;
-        const want = car.kinematic ? 'pit' : !on || n.afk ? 'ai' : null;
+        // (race control on: a retired car stays where it stopped and its job moves it - the server has it from then on, 'rc')
+        // (a red flag: the server has every car until the restart's lights go out - the AI drives it in, race control lines it up)
+        const want = race.rc && race.rc.on && race.rc.rf && !car.dnf ? 'rc' : car.dnf && car.retired && race.rc && race.rc.on ? 'rc' : car.kinematic ? 'pit' : !on || n.afk ? 'ai' : null;
         if (want && n.auth === 'client') { n.auth = 'server'; n.why = want; n.epoch = (n.epoch % 255) + 1; this.ctl(car); }
         else if (want && n.why !== want) { n.why = want; this.ctl(car); }
         else if (!want && n.auth === 'server') { n.auth = 'client'; n.why = null; n.epoch = (n.epoch % 255) + 1; n.rep = null; n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; if (race.qs) car.wantPit = false; this.ctl(car, tNow - STEPMS); }
@@ -691,7 +709,8 @@ class RaceSim {
     const r = { phase: race.phase, laps: race.laps, leaderLap: race.leaderLap, fl: race.fastestLap ? [race.fastestLap.car.id, race.fastestLap.time, race.fastestLap.lap] : null,
       sbs: race.sessionBestSectors, lf: !!race.leaderFinished, tca: !!race.twoCompoundActive, t: race.t };
     if (this.G.world && this.G.world.damage && typeof Damage !== 'undefined') r.db = Damage.packDebris(race);   // (contact damage: debris)
-    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db]);
+    if (race.rc && typeof RaceControl !== 'undefined') r.rc = RaceControl.pack(race);   // (race control: the zone flags, decided here)
+    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db, r.rc && r.rc[0], r.rc && r.rc[8] ? r.rc[8][0] : 0]);   // (r.rc[8][0]: the movable barriers' version)
     const msg = { t: 'info', c: ch };
     if (full || rk !== this.rKey) { this.rKey = rk; msg.r = r; }
     if (!ch.length && !msg.r) return;
@@ -891,7 +910,10 @@ function onText(p, raw) {
     case 'reclaim': if (sim) sim.onReclaim(p); break;
     case 'away': if (sim && sim.onAway) sim.onAway(p, m); break;   // (m.lobby: went back to the lobby)
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
+    case 'rft': if (sim && sim.onRft) sim.onRft(p, m); break;   // (the red flag: a tyre choice for the restart)
+    case 'rcx': if (sim && sim.onRcx) sim.onRcx(p, m); break;   // (tests only: --rc-test)
     case 'wh': if (sim && sim.onWallHit) sim.onWallHit(p, m); break;   // (contact damage: a client's wall hit)
+    case 'bh': if (sim && sim.onBarHit) sim.onBarHit(p, m); break;   // (race control: a client's push into a movable barrier)
     case 'rst': if (sim && sim.onReset) sim.onReset(p); break;   // (reset ghost: the player pressed R)
     case 'qgo': case 'qret': case 'qready': case 'qcont': if (sim && sim.onQ) sim.onQ(p, m); break;   // (qualifying)
     case 'lap': if (sim && sim.onLap) sim.onLap(p, m); break;
