@@ -96,6 +96,20 @@ export class WSConn {
     if (typeof data === 'string') return this._write(1, Buffer.from(data, 'utf8'));
     return this._write(2, data instanceof Uint8Array ? data : Buffer.from(data));
   }
+  // a binary frame built once for several sockets (frame(), then each socket's sendFrameVolatile): no copy per receiver
+  static frame(payload) {
+    const len = payload.length, hl = len < 126 ? 2 : len < 65536 ? 4 : 10, f = Buffer.allocUnsafe(hl + len);
+    f[0] = 0x82;
+    if (hl === 2) f[1] = len; else if (hl === 4) { f[1] = 126; f.writeUInt16BE(len, 2); } else { f[1] = 127; f.writeBigUInt64BE(BigInt(len), 2); }
+    f.set(payload, hl);
+    return f;
+  }
+  sendFrameVolatile(f) {
+    if (!this.open || this.socket.destroyed) return false;
+    if (this.socket.writableLength > BACKLOG) { this.dropped++; return false; }
+    this.bytesOut += f.length; this.msgsOut++;
+    return this.socket.write(f);
+  }
   // realtime frames (snapshots): dropped rather than queued behind a slow link, so latency never builds up
   sendVolatile(data) {
     if (this.socket.writableLength > BACKLOG) { this.dropped++; return false; }

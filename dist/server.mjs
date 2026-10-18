@@ -22,7 +22,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { acceptUpgrade } from './ws.mjs';
+import { acceptUpgrade, WSConn as WS } from './ws.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ARG = (() => { const a = process.argv.slice(2), o = {}; for (let i = 0; i < a.length; i++) if (a[i].startsWith('--')) { const k = a[i].slice(2); o[k] = a[i + 1] && !a[i + 1].startsWith('--') ? a[++i] : true; } return o; })();
@@ -55,12 +55,39 @@ const trackCache = {};
 const getTrack = id => trackCache[id] || (trackCache[id] = buildTrack(TRACK_DATA[id]));
 const STEP = 1 / CFG.physicsHz, STEPMS = 1000 / CFG.physicsHz;
 const IDLE = { throttle: 0, brake: 1, steer: 0, boost: false, aeroPress: false, hold: true };
-const MAX_ROOMS = +(process.env.AGP_MAX_ROOMS || 200), MAX_IN_ROOM = 20, RECONNECT_S = 60, LOAD_TIMEOUT = 25000, AFK_MS = 3000;
+const MAX_ROOMS = +(process.env.AGP_MAX_ROOMS || 200), MAX_IN_ROOM = 20, RECONNECT_S = 60, LOAD_TIMEOUT = 15000, AFK_MS = 3000;
+const AI_NEAR = 20;   // m: an AI car this close to another drives at 60 Hz on the server, else 30 Hz (RaceSim.step)
 const QGRID_WAIT = 12000;   // qualifying over: ms the lights wait for every racer's 'loaded' (the grid built, the result read)
 const EMO_TXT = new Map(N.EMOTES);   // quick emotes: key -> text (NetCore.EMOTES, the same list the page shows)
 // fast relay: a human car's state goes to the drivers near it the moment it arrives (the 30 Hz snapshot carries the AI
 // and far cars); --batch sends everything with the snapshots only (+0-33 ms)
 const FAST = !ARG.batch;
+// --perf (tests / measuring): every 5 s per race room, the update cost (ms per call, p99, max), physics steps run / dropped,
+// the step cost, and what each client is sent (KB/s, messages / s)
+const PERF = ARG.perf ? (sim, t, ms, k) => {
+  const P = sim._perf || (sim._perf = { t0: t, n: 0, ms: 0, a: [], steps: 0, lag0: sim.lag || 0, b0: null, c0: process.cpuUsage() });
+  if (!P.b0) { P.b0 = new Map(); for (const p of sim.room.players) if (p.ws) P.b0.set(p, [p.ws.bytesOut, p.ws.msgsOut]); }
+  P.n++; P.ms += ms; P.a.push(ms); P.steps += k;
+  if (t - P.t0 < 5000) return;
+  const s = (t - P.t0) / 1000, a = P.a.sort((x, y) => x - y), kb = [], mg = [];
+  for (const [p, b] of P.b0) if (p.ws) { kb.push((p.ws.bytesOut - b[0]) / 1024 / s); mg.push((p.ws.msgsOut - b[1]) / s); }
+  console.log(`PERF room ${sim.room.code} ${sim.race ? sim.race.phase : sim.mode}: update ${(P.ms / P.n).toFixed(3)} ms avg, p99 ${a[Math.floor(a.length * 0.99)].toFixed(2)}, max ${a[a.length - 1].toFixed(2)}; steps ${(P.steps / s).toFixed(0)}/s, ${(P.steps ? P.ms / P.steps : 0).toFixed(3)} ms/step (incl. sends), dropped ${(sim.lag || 0) - P.lag0}; cpu ${(P.ms / s / 10).toFixed(1)} % (process ${(u => ((u.user + u.system) / 1e4 / s).toFixed(1) + ' %, sys ' + (u.system / 1e4 / s).toFixed(1))(process.cpuUsage(P.c0))} %); per client ${kb.map(x => x.toFixed(1)).join('/')} KB/s, ${mg.map(x => x.toFixed(0)).join('/')} msg/s`);
+  sim._perf = null;
+} : null;
+if (PERF) process.on('SIGTERM', () => process.exit(0));
+// --cpu-quota f (tests): a small cloud instance's CPU limit (Linux CFS: f x 100 ms of CPU per 100 ms; a process that has
+// used it is frozen until it is earned back): a token bucket checked after each loop wake, message and HTTP request.
+// e.g. --cpu-quota 0.1 = Render's free instance (0.1 CPU) on a core as fast as this one
+const QUOTA = +ARG['cpu-quota'] > 0 ? Math.min(1, +ARG['cpu-quota']) : 0;
+const quota = QUOTA ? (() => {
+  const sab = new Int32Array(new SharedArrayBuffer(4)), cap = QUOTA * 100;
+  let tok = cap, tL = now(), c0 = process.cpuUsage();
+  return () => {
+    const t = now(), u = process.cpuUsage(c0); c0 = process.cpuUsage();
+    tok = Math.min(cap, tok + (t - tL) * QUOTA) - (u.user + u.system) / 1000; tL = t;
+    if (tok < 0) { Atomics.wait(sab, 0, 0, -tok / QUOTA); tok = 0; tL = now(); c0 = process.cpuUsage(); }
+  };
+})() : null;   // (--perf: a clean exit, so node --cpu-prof writes its profile)
 // tests only: --qlen 60,90,30 (s per qualifying session) / --qbrk 60 (s per break) instead of the room's lengths
 const QLEN = typeof ARG.qlen === 'string' ? ARG.qlen.split(',').map(Number).filter(x => x >= 5) : null, QBRK = +ARG.qbrk > 0 ? +ARG.qbrk : null;
 
@@ -173,6 +200,46 @@ function roomMsg(room, p) {
 }
 function sendRoom(room) { room.dirty = false; room.urgent = false; room.sentT = now(); for (const p of room.players) send(p, roomMsg(room, p)); }
 
+// The room's circuit is prepared in the lobby, in small pieces with pauses between them (a 0.1-CPU host stays responsive):
+// built, race control's layout, the per-circuit race / AI data (~0.5 s of CPU on a fast core the first time: ~5 s on a
+// 0.1-CPU host, which START used to wait for), then 14 s of a 2-car race from the grid (the lights, the start, race
+// control: the code a race runs is compiled before it, not in its first seconds; also once at boot on the first circuit).
+// At once for a new room, 1.5 s after the host's last circuit change; skipped while a race runs on this server (no hitch
+// for it: START then does the work, as before)
+const warmed = new Set();
+const raceBusy = () => { for (const r of rooms.values()) if (r.sim && !r.sim.stopped) return true; return false; };
+function warmTrack(id, damage, alive) {
+  if (!TRACK_DATA[id] || warmed.has(id) || raceBusy()) return;
+  warmed.add(id);
+  const t0 = now(), G = { track: null, cars: [], player: null, race: null, world: null, events: [], weather: null, brains: new Map(), attract: false, time: 0, input: null, settings: { mode: 'race', laps: 3 } };
+  let k = 0;
+  const parts = [
+    () => { G.track = getTrack(id); G.weather = makeWeather({}, G.track, 1); },
+    () => Race.create(G, { mode: 'race', laps: 3, difficulty: 'medium', playerTeam: 0, playerCompound: 'M', seed: 1, field: [0, 1], fieldSize: 2 }),
+    () => {
+      G.world = { track: G.track, cars: G.cars, race: G.race, events: G.events, weather: G.weather, assists: { tc: true, abs: true }, wearPerMetre: 0, damage: typeof Damage !== 'undefined' ? Damage.worldFor(damage || 'full') : null };
+      for (const c of G.cars) { c.isPlayer = false; c.assists = { tc: true, abs: true }; G.brains.set(c, AI.create(c, DIFFICULTY.medium, 1 + c.id, G)); }
+      if (G.race.awaitConfirm) Race.confirmGrid(G);
+    },
+  ];
+  for (let n = 0; n < 28; n++) parts.push(() => {   // (14 s: grid, lights, a few seconds of racing; 0.5 s a piece)
+    for (let i = 0; i < 60; i++) {
+      for (const c of G.cars) { let inp = Race.controlOverride(G, c); if (!inp && (G.race.phase === 'grid' || G.race.phase === 'lights')) inp = IDLE; Physics.step(c, inp || AI.drive(G.brains.get(c), c, G, STEP), STEP, G.world); }
+      Physics.collide(G.cars, STEP, G.events, G.world); Race.update(G, STEP); G.events.length = 0;
+    }
+  });
+  const next = () => {
+    if ((alive && !alive()) || raceBusy()) return;   // (the room gone / a race started meanwhile: what is done is kept)
+    try { parts[k++](); } catch (e) { log(`warm ${id} failed: ${e.message}`); return; }
+    if (k < parts.length) setTimeout(next, 20); else log(`circuit ${id} prepared in ${Math.round(now() - t0)} ms`);
+  };
+  next();
+}
+function warmSoon(room, ms = 1500) {
+  clearTimeout(room.warmT);
+  room.warmT = setTimeout(() => { if (rooms.has(room.code) && !room.sim) warmTrack(room.settings && room.settings.trackId, room.settings && room.settings.damage, () => rooms.has(room.code)); }, ms);
+}
+setTimeout(() => warmTrack(N.DEF.trackId), 2000);   // (boot: the default circuit and the race code)
 function createRoom(host, settings, me) {
   if (rooms.size >= MAX_ROOMS) return send(host, { t: 'error', msg: 'Server is full, try again later' });
   const code = newCode();
@@ -180,6 +247,7 @@ function createRoom(host, settings, me) {
   const room = { code, host, players: [], settings: N.roomSettings(settings, TRACK_IDS, 1), phase: 'lobby', sim: null, dirty: true, urgent: true, sentT: 0, created: Date.now() };
   rooms.set(code, room);
   joinRoom(room, host, me);
+  warmSoon(room, 0);
   log(`room ${code} created by #${host.id} ${dname(host)}`);
 }
 function joinRoom(room, p, me) {
@@ -247,8 +315,8 @@ function relayNear(sim, car, rep, epoch, t, raceT) {
     if (dx * dx + dz * dz > N.NEAR * N.NEAR) continue;
     // (whole ms: the receiver's sample time = head time - age must be exactly rep.t — a truncated head time with a
     // rounded age put half the samples 1 ms early, an 8 cm jump at 300 km/h)
-    if (!made) { const T = Math.round(t); N.writeSnapHead(_relayDv, 1, 0, T, raceT); N.writeSnapCar(_relayDv, N.SNAP_HEAD, car.id, epoch, 1, T - rep.t, rep, false); made = true; }
-    q.ws.sendVolatile(_relay);
+    if (!made) { const T = Math.round(t); N.writeSnapHead(_relayDv, 1, 0, T, raceT); N.writeSnapCar(_relayDv, N.SNAP_HEAD, car.id, epoch, 1, T - rep.t, rep, false); made = WS.frame(_relay); }
+    if (q.ws.sendFrameVolatile) q.ws.sendFrameVolatile(made); else q.ws.sendVolatile(_relay);
   }
 }
 
@@ -277,6 +345,7 @@ class RaceSim {
     Race.create(G, { mode: 'race', laps: S.laps, difficulty: diffId, playerTeam: humans.length ? humans[0].team : field[0], playerCompound: 'M', tyreWear: S.tyreWear, twoCompound: S.twoCompound,
       penalties: S.penalties, penaltyLevel: S.penaltyLevel, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
     const race = this.race = G.race;
+    this.brainQ = [];
     if (race.qs) {
       race.qs.mp = true;   // (no garage speed-up; humans drive in at a session's end)
       if (QLEN) race.qs.len = race.qs.len.map((x, i) => QLEN[Math.min(i, QLEN.length - 1)]);
@@ -301,7 +370,7 @@ class RaceSim {
         car.tyre.compound = c; car.tyre.wear = 0; car.compoundsUsed = [c]; car.grip = COMPOUNDS[c].grip; car._startC = c;   // (_startC: the race start tyre after qualifying)
         if (CFG.setup && CFG.setup.apply) CFG.setup.apply(car, (p.setups && p.setups[S.trackId]) || null);   // the player's own wings (lobby setup)
         p.carId = car.id; p.loaded = false;
-      } else G.brains.set(car, AI.create(car, this.diff, seed + car.id * 7919, G));
+      } else this.brainQ.push(car);   // (AI brains: made while the clients load, makeBrains)
     }
     // unique codes / numbers (humans keep theirs; two humans with the same code: the later one to join gets an alternative,
     // so "Player 1" is PLA and "Player 2" PLX)
@@ -338,6 +407,11 @@ class RaceSim {
     log(`room ${room.code}: race on ${track.id}, ${S.laps} laps, ${G.cars.length} cars (${humans.length} human), ${S.contact}`);
   }
   has(p) { return this.byPid.has(p.id); }
+  // the AI cars' brains (deterministic: each from its own seed, all made before the first step)
+  makeBrains(n) { const q = this.brainQ; while (q.length && n-- > 0) { const car = q.shift(); this.G.brains.set(car, AI.create(car, this.diff, this.seed + car.id * 7919, this.G)); } }
+  // the loop's next wake for this race (server ms): each snapshot (30 Hz: the due physics steps run, then the snapshot goes
+  // out with the newest state); loading: soon
+  nextT(t) { return this.stopped ? Infinity : this.phase === 'loading' ? t + 15 : this.snapT + 1000 / N.HZ.snap; }
   brief() {
     const lead = this.race.order[0], qs = this.race.qs, q = qs && qs.st !== 'done' ? (qs.st === 'break' ? 'BREAK' : qs.fmt.names[qs.idx]) : null;   // (q: the qualifying session running)
     return { mode: 'race', phase: this.race.phase, lap: lead ? Math.min(this.race.laps, Math.max(1, lead.lap | 0)) : 0, laps: this.race.laps, track: this.track.id, q: q || undefined };
@@ -369,7 +443,7 @@ class RaceSim {
     const why = N.plausible(this.track, n.rep, s, n.rep ? s.t - n.rep.t : 33, this._pr);
     if (why) { n.bad++; if (n.bad % 30 === 1) log(`room ${this.room.code}: #${p.id} implausible state (${why}) x${n.bad}`); return; }
     const rep = n.rep || (n.rep = N.newState());
-    if (n.n && !n.rep0) n.rep0 = { x: rep.x, z: rep.z, h: rep.h, vx: rep.vx, vz: rep.vz, r: rep.r, t: rep.t, acc: n.acc || 0 };   // (netPose: the prediction before this report)
+    if (n.n && !n.rep0) { const q = n.rep0 = n.rep0b || (n.rep0b = {}); q.x = rep.x; q.z = rep.z; q.h = rep.h; q.vx = rep.vx; q.vz = rep.vz; q.r = rep.r; q.t = rep.t; q.acc = n.acc || 0; }   // (netPose: the prediction before this report)
     const dtr = n.n ? (s.t - rep.t) / 1000 : 0;   // (speed change per s between the last two reports, for the dead reckoning)
     n.acc = dtr > 0.01 && dtr < 0.25 ? U.clamp((Math.hypot(s.vx, s.vz) - Math.hypot(rep.vx, rep.vz)) / dtr, -60, 25) : 0;
     N.copyState(s, rep); rep.s = this._pr.s; rep.idx = this._pr.idx;
@@ -464,13 +538,19 @@ class RaceSim {
   netPose(car, n, tNow, dt) {
     const race = this.race, track = this.track;
     if (n.rep) {
-      const r = n.rep, pre = race.phase !== 'racing' && race.phase !== 'finished';
+      // (pre: on the grid. A report from after this step - the steps run in batches - is not where the car was then: a car
+      // that left at lights out would be a jump start on a step still before it. Qualifying: placed at the step's time like
+      // in the race - it took the newest report as it was, the batches would put up to 33 ms of noise in the laps)
+      const r = n.rep, pre = race.phase === 'grid' || race.phase === 'lights';
+      if (pre && r.t > tNow + 1) return;
       // (dead reckoning as the clients do it: N.MAX_EXTRAP, the speed change between the last two reports carried on)
-      const e = pre ? 0 : U.clamp((tNow - r.t) / 1000, 0, N.MAX_EXTRAP), x = N.extrap(r.x, r.z, r.h, r.vx, r.vz, r.r, e, this._ex, n.acc || 0);
+      // (e < 0: a report newer than this step - the steps run in batches at each snapshot, up to 33 ms after their time -
+      // moved back along its arc to the step's time)
+      const e = pre ? 0 : U.clamp((tNow - r.t) / 1000, -0.05, N.MAX_EXTRAP), x = N.extrap(r.x, r.z, r.h, r.vx, r.vz, r.r, e, this._ex, n.acc || 0);
       // a new report moves the extrapolated pose by the old one's prediction error: that change is blended out (~60 ms)
       // instead of a hop at every packet (AI cars alongside collide with / race against this pose; penalties judge it)
       if (n.rep0) {
-        const q = n.rep0, y = N.extrap(q.x, q.z, q.h, q.vx, q.vz, q.r, pre ? 0 : U.clamp((tNow - q.t) / 1000, 0, N.MAX_EXTRAP), this._ex2, q.acc || 0);
+        const q = n.rep0, y = N.extrap(q.x, q.z, q.h, q.vx, q.vz, q.r, pre ? 0 : U.clamp((tNow - q.t) / 1000, -0.05, N.MAX_EXTRAP), this._ex2, q.acc || 0);
         n.ex += y.x - x.x; n.ez += y.z - x.z; n.eh += U.wrapAngle(y.h - x.h); n.rep0 = null;
         if (n.ex * n.ex + n.ez * n.ez > 16 || Math.abs(n.eh) > 0.5 || r.reset) n.ex = n.ez = n.eh = 0;   // (a reset to the track: no blend)
       }
@@ -478,7 +558,7 @@ class RaceSim {
       car.x = x.x + n.ex; car.z = x.z + n.ez; car.h = U.wrapAngle(x.h + n.eh); car.vx = x.vx; car.vz = x.vz; car.r = r.r;
       car.throttle = r.throttle; car.brake = r.brake; car.steer = r.steer; car.gear = r.gear; car.rpm = r.rpm; car.aeroT = r.aeroT;
       car.aero = r.straight ? 'straight' : 'corner'; car.boosting = r.boosting; car.harvesting = r.harvesting; car.onKerb = r.onKerb; car.reverse = r.reverse;
-      if (pre && (race.phase === 'grid' || race.phase === 'lights') && Math.hypot(car.vx, car.vz) < 0.05) { car.vx = 0; car.vz = 0; }
+      if (pre && Math.hypot(car.vx, car.vz) < 0.05) { car.vx = 0; car.vz = 0; }
     } else { car.x += car.vx * dt; car.z += car.vz * dt; }   // just handed back: dead reckoning until the client's first report
     const p = track.project(car.x, car.z, car.idx, this._pr);
     car.s = p.s; car.d = p.d; car.idx = p.idx;
@@ -488,8 +568,36 @@ class RaceSim {
     car.offTrack = car.surface === SURF.GRASS || car.surface === SURF.GRAVEL || car.surface === SURF.RUNOFF;
     if ((race.phase === 'racing' || race.phase === 'quali') && !n.afk && tNow - n.recvT > AFK_MS) { n.afk = true; log(`room ${this.room.code}: #${n.p.id} ${n.dname} idle -> AI drives`); }
   }
+  // One physics step (120 Hz: every car's physics, the human cars' reported poses, contact). The control - the autopilots'
+  // inputs (held for the pair's second step, a one-shot aero press dropped) and Race.update (timing, race control, the SC,
+  // penalties: crossing times are interpolated) - runs every second step (60 Hz); the AI's driving at 60 Hz while another
+  // car is within AI_NEAR m, else every fourth step (30 Hz, staggered by car id; its last input held). Measured (Node,
+  // 10-12 AI cars, Montreal / Singapore / Harbour / Vortex / Jeddah): best laps within 0.1 % of 120 Hz, no extra
+  // contacts or offs; the server's cost per AI car about a third (a 0.1-CPU host runs a 6-car race: before, it dropped
+  // steps and every car stuttered). Deterministic: the rate follows the race state only
+  heldInput(car, inp, k) {
+    const h = car._hin || (car._hin = { throttle: 0, brake: 0, steer: 0, boost: false, aeroPress: false, hold: false, kb: undefined, reverse: false });
+    h.throttle = inp.throttle || 0; h.brake = inp.brake || 0; h.steer = inp.steer || 0; h.boost = !!inp.boost; h.aeroPress = !!inp.aeroPress;
+    h.hold = !!inp.hold; h.kb = inp.kb; h.reverse = !!inp.reverse; car._hinS = k;
+    return inp;
+  }
+  heldNext(car, k) { const h = car._hin; if (!h || car._hinS !== k - 1) return null; h.aeroPress = false; return h; }
+  // the AI's input for control step k: a fresh one when due (near another car, its 30 Hz turn, nothing held), else its last
+  aiInput(car, brain, k) {
+    const cars = this.G.cars;
+    const fresh = car._aiK == null || k < car._aiK || k - car._aiK >= 4 || !car._ain;   // (k < _aiK: the steps restarted, at the lights)
+    let due = fresh || ((k >> 1) + car.id) % 2 === 0;
+    if (!due) for (let j = 0; j < cars.length; j++) { const o = cars[j]; if (o !== car && (o.x - car.x) * (o.x - car.x) + (o.z - car.z) * (o.z - car.z) < AI_NEAR * AI_NEAR) { due = true; break; } }
+    if (!due) { const h = car._ain; h.aeroPress = false; return h; }
+    const inp = AI.drive(brain, car, this.G, (fresh ? 2 : k - car._aiK) * STEP);
+    car._aiK = k;
+    const h = car._ain || (car._ain = {});
+    h.throttle = inp.throttle || 0; h.brake = inp.brake || 0; h.steer = inp.steer || 0; h.boost = !!inp.boost; h.aeroPress = !!inp.aeroPress; h.hold = !!inp.hold; h.kb = inp.kb; h.reverse = !!inp.reverse;
+    return inp;
+  }
   step(tNow) {
     const G = this.G, race = this.race, dt = STEP, cars = G.cars, pre = race.phase === 'grid' || race.phase === 'lights', gm = Physics.ghostAny(cars);   // (gm: reset ghosts, the AI drives through them)
+    const k = this.steps, ctl = (k & 1) === 1;   // (control steps: odd; Race.update after the even ones)
     for (let i = 0; i < cars.length; i++) {
       const car = cars[i], n = car.net;
       if (n) {
@@ -503,15 +611,23 @@ class RaceSim {
         if (n.auth === 'client') { this.netPose(car, n, tNow, dt); continue; }
         if (car.kinematic) continue;
         if (race.phase === 'quali' && race.qs) car.wantPit = true;   // (qualifying: away / offline on track -> the AI drives it to its garage)
-        let inp = Race.controlOverride(G, car);
-        if (!inp && pre) inp = IDLE;
-        if (!inp) { if (!n.brain) n.brain = AI.create(car, this.diff, this.seed + car.id * 131, G); if (gm) Physics.ghostMask(cars, true, car); inp = AI.drive(n.brain, car, G, dt); if (gm) Physics.ghostMask(cars, false); }
+        let inp = ctl ? null : this.heldNext(car, k);
+        if (!inp) {
+          inp = Race.controlOverride(G, car);
+          if (!inp && pre) inp = IDLE;
+          if (!inp) { if (!n.brain) { n.brain = AI.create(car, this.diff, this.seed + car.id * 131, G); car._aiK = null; } if (gm) Physics.ghostMask(cars, true, car); inp = this.aiInput(car, n.brain, k); if (gm) Physics.ghostMask(cars, false); }
+          this.heldInput(car, inp, k);
+        }
         Physics.step(car, inp, dt, G.world);
         continue;
       }
-      let inp = Race.controlOverride(G, car);
-      if (!inp && pre && !(race.releaseEarly && race.releaseEarly.has(car))) inp = IDLE;
-      if (!inp) { const b = G.brains.get(car); if (gm) Physics.ghostMask(cars, true, car); inp = b ? AI.drive(b, car, G, dt) : IDLE; if (gm) Physics.ghostMask(cars, false); }
+      let inp = ctl ? null : this.heldNext(car, k);
+      if (!inp) {
+        inp = Race.controlOverride(G, car);
+        if (!inp && pre && !(race.releaseEarly && race.releaseEarly.has(car))) inp = IDLE;
+        if (!inp) { const b = G.brains.get(car); if (gm) Physics.ghostMask(cars, true, car); inp = b ? this.aiInput(car, b, k) : IDLE; if (gm) Physics.ghostMask(cars, false); }
+        this.heldInput(car, inp, k);
+      }
       Physics.step(car, inp, dt, G.world);
     }
     // ghosting: human cars touch nobody (AI cars still race each other); contact: everyone collides
@@ -520,13 +636,16 @@ class RaceSim {
     if (this.ghost) for (const c of cars) if (c._gk) { c._gk = false; c.kinematic = false; }
     if (gm) for (const c of cars) if (c.ghosted && !Physics.ghostStep(c, cars, this.track, dt)) sendAll(this.room, { t: 'rg', id: c.id, on: 0 });   // (reset ghost over)
     const wasRacing = race.phase === 'racing';
-    Race.update(G, dt);
-    if (this.q) this.qStep(tNow);   // (qualifying: nobody left in it -> the rest simulated; everyone READY in a break)
+    if (!ctl) {
+      Race.update(G, 2 * dt); this.ruT = tNow;   // (ruT: the time of race control's vehicles in the snapshots)
+      if (this.q) this.qStep(tNow);   // (qualifying: nobody left in it -> the rest simulated; everyone READY in a break)
+    }
     G.time += dt;
     if (!wasRacing && race.phase === 'racing' && !this.goSent) {   // lights out: the race clock's zero on the server clock
       this.goSent = true; this.raceT0 = tNow - race.t * 1000;
       sendAll(this.room, { t: 'go', t0: this.raceT0 });
     }
+    if (ctl) return;   // (the pair's first step: its events - contacts, damage - wait for Race.update, which judges them)
     for (let i = 0; i < G.events.length; i++) {
       const ev = G.events[i];
       if (ev.type === 'raceEnd') this.onRaceEnd(tNow);
@@ -579,7 +698,7 @@ class RaceSim {
   }
   qMsg() {
     const qs = this.race.qs, m = Quali.stateMsg(this.G);
-    return { t: 'qs', i: m.i, st: m.st, qt: m.t, clock: m.clock, ts: Math.round((this.t0 + this.steps * STEPMS) * 10) / 10, flagAt: m.flagAt, g: m.g, f: m.f, inS: m.inS, out: m.out,
+    return { t: 'qs', i: m.i, st: m.st, qt: m.t, clock: m.clock, ts: Math.round((this.ruT != null ? this.ruT : this.t0 + this.steps * STEPMS) * 10) / 10, flagAt: m.flagAt, g: m.g, f: m.f, inS: m.inS, out: m.out,
       ready: m.ready, pen: m.pen, warn: m.warn, seq: m.seq, sbs: qs.sbs, best: qs.best, imp: qs.imp };
   }
   qSend(only) {
@@ -639,9 +758,16 @@ class RaceSim {
   flush() { if (this.evq.length) { sendAll(this.room, { t: 'ev', e: this.evq }); this.evq = []; } }
   update(t) {
     if (this.stopped) return;
+    if (!PERF) return this.update1(t);
+    const t0 = now(), s0 = this.steps;
+    this.update1(t);
+    PERF(this, t, now() - t0, this.steps - s0);
+  }
+  update1(t) {
     const race = this.race;
     if (this.phase === 'loading') {   // wait for every racing client to build the circuit, then start the lights
       const all = this.humans.every(p => p.loaded || !connected(p) || p.room !== this.room);
+      this.makeBrains(all ? Infinity : 4);   // (the AI brains meanwhile, a few per wake: the 'race' message went out at once)
       if (!all && t - this.loadT0 < LOAD_TIMEOUT) return;
       this.phase = 'run';
       if (race.qs) {   // qualifying first: Q1 green now (the clock runs from this step on), no lights
@@ -653,8 +779,14 @@ class RaceSim {
     }
     const want = Math.floor((t - this.t0) / STEPMS);
     let k = 0;
-    while (this.steps < want && k < 24) { this.steps++; this.step(this.t0 + this.steps * STEPMS); k++; }
-    if (this.steps < want) { this.lag = (this.lag || 0) + (want - this.steps); this.steps = want; }
+    while (this.steps < want && k < 60) { this.steps++; this.step(this.t0 + this.steps * STEPMS); k++; }   // (catch-up: up to 0.5 s, e.g. after a small host's CPU throttling)
+    if (this.steps < want) {
+      this.lag = (this.lag || 0) + (want - this.steps); this.steps = want;
+      // the server can't run the race in real time (too little CPU for this many cars: ~1 ms per 20-car step on a fast
+      // core, AI driving 3/4 of it): the race goes slow motion and every car stutters. Said once a minute
+      if (!(t - this.lagW0 < 5000)) { this.lagW0 = t; this.lagW = this.lag; }   // (dropped steps per 5 s window)
+      if (this.lag - this.lagW > 60 && !(t - this.lagT < 60000)) { this.lagT = t; log(`room ${this.room.code}: server overloaded (${this.lag} steps dropped)`); sendAll(this.room, { t: 'error', msg: 'Server overloaded: the race runs slowed down. Fewer AI racers (or a bigger server) will fix it', code: 'slow' }); }
+    }
     this.flush();
     if (this.q) this.qTick(t);
     if (t - this.snapT >= 1000 / N.HZ.snap) { this.snapT = Math.max(this.snapT + 1000 / N.HZ.snap, t - 100); this.snapshots(t); }
@@ -664,34 +796,77 @@ class RaceSim {
     if (this.endT != null && t - this.endT > 45000) this.stop();   // cool-down laps done
   }
   snapshots(t) {
-    const cars = this.G.cars, seq = ++this.snapSeq, raceT = this.race.t;
+    const cars = this.G.cars, seq = ++this.snapSeq, raceT = this.race.t, race = this.race, SC = N.SNAP_CAR;
     // sample times to the ms: the head time is whole ms and each car's age makes its sample time exact — a relayed human
     // state keeps its own stamp, a car simulated here is at the last physics step (up to 8 ms before t: stamping it t
     // made the AI cars jump up to 0.7 m back and forth at 300 km/h), moved to that step's nearest whole ms
     const T = Math.round(t), tp = this.t0 + this.steps * STEPMS, tq = Math.round(tp), dq = (tq - tp) / 1000;
+    // every car's record is written once (the same bytes for every client), then each client gets its selection.
+    // Cars simulated here: a car moved by placement (race control's push / tow / crane, the pit autopilot: zero physics
+    // velocity) gets its velocity from its last two snapshot poses, so clients interpolate it smoothly instead of a 30 Hz
+    // stop-go; a car standing still with an unchanged record (parked, retired, on the grid) goes out only twice a second
+    const nV = 2, cap = cars.length + nV;
+    if (!this._rec || this._rec.length < cap * SC) { this._rec = Buffer.alloc(cap * SC); this._recDv = new DataView(this._rec.buffer, this._rec.byteOffset, this._rec.length); this._sb = Buffer.alloc(N.SNAP_HEAD + cap * SC); this._sbDv = new DataView(this._sb.buffer, this._sb.byteOffset, this._sb.length); this._still = new Uint16Array(cap); this._pv = []; }
+    const rec = this._rec, rdv = this._recDv, still = this._still, use = this._use || (this._use = []);
+    for (let i = 0; i < cars.length; i++) {
+      const car = cars[i], nn = car.net, o = i * SC;
+      let flags = 0, age, s, stale = false;
+      if (nn) { flags |= 1; if (nn.auth === 'server') flags |= 2; if (nn.why === 'ai') flags |= 8; }
+      if (car.kinematic) flags |= 4;
+      const client = nn && nn.auth === 'client';
+      if (client && !nn.rep) { use[i] = 0; continue; }
+      if (client) { s = nn.rep; age = T - s.t; stale = t - nn.recvT > 300; }
+      else {
+        s = N.stateFromCar(car, this._stN); age = T - tq;
+        const pv = this._pv[i] || (this._pv[i] = { x: car.x, z: car.z, h: car.h, t: tp });
+        const dt = (tp - pv.t) / 1000, mx = car.x - pv.x, mz = car.z - pv.z;
+        if ((car.kinematic || car.dnf) && s.vx * s.vx + s.vz * s.vz < 0.09 && dt > 0.01 && dt < 0.25 && mx * mx + mz * mz < 25 && mx * mx + mz * mz > 1e-4) { s.vx = mx / dt; s.vz = mz / dt; s.r = U.wrapAngle(car.h - pv.h) / dt; }
+        pv.x = car.x; pv.z = car.z; pv.h = car.h; pv.t = tp;
+        s.x += s.vx * dq; s.z += s.vz * dq; s.h += s.r * dq;
+      }
+      N.writeSnapCar(this._sbDv, N.SNAP_HEAD, car.id, nn ? nn.epoch : 0, flags, age, s, stale);
+      const same = !client && s.vx * s.vx + s.vz * s.vz < 0.0025 && this._sb.compare(rec, o + 6, o + SC, N.SNAP_HEAD + 6, N.SNAP_HEAD + SC) === 0 && this._sb.compare(rec, o, o + 4, N.SNAP_HEAD, N.SNAP_HEAD + 4) === 0;
+      still[i] = same ? Math.min(60000, still[i] + 1) : 0;
+      this._sb.copy(rec, o, N.SNAP_HEAD, N.SNAP_HEAD + SC);
+      use[i] = 1;
+    }
+    // race control's safety car / medical car out of their park: ids 250 / 251 (clients interpolate them like a car)
+    const rc = race.rc, vh = this._vh || (this._vh = [{ h: 0, x: 0, z: 0, t: -1 }, { h: 0, x: 0, z: 0, t: -1 }]);
+    let nv = 0;
+    for (let k = 0; k < nV; k++) {
+      const V = rc && rc.on ? (k ? rc.mc : rc.sc) : null, o = (cars.length + nv) * SC;
+      if (!V || !(V.st >= 1 && V.st < 4)) { vh[k].t = -1; continue; }
+      // (its velocity from its last two snapshot poses: V.v is its speed along s, not in the world - 22 vs 23-31 m/s in a
+      // pit lane / off the centre line - and an interpolation with V.v put it 0.2-0.4 m back and forth every frame)
+      const tv = this.ruT != null ? this.ruT : tp, tvq = Math.round(tv), dqv = (tvq - tv) / 1000;   // (moved by Race.update: at its time)
+      const v = this._vS || (this._vS = N.newState()), p = vh[k], dt = (tv - p.t) / 1000, fd = p.t >= 0 && dt > 0.01 && dt < 0.25;
+      const fx = fd ? (V.x - p.x) / dt : 0, fz = fd ? (V.z - p.z) / dt : 0, ok = fd && fx * fx + fz * fz < 120 * 120;
+      v.vx = ok ? fx : V.v * Math.cos(V.h); v.vz = ok ? fz : V.v * Math.sin(V.h); v.r = ok ? U.clamp(U.wrapAngle(V.h - p.h) / dt, -2, 2) : 0;
+      p.h = V.h; p.x = V.x; p.z = V.z; p.t = tv;
+      v.x = V.x + v.vx * dqv; v.z = V.z + v.vz * dqv; v.h = V.h + v.r * dqv; v.boosting = !!V.li; v.throttle = v.brake = v.steer = 0; v.gear = 1; v.rpm = 0;
+      N.writeSnapCar(rdv, o, N.VEH_ID + k, 0, 2 | 4, T - tvq, v, false); nv++;
+    }
+    const sb = this._sb, sdv = this._sbDv;
     for (const p of this.room.players) {
       if (!connected(p)) continue;
       const me = this.byPid.get(p.id);
       if (!me) continue;   // (waiting in the lobby: not in this race)
-      const buf = Buffer.allocUnsafe(N.SNAP_HEAD + cars.length * N.SNAP_CAR), dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
       let o = N.SNAP_HEAD, n = 0;
-      for (const car of cars) {
-        const nn = car.net;
+      for (let i = 0; i < cars.length; i++) {
+        if (!use[i]) continue;
+        const car = cars[i], nn = car.net;
         if (car === me && nn.auth === 'client') continue;   // the client drives it itself
-        if (me && car !== me) {
+        if (car !== me) {
           const dx = car.x - me.x, dz = car.z - me.z, far = dx * dx + dz * dz > N.NEAR * N.NEAR;
           if (far && (seq + car.id) % N.FAR_EVERY) continue;
           if (!far && FAST && nn && nn.auth === 'client' && nn.rep && t - nn.recvT < 200) continue;   // (relayed on arrival)
+          if (still[i] > 2 && (seq + car.id) % 15) continue;   // (standing still, nothing changed: 2 Hz)
         }
-        let flags = 0, age = 0, s, stale = false;
-        if (nn) { flags |= 1; if (nn.auth === 'server') flags |= 2; if (nn.why === 'ai') flags |= 8; }
-        if (car.kinematic) flags |= 4;
-        if (nn && nn.auth === 'client' && nn.rep) { s = nn.rep; age = T - s.t; stale = t - nn.recvT > 300; }
-        else { s = N.stateFromCar(car, this._stN); age = T - tq; s.x += s.vx * dq; s.z += s.vz * dq; s.h += s.r * dq; }
-        o = N.writeSnapCar(dv, o, car.id, nn ? nn.epoch : 0, flags, age, s, stale); n++;
+        rec.copy(sb, o, i * SC, i * SC + SC); o += SC; n++;
       }
-      N.writeSnapHead(dv, n, seq, T, raceT);
-      p.ws.sendVolatile(buf.subarray(0, o));
+      if (nv) { rec.copy(sb, o, cars.length * SC, (cars.length + nv) * SC); o += nv * SC; n += nv; }
+      N.writeSnapHead(sdv, n, seq, T, raceT);
+      p.ws.sendVolatile(sb.subarray(0, o));   // (ws copies it into the frame: the buffer is reused)
     }
   }
   raceBlock() {
@@ -746,6 +921,7 @@ class TTSim {
     log(`room ${room.code}: time trial on ${this.track.id}`);
   }
   has(p) { return this.ent.has(p.id); }
+  nextT() { return this.stopped ? Infinity : this.snapT + 1000 / N.HZ.snap; }
   brief() { return { mode: 'timetrial', track: this.track.id, drivers: this.ent.size }; }
   add(p) {
     let e = this.ent.get(p.id);
@@ -881,7 +1057,9 @@ function onText(p, raw) {
     case 'settings': if (host && room.phase === 'lobby' && m.settings && typeof m.settings === 'object') {
       const upd = Object.assign({}, m.settings);
       if ('penalties' in upd && !('penaltyLevel' in upd)) upd.penaltyLevel = upd.penalties === false ? 'off' : room.settings.penaltyLevel !== 'off' ? room.settings.penaltyLevel : 'standard';   // (older clients: on / off)
+      const tr0 = room.settings.trackId;
       room.settings = N.roomSettings(Object.assign({}, room.settings, upd), TRACK_IDS, room.players.length); room.urgent = true; for (const q of room.players) if (q !== p) q.ready = false;
+      if (room.settings.trackId !== tr0) warmSoon(room);
     } break;
     case 'start': {
       if (!host || room.phase !== 'lobby') return;
@@ -957,6 +1135,7 @@ function onConnection(ws) {
     }
     onText(p, data);
   };
+  if (quota) { const h = ws.onmessage; ws.onmessage = (data, bin) => { h(data, bin); quota(); }; }
   ws.onclose = () => {
     clearTimeout(hello);
     if (!p || p.ws !== ws) return;
@@ -966,8 +1145,10 @@ function onConnection(ws) {
   };
 }
 
-// ---------------------------------------------------------------- loop: all rooms, ~250 Hz scheduler, 120 Hz physics
-setInterval(() => {
+// ---------------------------------------------------------------- loop: all rooms, 120 Hz physics
+// The loop wakes when a running session is due (every second physics step and each snapshot: ~60-90 wakes / s), else
+// every 50 ms (lobbies); it was a fixed 4 ms interval (250 wakes / s, ~16 % of a race's server CPU in the timers alone)
+function loop() {
   const t = now(), wall = Date.now();
   for (const room of rooms.values()) {
     if (room.sim) { try { room.sim.update(t); } catch (e) { console.error(`room ${room.code} sim error`, e); room.sim.stop(); room.sim = null; room.phase = 'lobby'; room.urgent = true; numberNames(room); sendAll(room, { t: 'error', msg: 'The session crashed on the server: ' + e.message }); sendAll(room, { t: 'end' }); } }
@@ -978,7 +1159,12 @@ setInterval(() => {
     // lobby changes go out at once (<= ~7 / s); ping-only updates at most every 0.5 s in the lobby, 3 s in a session
     if (rooms.has(room.code) && (room.urgent ? t - room.sentT > 150 : room.dirty && t - room.sentT > (room.sim ? 3000 : 500))) sendRoom(room);
   }
-}, 4);
+  let next = t + 50;
+  for (const room of rooms.values()) if (room.sim && room.sim.nextT) next = Math.min(next, room.sim.nextT(t));
+  if (quota) quota();
+  setTimeout(loop, Math.max(1, Math.ceil(next - now())));
+}
+loop();
 
 // ---------------------------------------------------------------- http + upgrade
 const server = http.createServer((req, res) => {
