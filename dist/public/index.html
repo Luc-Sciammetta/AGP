@@ -63371,13 +63371,9 @@ const RaceControl = (() => {
     cs.vS = R.dist;
     if (!(ds > -5 && ds < 150)) ds = 0;
     const i = c.idx >= 0 ? c.idx : T.idxAt(c.s), dd = dt - ds / vref(rc, T, i);
-    let D = cs.vD + dd;
     cs.vU += dd;
-    if (lane && !cs.vL) cs.vE = cs.vD;   // (into the pit lane: no cap in it)
-    else if (!lane && cs.vL) { D = cs.vE + Math.max(0, D - cs.vE - VSC_PIT * (race.pitLossEst || 20)); cs.vC = Math.max(DCAP, D); }   // (out: the time lost past VSC_PIT x the pit loss may be made up)
-    cs.vL = lane;
-    if (!lane) { if (D > cs.vC) D = cs.vC; cs.vC = Math.max(DCAP, Math.min(cs.vC, D)); }
-    cs.vD = D;
+    dAdv(cs, dd, lane, race);
+    const D = cs.vD;
     if (z !== cs.vZ) {   // (a zone end: its minimum time)
       const zz = cs.vZ;
       cs.vZ = z;
@@ -63385,6 +63381,50 @@ const RaceControl = (() => {
     }
     return true;
   }
+  // one step of a delta (o: a car's cs, or a client's own follower rc.ow): + dd s; into the pit lane: no cap in it; out: the
+  // time lost past VSC_PIT x the pit loss may be made up; the cap (time banked by going slower)
+  function dAdv(o, dd, lane, race) {
+    let D = o.vD + dd;
+    if (lane && !o.vL) o.vE = o.vD;
+    else if (!lane && o.vL) { D = o.vE + Math.max(0, D - o.vE - VSC_PIT * (race.pitLossEst || 20)); o.vC = Math.max(DCAP, D); }
+    o.vL = lane;
+    if (!lane) { if (D > o.vC) D = o.vC; o.vC = Math.max(DCAP, Math.min(o.vC, D)); }
+    o.vD = D;
+  }
+  // a multiplayer client: its own car's delta followed here every physics step from its own (local) car, as the server
+  // integrates it (netcore sessionTick); the server's value (rc.dl / the SC queue's, 2 Hz, ~0.1-0.3 s old) only corrects it:
+  // rc.ow.c glides (OW_RATE s/s) to the server's value minus the local one at the server's time, at once past OW_SNAP (an
+  // offence's reset, the pit exit). The server still judges. (Before: the server's value alone - frozen up to 20 s, then jumps)
+  const OW_N = 512, OW_RATE = 0.3, OW_SNAP = 0.3;
+  function ownStep(G, car, dt) {
+    const race = G.race, rc = race && race.rc;
+    if (!rc || !rc.cl || !car || !rc.vc) return;
+    const T = G.track, q = rc.sp ? scQ(rc, car) : null, key = rc.vs ? 'v' + rc.vsN : rc.sp === 1 && q && q.m === 1 ? 's' + rc.scN : '';
+    let o = rc.ow;
+    if (!key || car.finished || car.dnf || race.phase !== 'racing') { if (o) o.key = ''; return; }
+    const lane = !!(car.inPitLane || (car._race && car._race.pit));
+    if (!o || o.key !== key) {
+      if (!o) o = rc.ow = { h: new Float64Array(2 * OW_N) };
+      o.key = key; o.id = car.id; o.vD = D0; o.vC = DCAP; o.vE = D0; o.vL = lane; o.s = car.s; o.c = 0; o.cT = 0; o.n = 0; o.hn = 0; o.st = rc.dlT;
+    } else {
+      let ds = T.deltaS(o.s, car.s);
+      o.s = car.s;
+      if (!(ds > -5 && ds < 150)) ds = 0;
+      dAdv(o, dt - ds / vref(rc, T, car.idx >= 0 ? car.idx : T.idxAt(car.s)), lane, race);
+    }
+    const k = (o.hn++ % OW_N) * 2;
+    o.h[k] = race.t; o.h[k + 1] = o.vD;
+    if (rc.dlT !== o.st) {   // (a new server value: at its time ts, compared with the local one then)
+      o.st = rc.dlT;
+      const Ds = rc.vs ? rc.dl[car.id] : q ? q.d : null;
+      let I = null;
+      for (let j = 1; j <= Math.min(o.hn, OW_N); j++) { const m = ((o.hn - j) % OW_N) * 2; if (o.h[m] <= o.st) { I = o.h[m + 1]; break; } }
+      if (Ds != null && I != null) { o.cT = Ds - I; if (!o.n++ || Math.abs(o.cT - o.c) > OW_SNAP) o.c = o.cT; }
+    }
+    const g = o.cT - o.c, m = OW_RATE * dt;
+    o.c += g > m ? m : g < -m ? -m : g;
+  }
+  const ownD = (rc, car) => { const o = rc.cl && rc.ow; return o && o.key && o.id === car.id ? Math.min(o.vD + o.c, Math.max(o.vC, DCAP)) : null; };
   // a human's offence (kind 'vsc': under the delta, 'ob': too fast past marshals / vehicles): a warning, then 5 s each time.
   // AI ones (and without penalties) are logged only ('vscAI' / 'obAI')
   const OFF = { vsc: ['VSC WARNING', 'UNDER THE DELTA', 'Under the VSC delta'], ob: ['MARSHALS WARNING', 'TOO FAST PAST THE MARSHALS', 'Too fast past marshals on the track'],
@@ -63410,17 +63450,64 @@ const RaceControl = (() => {
     if (!cs || cs.vN !== rc.vsN || cs.ic || cs.vL || !rc.vc) return 0;
     return clamp(1 + VG * (cs.vD - cs.vT), 0.55, 2.5);
   }
-  // the HUD: { on 1 | 2, d (the delta, s), end (s to green while ending) } | null (no VSC). Clients: the server's (rc.dl)
+  // the HUD: { on 1 | 2, d (the delta, s), end (s to green while ending) } | null (no VSC). Clients: their own car's followed
+  // locally (ownStep), others the server's (rc.dl)
   const _dl = { on: 0, d: 0, end: 0, sc: 0 };
   function delta(G, car) {
     const rc = G && G.race && G.race.rc;
     if (!rc || !car) return null;
-    if (rc.sp) { const q = scQ(rc, car); if (!q || q.m !== 1) return null; _dl.on = 1; _dl.d = q.d; _dl.end = 0; _dl.sc = 1; return _dl; }   // (the SC: until in the queue)
+    const od = ownD(rc, car);   // (a client: its own car's, followed locally)
+    if (rc.sp) { const q = scQ(rc, car); if (!q || q.m !== 1) return null; _dl.on = 1; _dl.d = od != null ? od : q.d; _dl.end = 0; _dl.sc = 1; return _dl; }   // (the SC: until in the queue)
     if (!rc.vs) return null;
     const cs = rc.cs[car.id];
-    _dl.sc = 0; _dl.on = rc.vs; _dl.d = cs && cs.vN === rc.vsN ? cs.vD : rc.dl[car.id] != null ? rc.dl[car.id] : D0;
+    _dl.sc = 0; _dl.on = rc.vs; _dl.d = od != null ? od : cs && cs.vN === rc.vsN ? cs.vD : rc.dl[car.id] != null ? rc.dl[car.id] : D0;
     _dl.end = rc.vs === 2 ? Math.max(0, rc.vsEnd - G.race.t) : 0;
     return _dl;
+  }
+
+  // the HUD's view, per frame (st: the caller's state, {} at first; dt the frame's s): the delta (delta()) or, in the SC queue,
+  // the gap to the car / SC ahead in car lengths (a client: its own, from the cars it draws, rc.sa). Both glide (glide: the
+  // input's rate fed forward, so no lag while it is smooth; a jump closed in ~0.2 s); the number to 0.1 s with a 0.03 s
+  // hysteresis (no flicker between two digits), the bar from the glided value every frame; the cells with a 0.15 hysteresis
+  // -> { g: 0 delta | 1 cells, v (s, glided), n (tenths shown), txt, col 0 green | 1 amber | 2 red, f (bar -1..1), gap (car
+  // lengths, glided), cells (0-10, 11 = over 10) } | null (none)
+  const DV_RATE = 2, DV_TAU = 0.07, DV_HYS = 0.3, GP_HYS = 0.15;
+  function glide(o, x, dt, rmax) {
+    if (o.p == null || !(dt > 0) || dt > 0.25) { o.x = o.p = x; return x; }
+    const r = clamp((x - o.p) / dt, -rmax, rmax);
+    o.p = x; o.x += r * dt; o.x += (x - o.x) * (1 - Math.exp(-dt / DV_TAU));
+    return o.x;
+  }
+  const cellsOf = u => (u > 10 ? 11 : Math.max(0, Math.ceil(u - 0.05)));
+  function deltaView(st, G, car, dt) {
+    const rc = G && G.race && G.race.rc;
+    const si = rc && rc.sp ? scInfo(G, car) : null, gm = si && si.sp === 1 && (si.m === 2 || si.m === 4);
+    const d = gm ? null : delta(G, car);
+    if (!gm && !d) { st.k = ''; return null; }
+    const k = gm ? 'g' : 'd';
+    if (st.k !== k) { st.k = k; st.a = {}; st.n = null; st.cells = null; }
+    st.g = gm ? 1 : 0;
+    if (gm) {
+      let gap = si.gap;
+      if (rc.cl && rc.sa && rc.sa[car.id] != null) {   // (a client: the gap to what it draws ahead, not the server's 2 Hz one)
+        const a = rc.sa[car.id], T = G.track;
+        let s = null;
+        if (a === -1) { const V = vehicles(G)[0]; if (V.on) s = V.s; }
+        else for (const c of G.cars) if (c.id === a) { s = c.s; break; }
+        if (s != null) gap = Math.max(0, T.deltaS(car.s, s)) / CL;
+      }
+      const u = st.gap = glide(st.a, st.gi = gap, dt, 15);
+      let c = cellsOf(u);
+      if (st.cells != null && c !== st.cells && (c > st.cells ? cellsOf(u - GP_HYS) <= st.cells : cellsOf(u + GP_HYS) >= st.cells)) c = st.cells;
+      st.cells = c;
+      return st;
+    }
+    const v = st.v = glide(st.a, d.d, dt, DV_RATE);
+    if (st.n == null || Math.abs(v * 10 - st.n) > 0.5 + DV_HYS) st.n = Math.round(v * 10);
+    const n = st.n;
+    st.txt = (n >= 0 ? '+' : '\u2212') + (Math.abs(n) / 10).toFixed(1); st.col = n >= 0 ? 0 : n >= -2 ? 1 : 2; st.f = clamp(v / DCAP, -1, 1);
+    st.on = d.on; st.end = d.end; st.sc = d.sc;
+    return st;
   }
 
   // ---------- phase 4: the safety car (a physical vehicle) + the medical car ----------
@@ -63449,7 +63536,7 @@ const RaceControl = (() => {
   const Q_JOIN = 12 * CL, Q_LEAVE = 22 * CL, Q_MAX = 10 * CL, Q_T = 4, WAVE_R = 150, PASSED = 60, PASS_K = 0.85, PASS_K3 = 1.0, REL_T = 7, SC_PIT = 0.5;
   const GRIP_DROP = 0.03, RS_K = 1.35, RS_T = 20, SC_HIT = 10, VB = [[2.35, 0.98], [2.45, 0.95]], CB = [2.8, 1.0];
   const newVeh = k => ({ k, st: 0, s: 0, d: 0, v: 0, a: 0, x: 0, z: 0, h: 0, li: 0, run: 0, hs: 0, inL: 0,
-    w: 0, ph: 0, tg: -1, ps: 0, pd: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0 });   // (the MC: see mcStep)
+    w: 0, ph: 0, tg: -1, ps: 0, pd: 0, sT: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0 });   // (the MC: see mcStep)
   // speed profile (m/s per track sample): k 0 the SC, 1 the medical car; x vq (the race's pace); braking-feasible
   const profC = new WeakMap();
   function vprof(T, k, vq) {
@@ -63875,7 +63962,7 @@ const RaceControl = (() => {
     }
     if (V.ph === 2) { mcScene(G, race, rc, V); solid(G, race, rc, Lo, H, V); return; }
     let r = vehTrack(G, V, vprof(T, 1, rc.mq || 1), MC_BRK, MC_FOL);
-    if (!V.ph && !V.inL) mcTarget(G, race, rc, Lo, V);
+    if (!V.ph && !V.inL) { const ds = mcTarget(G, race, rc, Lo, V); if (ds >= 0) r.v = Math.min(r.v, Math.sqrt(2 * 4 * Math.max(0, ds - MC_EASE))); }
     if (V.ph === 1) {
       const to = T.deltaS(V.s, V.ps), lat = Math.abs(V.pd - V.d) > 0.4;   // (not over yet: on at a crawl, up to 12 m on)
       if (to < 150) r.d = V.pd;
@@ -63883,6 +63970,7 @@ const RaceControl = (() => {
       if (((to < 0.6 && !lat) || to < -12) && V.v < 2.5) { mcPark(G, race, rc, V); return; }
     } else {
       if (!V.inL && V.run > V.le - 600) V.inL = 1;
+      if (!V.inL) mcYield(G, V, r);
       if (V.inL) r = vehIn(T, V, r.v, r.d, MC_BRK);
     }
     if (!r) return;
@@ -63890,24 +63978,32 @@ const RaceControl = (() => {
     vehMove(T, V, r.v, V.d + clamp(r.d - V.d, -k, k), MC_ACC, MC_BRK, dt);
     solid(G, race, rc, Lo, H, V);
   }
-  // a car retired on the opening lap ahead (its recovery planned): ph 1 to a spot near it
+  // a car retired on the opening lap ahead: the MC eases off for it (-> its distance, m; -1 none: it stops MC_EASE m short);
+  // once it is stopped and its recovery planned, ph 1 to a spot near it (mcSpot, every 0.25 s: a spot ahead but too near to
+  // stop for -> eases off and tries again; none at all -> skipped)
+  const MC_EASE = 30;
   function mcTarget(G, race, rc, Lo, V) {
     const T = G.track, left = Math.min(700, V.le - V.run - 120);
     let best = null, bd = Infinity;
     for (const c of G.cars) {
       const R = c._race;
-      if (!R || !c.dnf || c.finished || c.inPitLane || R.pit || !(R.dist < V.d1) || (c.speed || 0) > 0.5 || V.att.indexOf(c.id) >= 0) continue;
+      if (!R || !c.dnf || c.finished || c.inPitLane || R.pit || !(R.dist < V.d1) || V.att.indexOf(c.id) >= 0) continue;
       const cs = rc.cs[c.id], ds = T.wrapS(c.s - V.s);
       if ((cs && cs.done) || ds < 10 || ds > left || ds >= bd) continue;
-      const o = incOf(rc, c, null, 0);
-      if (o && o.est) { best = c; bd = ds; }
+      best = c; bd = ds;
     }
-    if (!best) return;
-    V.att.push(best.id);
-    const sp = mcSpot(G, rc, best, V, V.v * V.v / 16 + 15);   // (room to stop: the approach brakes at 4 m/s2, up to MC_BRK)
-    if (!sp) { rc.log.push([+race.t.toFixed(2), 'mcSkip', zoneAt(Lo, best.s), best.id]); return; }
-    V.ph = 1; V.tg = best.id; V.ps = sp.s; V.pd = sp.d; V.cl = 0; rc.rev++;
+    if (!best) return -1;
+    const o = incOf(rc, best, null, 0);
+    if ((best.speed || 0) > 0.5 || !o || !o.est || race.t < (V.sT || 0)) return bd;
+    V.sT = race.t + 0.25;
+    const sp = mcSpot(G, rc, best, V, V.v * V.v / 16 + 5);   // (room to stop: the approach brakes at 4 m/s2, up to MC_BRK)
+    if (!sp) {
+      if (mcSpot(G, rc, best, V, 5)) return bd;
+      V.att.push(best.id); rc.log.push([+race.t.toFixed(2), 'mcSkip', zoneAt(Lo, best.s), best.id]); return -1;
+    }
+    V.att.push(best.id); V.ph = 1; V.tg = best.id; V.ps = sp.s; V.pd = sp.d; V.cl = 0; rc.rev++;
     rc.log.push([+race.t.toFixed(2), 'mcTo', zoneAt(Lo, best.s), best.id]);
+    return -1;
   }
   // where it parks: 16-72 m before the car (else 16-34 m after it), first on the car's side: the verge (grass / kerb), then
   // the asphalt's edge (>= 4.5 m off the racing line, >= 7 m of track left), then the run-off; clear of the barrier, the
@@ -63969,11 +64065,22 @@ const RaceControl = (() => {
     if (!clr || (V.dB >= 0 && t < V.dB + V.dw + 0.8) || !mcRoom(G, rc, V)) return;
     V.ph = 0; V.tg = -1; V.dO = V.dB = -1; rc.rev++; rc.log.push([+t.toFixed(2), 'mcGo', zoneAt(layout(T), V.s), 0]);
   }
-  // room to drive on to the pit entry: no running car within 0.3 x the way there + 150 m behind (150 m under a VSC / SC)
+  // room to drive on to the pit entry: no running car within 0.3 x the way there + 150 m (<= 600 m) behind (a car that still
+  // comes up behind: mcYield)
   function mcRoom(G, rc, V) {
-    const T = G.track, need = rc.vs || rc.sp ? 150 : 0.3 * T.wrapS(T.pit.entryS - V.s) + 150;
+    const T = G.track, need = Math.min(600, 0.3 * T.wrapS(T.pit.entryS - V.s) + 150);
     for (const c of G.cars) if (c._race && !c.dnf && !c.finished && !c.inPitLane && !c._race.pit && T.wrapS(V.s - c.s) < need) return false;
     return true;
+  }
+  // a running car within 250 m behind: the medical car keeps to the edge away from the racing line (it goes round it, k 5)
+  function mcYield(G, V, r) {
+    const T = G.track;
+    for (const c of G.cars) {
+      if (!c._race || c.dnf || c.finished || c.inPitLane || c._race.pit || T.wrapS(V.s - c.s) > 250) continue;
+      const i = T.idxAt(V.s), ln = T.raceLine[i];
+      r.d = (ln >= 0 ? -1 : 1) * (T.halfW[i] - 1.4);
+      return;
+    }
   }
   // the doctor at t: { x, z, h, a (1 walking, 2 at the car), s, d } | null
   const _doc = { x: 0, z: 0, h: 0, a: 0, s: 0, d: 0 };
@@ -64070,21 +64177,26 @@ const RaceControl = (() => {
   function restartPh(race) { const rc = race.rc; return !!rc && ((rc.sp === 2 && rc.go) || rc.sp === 3 || (rc.rsT > 0 && race.t - rc.rsT < RS_T)); }
   // restart contacts: judged RS_K x more leniently from the SC's pit entry until RS_T s after the green
   function contactK(race) { const rc = race && race.rc; return rc && rc.on && (rc.sp === 2 || (rc.rsT != null && race.t - rc.rsT < RS_T)) ? RS_K : 1; }
-  // (the pack: [sp, scN, inL, lapW, fin, pick, scL, SC, MC, t, [id, mode, gap, sx, delta, ...], go] | 0)
+  // (the pack: [sp, scN, inL, lapW, fin, pick, scL, SC, MC, t, [id, mode, gap, sx, delta, ...], go, [id, the car ahead (-1 the SC)
+  // ... in the queue], vq, vc] | 0)
   function scPack(race, rc, r2) {
     const vp = V => (V ? (V.k && V.ph ? [V.st, r2(V.s), r2(V.d), r2(V.v), V.li, V.ph, V.tg, r2(V.dO), r2(V.dB), r2(V.dw), r2(V.aS), r2(V.aD), r2(V.bS), r2(V.bD), V.cl | 0] : [V.st, r2(V.s), r2(V.d), r2(V.v), V.li]) : 0), V = rc.sc, M = rc.mc;   // (the MC at a lap-1 DNF: + ph, tg, the doctor's times / walk)
     if (!rc.sp && !(V && V.st > 0 && V.st < 4) && !(M && M.st > 0 && M.st < 4)) return 0;
     const q = [];
-    if (rc.sp) for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN) q.push(+id, cs.sm | 0, Math.round(cs.sg || 0), cs.sx === rc.scN ? 1 : 0, cs.vN === rc.vsN ? r2(cs.vD) : D0, rc.sp === 3 && cs.gE > 0 ? Math.round((cs.gD || 0) * 1e4) : 0); }
-    return [rc.sp, rc.scN, rc.inL | 0, rc.lapW | 0, rc.fin | 0, rc.pick | 0, rc.scL | 0, vp(V), vp(M), r2(race.t), q, rc.go | 0];
+    const qa = [];
+    if (rc.sp) for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN && (cs.sm === 2 || cs.sm === 4)) qa.push(+id, cs.sa); if (cs.sN === rc.scN) q.push(+id, cs.sm | 0, Math.round(cs.sg || 0), cs.sx === rc.scN ? 1 : 0, cs.vN === rc.vsN ? r2(cs.vD) : D0, rc.sp === 3 && cs.gE > 0 ? Math.round((cs.gD || 0) * 1e4) : 0); }
+    return [rc.sp, rc.scN, rc.inL | 0, rc.lapW | 0, rc.fin | 0, rc.pick | 0, rc.scL | 0, vp(V), vp(M), r2(race.t), q, rc.go | 0, qa, +rc.vq.toFixed(4), r2(rc.vc)];
   }
   function scUnpack(race, rc, a, G) {
     const ev = G && G.events, was = { sp: rc.sp | 0, inL: rc.inL | 0, lapW: rc.lapW | 0 };
     const veh = (k, v) => { if (!v) { if (rc[k] && rc[k].st > 0 && rc[k].st < 4) rc[k].st = k === 'mc' ? 4 : 0; return; } const V = rc[k] || (rc[k] = newVeh(k === 'mc' ? 1 : 0)); V.st = v[0] | 0; V.s = +v[1]; V.d = +v[2]; V.v = +v[3]; V.li = v[4] | 0; V.ph = v[5] | 0; if (V.ph) { V.tg = v[6]; V.dO = +v[7]; V.dB = +v[8]; V.dw = +v[9]; V.aS = +v[10]; V.aD = +v[11]; V.bS = +v[12]; V.bD = +v[13]; V.cl = v[14] | 0; } else { V.tg = -1; V.dO = V.dB = -1; } };
-    if (!Array.isArray(a)) { veh('sc', 0); veh('mc', 0); rc.sp = 0; rc.sq = null; }
+    if (!Array.isArray(a)) { veh('sc', 0); veh('mc', 0); rc.sp = 0; rc.sq = null; rc.sa = null; }
     else {
       rc.sp = a[0] | 0; rc.scN = a[1] | 0; rc.inL = a[2] | 0; rc.lapW = a[3] | 0; rc.fin = a[4] | 0; rc.pick = a[5] | 0; rc.scL = a[6] | 0; veh('sc', a[7]); veh('mc', a[8]); rc.vt = +a[9] || 0; rc.go = a[11] | 0;
-      const q = a[10] || [], old = rc.sq || {};
+      const q = a[10] || [], old = rc.sq || {}, qa = a[12] || [];
+      if (!rc.vs) rc.dlT = rc.vt;   // (the deltas' race time: the own car's follower, ownStep)
+      if (a[14]) { rc.vq = +a[13] || rc.vq; rc.vc = +a[14]; rc.vf = VC_K * rc.vq; }
+      rc.sa = {}; for (let k = 0; k + 1 < qa.length; k += 2) rc.sa[qa[k]] = qa[k + 1];
       rc.sq = {};
       for (let k = 0; k + 5 < q.length; k += 6) {
         rc.sq[q[k]] = [q[k + 1] | 0, +q[k + 2] || 0, q[k + 3] | 0, +q[k + 4], +q[k + 5] || 0];
@@ -64808,14 +64920,14 @@ const RaceControl = (() => {
     const rc = race && race.rc;
     const r2 = x => Math.round(x * 100) / 100;
     return rc && rc.on ? [rc.rev, rc.want, rc.zf.slice(), rc.zw.slice(), rc.jobs.map(J => [J.id, J.k, J.car, J.side, J.post, J.dep, r2(J.t0), J.ci, J.n,
-      r2(J.h0), r2(J.hf), r2(J.vh), r2(J.cs), r2(J.cd), r2(J.fs), r2(J.fd), r2(J.end), r2(J.clr), J.P.map(q => q.map(r2))]), vscPack(rc, r2), scPack(race, rc, r2), rfPack(race, rc), barPack(rc)] : null;
+      r2(J.h0), r2(J.hf), r2(J.vh), r2(J.cs), r2(J.cd), r2(J.fs), r2(J.fd), r2(J.end), r2(J.clr), J.P.map(q => q.map(r2))]), vscPack(rc, r2, race), scPack(race, rc, r2), rfPack(race, rc), barPack(rc)] : null;
   }
-  // (the VSC: [vs, vsN, vsEnd, [id, delta, ...], vq, vc], 0 = none)
-  function vscPack(rc, r2) {
+  // (the VSC: [vs, vsN, vsEnd, [id, delta, ...], vq, vc, t (the deltas' race time)], 0 = none)
+  function vscPack(rc, r2, race) {
     if (!rc.vs) return 0;
     const d = [];
     for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.vN === rc.vsN) d.push(+id, r2(cs.vD)); }
-    return [rc.vs, rc.vsN, r2(rc.vsEnd), d, +rc.vq.toFixed(4), r2(rc.vc)];
+    return [rc.vs, rc.vsN, r2(rc.vsEnd), d, +rc.vq.toFixed(4), r2(rc.vc), r2(race.t)];
   }
   // (a client: the flags as the server has them; events for its HUD / engineer on every change, like offline)
   function unpack(race, p, G) {
@@ -64825,7 +64937,7 @@ const RaceControl = (() => {
     const v = Array.isArray(p[5]) ? p[5] : null, vs = v ? v[0] | 0 : 0;
     if (vs !== rc.vs && G && G.events) G.events.push(vs ? { type: 'rcVsc', on: vs, n: v[1] | 0, end: +v[2] || 0 } : { type: 'rcVsc', on: 0, n: rc.vsN });
     rc.vs = vs;
-    if (v) { rc.vsN = v[1] | 0; rc.vsEnd = +v[2] || 0; rc.dl = {}; const d = v[3] || []; for (let k = 0; k + 1 < d.length; k += 2) rc.dl[d[k]] = +d[k + 1]; rc.vq = +v[4] || 0; rc.vc = +v[5] || 0; rc.vf = VC_K * rc.vq; }
+    if (v) { rc.vsN = v[1] | 0; rc.vsEnd = +v[2] || 0; rc.dl = {}; const d = v[3] || []; for (let k = 0; k + 1 < d.length; k += 2) rc.dl[d[k]] = +d[k + 1]; rc.vq = +v[4] || 0; rc.vc = +v[5] || 0; rc.vf = VC_K * rc.vq; if (v[6] != null) rc.dlT = +v[6]; }
     scUnpack(race, rc, p[6], G);
     rfUnpack(race, rc, p[7], G);
     barUnpack(race, rc, p[8]);
@@ -64850,7 +64962,7 @@ const RaceControl = (() => {
   }
 
   return { create, step, layout, zoneAt, turnAt, clean, effLevel, aiFlag, passOK, ahead, panelState, pack, unpack,
-    actors, stopInput, jobInfo, obstacles, aiVsc, vscV, delta, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
+    actors, stopInput, jobInfo, obstacles, aiVsc, vscV, delta, deltaView, ownStep, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT,
@@ -73363,7 +73475,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-18 13:36';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-18 17:00';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -77711,6 +77823,7 @@ const NetCore = (() => {
         if (G.race && G.race.rc && G.race.rc.cl && typeof RaceControl !== 'undefined' && RaceControl.gripLocal) RaceControl.gripLocal(G, me);   // (cold tyres after an SC restart: the server's drop for this car)
         pitRoadFlags(S);
       }
+      if (race.rc && race.rc.cl && (race.rc.vs || race.rc.sp) && typeof RaceControl !== 'undefined' && RaceControl.ownStep) RaceControl.ownStep(G, me, dt);   // (the VSC / SC delta of its own car, followed here every step: the server's corrects it)
     }
     if (me && me._race && !me.finished) me.curLapTime = race.phase === 'racing' || (quali && !S.follow) ? Math.max(0, race.t - (me._race.lapStartT || 0)) : 0;
     if (me && me.giveBack) gbSync(me, race.t);   // (an order the server's verdict never came for: dropped after its window)
@@ -80233,14 +80346,18 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
 
 
 // ===== src/rc_models.js =====
-// Apex GP — RCModels: low-poly race-control vehicles + a light-panel housing (Three.js). Declares only `RCModels`.
+// Apex GP — RCModels: race-control vehicles, a marshal and a light-panel housing (Three.js). Declares only `RCModels`.
 //
 // RCModels.make(kind) -> THREE.Group (nose +X, ground at y = 0, origin = centre, like car_model.js; the caller places it).
-//   kinds: 'safetycar' (fictional silver GT, amber light bar), 'medicalcar' (white estate, red / yellow chequered side
-//   panels, red + amber light bar), 'marshal' (orange suit, ~1.75 m), 'tractor' (lifting arm), 'crane' (crane truck),
-//   'sweeper' (sweeper truck), 'panel' (LED light-panel housing on a post; screen faces local +X).
-//   Geometry is built once per kind and shared (a few hundred triangles each: see RCModels.tris(kind)); materials are
-//   shared too, except the light-bar / beacon lamps (one pair per model, so each vehicle's lights switch on their own).
+//   kinds: 'safetycar' (fictional silver GT, amber light bar on the roof), 'medicalcar' (red estate / SUV, white-and-red
+//   chequered flank, white cross + MEDICAL lettering, red + amber light bar, grille strobes), 'marshal' (orange suit, ~1.78 m),
+//   'tractor' (recovery tractor, lifting arm), 'crane' (crane truck, boom), 'sweeper' (sweeper truck, brush),
+//   'panel' (LED light-panel housing on a post; screen faces local +X).
+//   Built like the race cars (car_model.js): smooth-shaded indexed geometry (superellipse lofts, lathe wheels), clearcoat
+//   paint, glossy glass, the scene's image-based light. The two cars carry a side-view decal canvas (door lines, arches,
+//   markings) mapped planar onto the body; vehicles and wheels are vertex-coloured. Geometry is built once per kind and
+//   shared (RCModels.tris(kind)); materials are shared too, except the light-bar / beacon lamps (one set per model, so each
+//   vehicle's lights switch on their own).
 //   g.userData: rc (kind), mats (this model's own materials: dispose them with the model), tick(t) (flash lights / panel),
 //   and per kind:
 //     lamps (safetycar, medicalcar, tractor, crane, sweeper): setLights(on) -> emissive on (steady until tick(t) is called
@@ -80260,95 +80377,234 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
 const RCModels = (() => {
   const KINDS = ['safetycar', 'medicalcar', 'marshal', 'tractor', 'crane', 'sweeper', 'panel'];
   const GEOS = {}, DEFS = {}, MATS = {};
-  let chequer = null, atlas = null;
+  const TAU = Math.PI * 2, PI = Math.PI;
 
-  // ------------------------------------------------------------------ geometry accumulators (flat-shaded triangles with vertex colours)
-  const G = () => ({ p: [], c: [] });
+  // ------------------------------------------------------------------ vectors
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const nrm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+  const cen3 = P => { const c = [0, 0, 0]; for (const p of P) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; } return mul(c, 1 / P.length); };
   const C = h => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
-  // triangles wound so that each faces away from `cen` (every primitive here is convex, so no winding bookkeeping)
-  function emit(A, tris, col, cen) {
-    for (const t of tris) {
-      let [a, b, c] = t;
-      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-      const gx = (a[0] + b[0] + c[0]) / 3 - cen[0], gy = (a[1] + b[1] + c[1]) / 3 - cen[1], gz = (a[2] + b[2] + c[2]) / 3 - cen[2];
-      if (gx * nx + gy * ny + gz * nz < 0) { const x = b; b = c; c = x; }
-      A.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
-      for (let k = 0; k < 3; k++) A.c.push(col[0], col[1], col[2]);
+  const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const sgn = Math.sign;
+
+  // ------------------------------------------------------------------ geometry accumulators: { p, n, c, i, uv } (indexed, smooth or flat normals, vertex colours)
+  const PLV = 0.5;   // (a plain v for accumulators with uv whose vertices carry none)
+  const G = uv => ({ p: [], n: [], c: [], i: [], uv: uv ? [] : null });
+  function vtx(A, p, n, c, uv) {
+    const k = A.p.length / 3;
+    A.p.push(p[0], p[1], p[2]); A.n.push(n[0], n[1], n[2]); A.c.push(c[0], c[1], c[2]);
+    if (A.uv) A.uv.push(uv ? uv[0] : 0.5, uv ? uv[1] : PLV);
+    return k;
+  }
+  const cv = (col, p, n) => (typeof col === 'function' ? col(p, n) : col);
+  // a grid of points P[i][j] (i along the length, j around / across) -> smooth-shaded surface; closed = j wraps; mirror = an open j
+  // range whose ends lie on the z = 0 plane of symmetry (normals there as if continued); axis(i) / cen / dir pick the outward side
+  // (default: away from each ring's centroid); pick(i, j) routes a quad to another accumulator (or null = none); flip = the other face
+  function grid(A, col, P, o = {}) {
+    const nu = P.length, nv = P[0].length, cl = !!o.closed, N = [];
+    const pj = (i, j) => {
+      if (j < 0) { const q = P[i][1]; return [q[0], q[1], 2 * P[i][0][2] - q[2]]; }
+      if (j >= nv) { const q = P[i][nv - 2]; return [q[0], q[1], 2 * P[i][nv - 1][2] - q[2]]; }
+      return P[i][j];
+    };
+    let vote = 0;
+    for (let i = 0; i < nu; i++) {
+      N.push([]);
+      const i0 = Math.max(i - 1, 0), i1 = Math.min(i + 1, nu - 1), ref = o.dir ? null : o.axis ? o.axis(i) : o.cen || cen3(P[i]);
+      for (let j = 0; j < nv; j++) {
+        let a, b;
+        if (cl) { a = P[i][(j + 1) % nv]; b = P[i][(j + nv - 1) % nv]; }
+        else if (o.mirror) { a = pj(i, j + 1); b = pj(i, j - 1); }
+        else { a = P[i][Math.min(j + 1, nv - 1)]; b = P[i][Math.max(j - 1, 0)]; }
+        const n = nrm(crs(sub(P[i1][j], P[i0][j]), sub(a, b)));
+        N[i].push(n);
+        vote += o.dir ? dot(n, o.dir) : dot(n, sub(P[i][j], ref));
+      }
+    }
+    const f = (vote < 0 ? -1 : 1) * (o.flip ? -1 : 1), ids = new Map();
+    const V = (acc, i, j) => {
+      let m = ids.get(acc); if (!m) { m = new Int32Array(nu * nv).fill(-1); ids.set(acc, m); }
+      let k = m[i * nv + j];
+      if (k < 0) {
+        const n = f > 0 ? N[i][j] : mul(N[i][j], -1), p = P[i][j];
+        k = m[i * nv + j] = vtx(acc, p, n, cv(col, p, n), acc.uv && o.uv ? o.uv(p, n) : null);
+      }
+      return k;
+    };
+    const nj = cl ? nv : nv - 1;
+    for (let i = 0; i < nu - 1; i++) for (let j = 0; j < nj; j++) {
+      const acc = o.pick ? o.pick(i, j) : A; if (!acc) continue;
+      const j1 = (j + 1) % nv, a = V(acc, i, j), b = V(acc, i, j1), c = V(acc, i + 1, j1), d = V(acc, i + 1, j);
+      if (f > 0) acc.i.push(a, d, c, a, c, b); else acc.i.push(a, c, d, a, b, c);
     }
   }
-  const quadT = (a, b, c, d) => [[a, b, c], [a, c, d]];
+  // flat convex polygon facing out (+ dir when `out` is a direction, else away from the point `cen`)
+  function poly(A, col, pts, cen, dir) {
+    let n = nrm(crs(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
+    const rev = (dir ? dot(n, dir) : dot(n, sub(cen3(pts), cen))) < 0;
+    if (rev) n = mul(n, -1);
+    const ids = pts.map(p => vtx(A, p, n, cv(col, p, n)));
+    for (let k = 1; k < pts.length - 1; k++) { if (rev) A.i.push(ids[0], ids[k + 1], ids[k]); else A.i.push(ids[0], ids[k], ids[k + 1]); }
+  }
+  // flat cap over a ring of points, facing `out`
+  function fan(A, col, pts, out) {
+    const c0 = cen3(pts);
+    let n = nrm(crs(sub(pts[1], c0), sub(pts[2], c0)));
+    const rev = dot(n, out) < 0;
+    if (rev) n = mul(n, -1);
+    const ci = vtx(A, c0, n, cv(col, c0, n)), ids = pts.map(p => vtx(A, p, n, cv(col, p, n))), m = pts.length;
+    for (let k = 0; k < m; k++) { const a = ids[k], b = ids[(k + 1) % m]; if (rev) A.i.push(ci, b, a); else A.i.push(ci, a, b); }
+  }
   function box(A, col, cx, cy, cz, sx, sy, sz) {
-    const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2;
-    const P = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
-    const T = [];
-    for (const f of [[0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0]]) T.push(...quadT(P[f[0]], P[f[1]], P[f[2]], P[f[3]]));
-    emit(A, T, col, [cx, cy, cz]);
+    const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2, c = [cx, cy, cz];
+    for (const f of [[[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [[x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1]],
+      [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]],
+      [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]]]) poly(A, col, f, c);
   }
   const box2 = (A, col, cx, cy, cz, sx, sy, sz) => { box(A, col, cx, cy, cz, sx, sy, sz); box(A, col, cx, cy, -cz, sx, sy, sz); };   // + its mirror in z
-  // loft along x between rectangular sections [x, yBottom, yTop, halfWidthBottom, halfWidthTop] (symmetric in z)
-  function loft(A, col, rings) {
-    const R = rings.map(r => [[r[0], r[1], -r[3]], [r[0], r[1], r[3]], [r[0], r[2], r[4]], [r[0], r[2], -r[4]]]);
-    const T = []; let cx = 0, cy = 0, n = 0;
-    for (const q of R) for (const v of q) { cx += v[0]; cy += v[1]; n++; }
-    for (let k = 0; k < R.length - 1; k++) for (let e = 0; e < 4; e++) T.push(...quadT(R[k][e], R[k][(e + 1) % 4], R[k + 1][(e + 1) % 4], R[k + 1][e]));
-    for (const q of [R[0], R[R.length - 1]]) T.push(...quadT(q[0], q[1], q[2], q[3]));
-    emit(A, T, col, [cx / n, cy / n, 0]);
+  // a bar of rectangular section between two points (w across, h the other way: h is vertical for horizontal bars)
+  function beam(A, col, p0, p1, w, h) {
+    const d = nrm(sub(p1, p0)), s = nrm(crs(d, Math.abs(d[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0])), u = nrm(crs(s, d)), c = [];
+    for (const [p, k] of [[p0, 0], [p1, 1]]) for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) c.push(add(p, add(mul(s, a * w / 2), mul(u, b * h / 2))));
+    const cc = cen3(c);
+    for (const f of [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]) poly(A, col, f.map(k => c[k]), cc);
   }
-  function cyl(A, col, ax, cx, cy, cz, r, L, n = 10) {
-    const pt = (h, k) => { const a = k / n * Math.PI * 2, u = Math.cos(a) * r, v = Math.sin(a) * r; return ax === 'z' ? [cx + u, cy + v, cz + h] : ax === 'x' ? [cx + h, cy + u, cz + v] : [cx + u, cy + h, cz + v]; };
-    const mid = h => ax === 'z' ? [cx, cy, cz + h] : ax === 'x' ? [cx + h, cy, cz] : [cx, cy + h, cz];
-    const T = [], a = [], b = [];
-    for (let k = 0; k < n; k++) { a.push(pt(-L / 2, k)); b.push(pt(L / 2, k)); }
-    for (let k = 0; k < n; k++) {
-      const j = (k + 1) % n;
-      T.push(...quadT(a[k], a[j], b[j], b[k]), [mid(-L / 2), a[j], a[k]], [mid(L / 2), b[k], b[j]]);
+  // flat window pane on a flat side: points as given, facing `dir`
+  const pane = (A, col, pts, dir) => poly(A, col, pts, null, dir);
+
+  // superellipse ring in the y-z plane at station s = [x, yBottom, yTop, halfWidth, expTop, expBottom, zc]; arc t0..t1 (m intervals), side sd flips z
+  function arc(s, t0, t1, m, sd = 1) {
+    const yc = (s[1] + s[2]) / 2, R = [], eb = s[5] || s[4];
+    for (let k = 0; k <= m; k++) {
+      const t = t0 + (t1 - t0) * k / m, c = Math.cos(t), sn = Math.sin(t), top = sn >= 0, e = top ? s[4] : eb, h = top ? s[2] - yc : yc - s[1];
+      R.push([s[0], yc + sgn(sn) * h * Math.pow(Math.abs(sn), 2 / e), (s[6] || 0) + sd * s[3] * sgn(c) * Math.pow(Math.abs(c), 2 / e)]);
     }
-    emit(A, T, col, [cx, cy, cz]);
+    return R;
   }
-  // flat polygon facing +z (sgn 1) or -z (sgn -1): wheel rims, wheel-arch shadows
-  function disc(A, col, cx, cy, cz, r, n, sgn) {
-    const T = [], p = k => [cx + Math.cos(k / n * Math.PI * 2) * r, cy + Math.sin(k / n * Math.PI * 2) * r, cz];
-    for (let k = 0; k < n; k++) T.push([[cx, cy, cz], p(k), p(k + 1)]);
-    emit(A, T, col, [cx, cy, cz - sgn]);
+  // closed loft along x through stations (front -> rear or the reverse), caps at both ends; o.xf maps every point (a rotated / moved part)
+  function loftX(A, col, st, n, o = {}) {
+    const P = st.map(s => { const r = arc(s, 0, TAU, n).slice(0, n); return o.xf ? r.map(o.xf) : r; });
+    grid(A, col, P, { closed: true, uv: o.uv, pick: o.pick });
+    const a = cen3(P[0]), b = cen3(P[P.length - 1]);
+    if (o.caps !== 0) { fan(A, col, P[0], sub(a, b)); fan(A, col, P[P.length - 1], sub(b, a)); }
   }
-  // quad with its own colour, facing away from `cen`
-  const quad = (A, col, a, b, c, d, cen) => emit(A, quadT(a, b, c, d), col, cen);
-  // textured quad (4 points, 4 uvs) facing away from `cen`
-  function tq(A, P, UV, cen) {
-    const u = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]], v = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
-    const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-    const d = [P[0][0] - cen[0], P[0][1] - cen[1], P[0][2] - cen[2]];
-    const o = d[0] * n[0] + d[1] * n[1] + d[2] * n[2] >= 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
-    for (const q of o) { A.p.push(...P[q]); A.uv.push(...UV[q]); }
+  // superellipsoid (lamp lens, mirror, grille pod): centre c, radii r = [x, y, z], pitch about z / yaw about y
+  function ell(A, col, c, r, e = 2.2, nu = 6, n = 10, yaw = 0, pitch = 0) {
+    const st = [], p0 = 0.27, cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
+    for (let k = 0; k < nu; k++) { const ps = p0 + (PI - 2 * p0) * k / (nu - 1), sn = Math.sin(ps); st.push([r[0] * Math.cos(ps), -r[1] * sn, r[1] * sn, r[2] * sn, e, e]); }
+    loftX(A, col, st, n, { xf: p => { const x = p[0] * cp - p[1] * sp, y = p[0] * sp + p[1] * cp; return [c[0] + x * cy + p[2] * sy, c[1] + y, c[2] - x * sy + p[2] * cy]; } });
   }
-  // a wheel on one side of the car (z sign sgn): tyre, rim face and the dark arch behind it
-  function wheel(A, X, x, r, w, z, sgn, tyre, rim, arch, archZ) {
-    cyl(A, tyre, 'z', x, r, sgn * z, r, w, 10);
-    disc(A, rim, x, r, sgn * (z + w / 2 + 0.003), r * 0.62, 10, sgn);
-    if (arch) disc(X, arch, x, r, sgn * archZ, r * 1.2, 10, sgn);
+  // cylinder / cone along an axis ('x' | 'y' | 'z') centred on c, radii r0 -> r1 (a number or [a, b] for an ellipse), caps
+  function cyl(A, col, ax, c, r0, r1, L, n = 12, caps = true) {
+    const pt = (h, r, k) => {
+      const a = k / n * TAU, ru = (Array.isArray(r) ? r[0] : r) * Math.cos(a), rv = (Array.isArray(r) ? r[1] : r) * Math.sin(a);
+      return ax === 'z' ? [c[0] + ru, c[1] + rv, c[2] + h] : ax === 'x' ? [c[0] + h, c[1] + ru, c[2] + rv] : [c[0] + ru, c[1] + h, c[2] + rv];
+    };
+    const P = [[], []];
+    for (let k = 0; k < n; k++) { P[0].push(pt(-L / 2, r0, k)); P[1].push(pt(L / 2, r1, k)); }
+    grid(A, col, P, { closed: true, cen: c });
+    if (caps) { const d = ax === 'z' ? [0, 0, 1] : ax === 'x' ? [1, 0, 0] : [0, 1, 0]; fan(A, col, P[0], mul(d, -1)); fan(A, col, P[1], d); }
+  }
+  // a limb / hose: rings of radius rad[k] (number or [u, v]) around the polyline pts, rounded ends
+  function tube(A, col, pts, rad, n = 8, bare) {
+    const dirAt = k => nrm(sub(pts[Math.min(k + 1, pts.length - 1)], pts[Math.max(k - 1, 0)]));
+    const sc = (r, k) => (Array.isArray(r) ? [r[0] * k, r[1] * k] : r * k), r0 = Array.isArray(rad[0]) ? rad[0][0] : rad[0], r1 = Array.isArray(rad[rad.length - 1]) ? rad[rad.length - 1][0] : rad[rad.length - 1];
+    const ringAt = (c, d, r) => {
+      const rr = Array.isArray(r) ? r : [r, r], u = nrm(crs(d, Math.abs(d[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1])), v = crs(d, u), o = [];
+      for (let k = 0; k < n; k++) { const a = k / n * TAU, p = Math.cos(a) * rr[0], q = Math.sin(a) * rr[1]; o.push([c[0] + u[0] * p + v[0] * q, c[1] + u[1] * p + v[1] * q, c[2] + u[2] * p + v[2] * q]); }
+      return o;
+    };
+    const d0 = dirAt(0), dn = dirAt(pts.length - 1), last = pts.length - 1, R = [];
+    if (!bare) R.push(ringAt(sub(pts[0], mul(d0, r0 * 0.3)), d0, sc(rad[0], 0.55)));
+    pts.forEach((p, k) => R.push(ringAt(p, dirAt(k), rad[k])));
+    if (!bare) R.push(ringAt(add(pts[last], mul(dn, r1 * 0.3)), dn, sc(rad[last], 0.55)));
+    grid(A, col, R, { closed: true });
+    if (!bare) { fan(A, col, R[0], mul(d0, -1)); fan(A, col, R[R.length - 1], dn); }
+  }
+  // body of revolution about the z axis at (cx, cy, cz): profile [[r, t]] (t along z, signed by sg), wavy(j) = a radius scale per angle step (lugs)
+  function lathe(A, col, prof, cx, cy, cz, sg, n, wave, capEnd) {
+    const P = prof.map(([r, t], i) => { const R = []; for (let k = 0; k < n; k++) { const a = k / n * TAU, rr = r * (wave && wave[0].indexOf(i) >= 0 ? wave[1](k) : 1); R.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, cz + sg * t]); } return R; });
+    grid(A, col, P, { closed: true, cen: [cx, cy, cz] });
+    if (capEnd) fan(A, col, P[P.length - 1], [0, 0, sg]);
+  }
+  // a road wheel: tyre + alloy / steel face with 5 spokes (z of the outer face = zo, side sg)
+  function wheel(T, M, cx, R, W, zo, sg, rimCol, spokes = 5, wave) {
+    const n = wave ? 24 : 20, Rb = R * 0.6, cz = zo - sg * W / 2, tc = C('#141517'), tc2 = C('#1b1c1f');
+    const tyre = (p, nn) => (Math.hypot(p[0] - cx, p[1] - R) > R * 0.965 ? tc : tc2);
+    lathe(T, tyre, [[R * 0.975, -0.38 * W], [R, -0.27 * W], [R, 0.27 * W], [R * 0.975, 0.40 * W], [R * 0.9, 0.49 * W], [R * 0.78, 0.5 * W], [Rb + 0.012, 0.46 * W]], cx, R, cz, sg, n, wave ? [[0, 1, 2, 3], wave] : null);
+    const rc = C(rimCol), dc = C('#2e3237');
+    lathe(M, (p, nn) => (Math.hypot(p[0] - cx, p[1] - R) > Rb * 0.88 ? rc : dc), [[Rb + 0.012, 0.46 * W], [Rb, 0.495 * W], [Rb * 0.9, 0.47 * W], [Rb * 0.55, 0.36 * W], [Rb * 0.2, 0.4 * W]], cx, R, cz, sg, n, null, true);
+    const sc = C('#d3d8de');
+    for (let k = 0; k < spokes; k++) {
+      const a = k / spokes * TAU + 0.3, ca = Math.cos(a), sa = Math.sin(a), tz = cz + sg * 0.482 * W, wi = Rb * 0.1, wo = Rb * 0.075;
+      const q = (r, w) => [[cx + ca * r - sa * w, R + sa * r + ca * w, tz], [cx + ca * r + sa * w, R + sa * r - ca * w, tz]];
+      const a0 = q(Rb * 0.2, wi), a1 = q(Rb * 0.95, wo);
+      poly(M, sc, [a0[0], a0[1], a1[1], a1[0]], null, [0, 0, sg]);
+    }
+  }
+  // curved mudguard over a wheel at (cx, cy): radius Rf from angle a0 to a1 (measured from +x), z0..z1, with an outer lip; two-sided
+  function fender(A, col, cx, cy, Rf, a0, a1, z0, z1, lip) {
+    const Pa = [], m = 10;
+    for (let i = 0; i <= m; i++) { const a = a0 + (a1 - a0) * i / m, ca = Math.cos(a), sa = Math.sin(a); Pa.push([[cx + ca * Rf, cy + sa * Rf, z0], [cx + ca * Rf, cy + sa * Rf, (z0 + z1) / 2], [cx + ca * Rf, cy + sa * Rf, z1]]); }
+    grid(A, col, Pa, { dir: [0, 1, 0] }); grid(A, col, Pa, { dir: [0, 1, 0], flip: true });
+    const Pl = [];
+    for (let i = 0; i <= m; i++) { const a = a0 + (a1 - a0) * i / m, ca = Math.cos(a), sa = Math.sin(a); Pl.push([[cx + ca * Rf, cy + sa * Rf, z1], [cx + ca * (Rf - lip), cy + sa * (Rf - lip), z1]]); }
+    const zs = sgn(z1) || 1;
+    grid(A, col, Pl, { dir: [0, 0, zs] }); grid(A, col, Pl, { dir: [0, 0, zs], flip: true });
   }
 
+  // red / white hazard bars on a flat face at x (facing dx = +1 / -1): n vertical bars across z = -hw..hw, y0..y1
+  function stripes(A, x, y0, y1, hw, n, dx) {
+    for (let k = 0; k < n; k++) poly(A, k % 2 ? C('#f2f2f0') : C('#d3202a'), [[x, y0, -hw + 2 * hw * k / n], [x, y0, -hw + 2 * hw * (k + 1) / n], [x, y1, -hw + 2 * hw * (k + 1) / n], [x, y1, -hw + 2 * hw * k / n]], null, [dx, 0, 0]);
+  }
+  // surface helpers on a station table (rows [x, yb, yt, a, et, eb], x descending)
+  function stAt(st, x) {
+    for (let i = 0; i < st.length - 1; i++) if (x <= st[i][0] && x >= st[i + 1][0]) {
+      const t = (st[i][0] - x) / ((st[i][0] - st[i + 1][0]) || 1), a = st[i], b = st[i + 1];
+      return a.map((v, k) => v + ((b[k] != null ? b[k] : v) - v) * t);
+    }
+    return st[x > st[0][0] ? 0 : st.length - 1];
+  }
+  const topY = (s, z) => { const yc = (s[1] + s[2]) / 2, h = s[2] - yc, q = Math.pow(Math.min(1, Math.abs(z) / s[3]), s[4]); return yc + h * Math.pow(Math.max(0, 1 - q), 1 / s[4]); };
+
   // ------------------------------------------------------------------ materials (shared)
+  const canvasTex = (w, h, draw, rep) => {
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    draw(cv.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  };
+  // side-view decal: two tiles (right side on top, left below: its lettering mirrored, as seen from that side); per tile TH rows:
+  // 24 plain rows (y above H), 320 rows for y = H .. 0, 8 rows of sill. Body x maps to u = (x + L / 2) / L.
+  const TH = 352, TW = 1024, TR = 320;
+  const decalTex = (L, H, draw) => canvasTex(TW, TH * 2, (g, w) => {
+    const X = x => (x + L / 2) / L * w, Y = y => 24 + (1 - Math.min(Math.max(y / H, 0), 1)) * TR, S = w / L;
+    for (let k = 0; k < 2; k++) {
+      g.save(); g.translate(0, k * TH); g.beginPath(); g.rect(0, 0, w, TH); g.clip();
+      draw(g, { X, Y, S, flip: k === 1, w, L, H });
+      g.restore();
+    }
+  });
   function mat(name) {
     if (MATS[name]) return MATS[name];
     const T = THREE;
     const std = (o, m, r, e) => new T.MeshStandardMaterial(Object.assign({ vertexColors: true, metalness: m, roughness: r, envMapIntensity: e }, o));
+    const paint = (map, m, r) => new T.MeshPhysicalMaterial({ vertexColors: true, map, metalness: m, roughness: r, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1 });
     switch (name) {
-      case 'silver': return (MATS[name] = std({}, 0.55, 0.34, 0.85));
-      case 'white': return (MATS[name] = std({}, 0.12, 0.28, 0.9));
-      case 'glass': return (MATS[name] = std({}, 0.6, 0.1, 1.1));
+      case 'paintSC': return (MATS[name] = paint(decalTex(4.84, 1.5, drawSC), 0.42, 0.3));
+      case 'paintMC': return (MATS[name] = paint(decalTex(4.94, 1.6, drawMC), 0.2, 0.28));
+      case 'trim': return (MATS[name] = std({}, 0.05, 0.74, 0.5));
+      case 'chrome': return (MATS[name] = std({}, 0.92, 0.2, 1.1));
+      case 'glass': return (MATS[name] = std({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }, 0.6, 0.08, 1.2));
+      case 'work': return (MATS[name] = std({}, 0.22, 0.42, 0.9));
+      case 'cloth': return (MATS[name] = std({}, 0.0, 0.82, 0.55));
       case 'lam': return (MATS[name] = new T.MeshLambertMaterial({ vertexColors: true }));
-      case 'chequer': {
-        if (!chequer) {   // 2 x 2 cells: red / yellow (battenburg), repeats every 0.36 m
-          const cv = document.createElement('canvas'); cv.width = cv.height = 64;
-          const g = cv.getContext('2d');
-          for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { g.fillStyle = (i + j) % 2 ? '#f2c40c' : '#d3202a'; g.fillRect(i * 32, j * 32, 32, 32); }
-          chequer = new T.CanvasTexture(cv); chequer.wrapS = chequer.wrapT = T.RepeatWrapping; chequer.colorSpace = T.SRGBColorSpace;
-          chequer.magFilter = T.NearestFilter; chequer.anisotropy = 4;
-        }
-        return (MATS[name] = new T.MeshLambertMaterial({ map: chequer }));
-      }
+      case 'tail': return (MATS[name] = new T.MeshLambertMaterial({ vertexColors: true, emissive: new T.Color(0.7, 0.03, 0.02), emissiveIntensity: 0.55 }));
       case 'screen': {   // 9 cells (64 x 48 px): off, yellow, double A, double B, slippery, white, green, red, blue
         const cv = document.createElement('canvas'); cv.width = 9 * 64; cv.height = 48;
         const g = cv.getContext('2d');
@@ -80364,7 +80620,7 @@ const RCModels = (() => {
         cell(6, () => { fill('#06210f'); dots('#19e06a'); });
         cell(7, () => { fill('#2a0805'); dots('#ff2a1a'); });
         cell(8, () => { fill('#06142a'); dots('#2f8cff'); });
-        atlas = new T.CanvasTexture(cv); atlas.colorSpace = T.SRGBColorSpace; atlas.generateMipmaps = false; atlas.minFilter = T.LinearFilter;
+        const atlas = new T.CanvasTexture(cv); atlas.colorSpace = T.SRGBColorSpace; atlas.generateMipmaps = false; atlas.minFilter = T.LinearFilter;
         return (MATS[name] = new T.MeshBasicMaterial({ map: atlas, toneMapped: false }));
       }
     }
@@ -80373,129 +80629,322 @@ const RCModels = (() => {
   // a lamp lens with its own emissive (per model): dark when off
   function lampMat(hex) {
     const c = new THREE.Color(hex);
-    return new THREE.MeshLambertMaterial({ color: new THREE.Color(c.r * 0.22, c.g * 0.22, c.b * 0.22), emissive: c, emissiveIntensity: 0 });
+    return new THREE.MeshLambertMaterial({ vertexColors: true, color: new THREE.Color(0.35, 0.35, 0.35).lerp(c, 0.55), emissive: c, emissiveIntensity: 0 });
   }
 
-  // ------------------------------------------------------------------ model definitions: { parts: [[key, accumulator, material name]], ... }
-  const DARK = '#15171a', TYRE = '#18191c', RIM = '#a4aab2', GLS = '#17212c', ORG = '#ee7d12', ORG2 = '#d96a08', GREY = '#33373c', WHITE = '#e9ecef';
+  // ------------------------------------------------------------------ decals
+  function drawSC(g, d) {
+    const { X, Y, S, flip, w } = d;
+    g.fillStyle = '#c4cad2'; g.fillRect(0, 0, w, TH);
+    const rect = (x0, x1, y0, y1, c) => { g.fillStyle = c; g.fillRect(X(x0), Y(y1), X(x1) - X(x0), Y(y0) - Y(y1)); };
+    const line = (x0, y0, x1, y1, c, lw) => { g.strokeStyle = c; g.lineWidth = lw; g.lineCap = 'round'; g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1)); g.stroke(); };
+    rect(-2.0, 1.95, 0.12, 0.32, '#30343a');                        // side skirt / sill
+    rect(-2.42, 2.42, -0.1, 0.19, '#202226'); g.fillStyle = '#202226'; g.fillRect(0, 344, w, 8);   // below the sill
+    line(-1.95, 0.325, 1.95, 0.325, '#6d727a', 2);                  // sill edge highlight
+    line(0.63, 0.32, 0.6, 0.82, '#5b6068', 2.6); line(-0.55, 0.32, -0.57, 0.82, '#5b6068', 2.6);   // door shut lines
+    line(0.63, 0.82, -0.57, 0.83, '#5b6068', 2);
+    for (const k of [0, 1, 2, 3]) line(0.95, 0.47 + k * 0.045, 1.2, 0.47 + k * 0.045, '#2a2d33', 3);   // gill vent behind the front wheel
+    rect(-0.4, -0.22, 0.735, 0.765, '#3a3e45');                     // door handle
+    rect(0.0, 0.18, 0.735, 0.765, '#3a3e45');
+    g.fillStyle = '#121317';
+    for (const xc of [1.45, -1.38]) { g.beginPath(); g.arc(X(xc), Y(0.355), 0.39 * S, 0, TAU); g.fill(); }   // wheel arches
+    g.strokeStyle = '#a9aeb6'; g.lineWidth = 1.6;
+    for (const xc of [1.45, -1.38]) { g.beginPath(); g.arc(X(xc), Y(0.355), 0.402 * S, PI * 1.05, PI * 1.95); g.stroke(); }   // arch lip
+    g.fillStyle = '#4b5058'; g.font = 'bold 15px Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.save(); g.translate(X(0.03), Y(0.5)); if (flip) g.scale(-1, 1); g.fillText('S A F E T Y   C A R', 0, 0); g.restore();
+  }
+  function drawMC(g, d) {
+    const { X, Y, S, flip, w } = d;
+    g.fillStyle = '#c3151d'; g.fillRect(0, 0, w, TH);
+    const rect = (x0, x1, y0, y1, c) => { g.fillStyle = c; g.fillRect(X(x0), Y(y1), X(x1) - X(x0), Y(y0) - Y(y1)); };
+    const line = (x0, y0, x1, y1, c, lw) => { g.strokeStyle = c; g.lineWidth = lw; g.lineCap = 'round'; g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1)); g.stroke(); };
+    rect(-2.5, 2.5, -0.1, 0.4, '#25272b');                           // black lower cladding
+    rect(-2.0, 1.95, 0.4, 0.425, '#8d9096');
+    // chequered flank band (white / red, 0.18 x 0.09 m cells), two rows
+    const x0 = -2.2, x1 = 2.1;
+    for (let r = 0; r < 2; r++) for (let k = 0; k * 0.18 < x1 - x0; k++) rect(x0 + k * 0.18, Math.min(x1, x0 + (k + 1) * 0.18), 0.5 + r * 0.09, 0.59 + r * 0.09, (k + r) % 2 ? '#f3f3ef' : '#c3151d');
+    line(0.66, 0.425, 0.62, 0.97, '#7a0c12', 2.6); line(-0.58, 0.425, -0.6, 0.97, '#7a0c12', 2.6); line(-1.5, 0.425, -1.52, 0.97, '#7a0c12', 2.6);   // door shut lines
+    rect(0.0, 0.2, 0.9, 0.93, '#5a0a0f'); rect(-1.25, -1.05, 0.9, 0.93, '#5a0a0f');                                                              // handles
+    g.fillStyle = '#0a0b0d';
+    for (const xc of [1.52, -1.42]) { g.beginPath(); g.arc(X(xc), Y(0.385), 0.43 * S, 0, TAU); g.fill(); }                                       // arches
+    g.strokeStyle = '#3a3d42'; g.lineWidth = 4;
+    for (const xc of [1.52, -1.42]) { g.beginPath(); g.arc(X(xc), Y(0.385), 0.455 * S, PI * 1.0, PI * 2.0); g.stroke(); }                         // flare
+    // white cross badge on the front door, MEDICAL lettering on the rear door
+    g.save(); g.translate(X(0.0), Y(0.8));
+    g.fillStyle = '#f3f3ef'; const a = 0.075 * S, b = 0.026 * S; g.fillRect(-a, -b, 2 * a, 2 * b); g.fillRect(-b, -a, 2 * b, 2 * a); g.restore();
+    g.fillStyle = '#f3f3ef'; g.font = 'bold 21px Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.save(); g.translate(X(-1.0), Y(0.8)); if (flip) g.scale(-1, 1); g.fillText('MEDICAL', 0, 0); g.restore();
+  }
 
+  // ------------------------------------------------------------------ shared pieces for the two cars
+  const DARK = '#15171a', GLS = '#101820', ORG = '#ee7a10', GREY = '#474c53', STEEL = '#c5cad1', WHITE = '#eceff2';
+  const bodyUV = (tile, L, H) => (p, n) => {
+    const w = sstep(0.3, 0.7, Math.abs(n[2])), row = 12 * (1 - w) + w * (24 + (1 - Math.min(Math.max(p[1] / H, 0), 1)) * TR);
+    return [(p[0] + L / 2) / L, 1 - (tile * TH + row) / (2 * TH)];
+  };
+  const bodyShade = y0 => (p, n) => { const k = sstep(0, 1, (p[1] - y0) / 0.24); let u = 0.3 + 0.7 * k; if (n[1] < -0.4) u *= 0.55; return [u, u, u * 1.02]; };
+  // lower body as two halves (each its own decal tile) + the cabin as a sheet of quads routed by role to paint / glass; wheels
+  function carShell(S) {
+    const { body, glass, trim, rim, L, H, st, cab, role, wheels, rimCol, shadeY } = S;
+    const n = 24;
+    for (const sd of [1, -1]) grid(body, bodyShade(shadeY), st.map(s => arc(s, -PI / 2, PI / 2, n / 2, sd)), { mirror: true, axis: i => [st[i][0], (st[i][1] + st[i][2]) / 2, 0], uv: bodyUV(sd > 0 ? 0 : 1, L, H) });
+    const a = cen3(arc(st[0], 0, TAU, n).slice(0, n)), b = cen3(arc(st[st.length - 1], 0, TAU, n).slice(0, n));
+    fan(body, bodyShade(shadeY), arc(st[0], 0, TAU, n).slice(0, n), sub(a, b)); fan(body, bodyShade(shadeY), arc(st[st.length - 1], 0, TAU, n).slice(0, n), sub(b, a));
+    // cabin: half-ring sheets at the cab stations [x, yTop, halfWidth, expTop, dyBase]; base = the body's surface there - 0.05
+    const M = 16, CP = cab.map(c => { const s = stAt(st, c[0]), yb = topY(s, c[2]) - c[4], r = arc([c[0], 2 * yb - c[1], c[1], c[2], c[3], c[3]], 0, PI, M); return r; });   // (a half ellipse centred at the base height)
+    const pick = (i, j) => { const x = (cab[i][0] + cab[i + 1][0]) / 2, jj = Math.min(j, M - 1 - j); return role(x, jj, i) === 'g' ? glass : body; };
+    grid(body, bodyShade(shadeY), CP, { axis: i => [cab[i][0], CP[i][0][1] - 0.4, 0], pick });
+    fan(body, bodyShade(shadeY), CP[CP.length - 1], [-1, 0, 0]);   // the cabin's rear end (tailgate / fastback)
+    // wheels
+    for (const [x, R, W] of wheels) { const zo = stAt(st, x)[3] + 0.012; for (const sg of [1, -1]) wheel(trim, rim, x, R, W, sg * zo, sg, rimCol); }
+    return CP;
+  }
+  // paint-coloured part in the body accumulator (plain decal row), e.g. a mirror
+  const bodyEll = (A, c, r, yaw) => ell(A, bodyShade(0), c, r, 2.2, 6, 10, yaw || 0, 0);
+
+  // ------------------------------------------------------------------ the safety car: a silver GT
+  const SC_ST = [[2.40, .25, .57, .60, 2.7, 3.2], [2.36, .21, .61, .77, 2.8, 3.4], [2.26, .20, .65, .88, 2.9, 3.6], [2.08, .19, .69, .94, 2.9, 3.8], [1.80, .19, .745, .975, 3.0, 4.0],
+    [1.45, .19, .77, .985, 3.0, 4.2], [1.05, .19, .80, .975, 3.0, 4.4], [.55, .19, .83, .95, 3.0, 4.4], [0, .19, .85, .935, 3.0, 4.4], [-.55, .19, .87, .945, 3.0, 4.4],
+    [-1.0, .19, .89, .97, 3.0, 4.2], [-1.38, .19, .90, .99, 3.0, 4.2], [-1.80, .20, .88, .975, 2.9, 4.0], [-2.15, .23, .84, .95, 2.8, 3.8], [-2.33, .26, .80, .91, 2.7, 3.5], [-2.43, .30, .75, .82, 2.5, 3.2]];
+  // cabin stations [x, yTop, halfWidth, exp, base offset below the body surface]
+  const SC_CAB = [[.85, .80, .80, 2.4, .06], [.55, .98, .80, 2.4, .06], [.30, 1.12, .79, 2.4, .06], [.10, 1.22, .77, 2.4, .06], [-.20, 1.27, .75, 2.4, .06], [-.50, 1.27, .74, 2.4, .06],
+    [-.62, 1.265, .735, 2.4, .06], [-1.0, 1.23, .74, 2.4, .06], [-1.15, 1.20, .75, 2.4, .06], [-1.5, 1.08, .78, 2.4, .06], [-1.85, .95, .82, 2.4, .06], [-2.05, .87, .84, 2.4, .06]];
+  const scRole = (x, jj) => {
+    if (x > 0.12) return jj >= 3 ? 'g' : 'p';
+    if (x > -0.5) return jj >= 1 && jj <= 3 ? 'g' : 'p';
+    if (x > -0.62) return 'p';
+    if (x > -1.15) return jj >= 1 && jj <= 3 ? 'g' : 'p';
+    return jj >= 3 ? 'g' : 'p';
+  };
   function defSafetyCar() {
-    const body = G(), trim = G(), glass = G(), lamps = G();
-    const SILV = C('#9ca2aa'), D = C(DARK);
-    loft(body, SILV, [[2.38, .26, .50, .62, .58], [2.15, .20, .62, .86, .78], [1.55, .20, .72, .96, .84], [.70, .20, .78, .975, .82], [-.70, .20, .80, .975, .84],
-      [-1.60, .20, .86, .98, .88], [-2.20, .24, .84, .92, .82], [-2.38, .30, .72, .80, .70]]);
-    loft(glass, C(GLS), [[.62, .78, .80, .80, .78], [0, .80, 1.18, .80, .60], [-.80, .82, 1.26, .80, .56], [-1.55, .86, 1.04, .82, .46], [-1.95, .86, .90, .78, .44]]);
-    box(body, SILV, -.55, 1.265, 0, 1.3, .07, 1.1);                       // roof
-    box(body, SILV, -2.28, .92, 0, .26, .04, 1.62);                       // ducktail
-    box(trim, D, 2.30, .21, 0, .36, .05, 1.5); box(trim, D, -2.30, .27, 0, .26, .08, 1.2);   // splitter, diffuser
-    box(trim, D, 2.37, .38, 0, .06, .13, .72);                            // grille
-    box2(trim, C('#eef3ff'), 2.12, .56, .58, .2, .06, .3);                // headlamps
-    box2(trim, C('#c5121a'), -2.37, .74, .6, .04, .07, .45);              // tail lamps
-    box2(trim, D, .52, .86, .93, .14, .1, .1);                            // mirrors
-    box2(trim, D, -2.42, .3, .45, .08, .06, .1);                          // exhaust tips
-    box2(trim, D, 0, .25, .96, 2.6, .05, .04);                            // side skirts
-    box(trim, D, -.5, 1.30, 0, .34, .03, 1.16);                           // light bar base
-    box2(trim, D, -.5, 1.355, 0.6, .30, .08, .06);                        // bar end caps
-    box(lamps, C('#ffa21a'), -.5, 1.355, 0, .22, .07, 1.08);              // amber lens
-    for (const [x, r, w, z] of [[1.5, .35, .28, .87], [-1.45, .36, .32, .88]]) for (const sg of [1, -1]) wheel(trim, trim, x, r, w, z, sg, C(TYRE), C(RIM), D, .99);
-    return { parts: [['body', body, 'silver'], ['trim', trim, 'lam'], ['glass', glass, 'glass'], ['lamp', lamps, null]] };
-  }
-
-  function defMedicalCar() {
-    const body = G(), trim = G(), glass = G(), lamps = G(), lampB = G(), chq = { p: [], uv: [] };
-    const W = C('#f1f3f5'), D = C(DARK);
-    loft(body, W, [[2.46, .30, .62, .64, .60], [2.25, .24, .72, .88, .82], [1.65, .24, .84, .955, .88], [.80, .24, .92, .96, .86], [-1.0, .24, .96, .96, .88],
-      [-2.15, .24, .98, .955, .88], [-2.45, .30, .92, .90, .82]]);
-    loft(glass, C(GLS), [[.72, .92, .94, .84, .82], [.05, .94, 1.42, .84, .70], [-1.2, .96, 1.48, .84, .70], [-2.25, .98, 1.44, .84, .66], [-2.40, .98, 1.20, .82, .64]]);
-    box(body, W, -1.0, 1.485, 0, 2.5, .06, 1.34);                         // roof
-    box2(trim, D, -1.05, 1.54, .62, 2.3, .04, .05);                       // roof rails
-    box(trim, D, 2.43, .42, 0, .05, .13, .8); box(trim, D, 2.38, .25, 0, .22, .1, 1.5);   // grille, bumper
-    box(trim, D, -2.42, .27, 0, .2, .1, 1.5);                             // rear bumper
-    box2(trim, C('#eef3ff'), 2.22, .70, .62, .2, .07, .3);                // headlamps
-    box2(trim, C('#c5121a'), -2.44, .86, .78, .04, .22, .12);             // tail lamps
-    box2(trim, D, .86, 1.0, .98, .14, .1, .1);                            // mirrors
-    box2(trim, D, 0, .27, .965, 3.2, .06, .04);                           // side skirts
-    box(trim, D, -.2, 1.55, 0, .32, .04, 1.1);                            // light bar base
-    box(lamps, C('#ff2a1a'), -.2, 1.61, -.28, .22, .08, .5); box(lampB, C('#ffa21a'), -.2, 1.61, .28, .22, .08, .5);   // red + amber halves
-    // red lower stripe (trim), chequered flanks and tail (textured quads, tilted with the body's taper)
-    const RED = C('#c9202a'), cen = [0, .6, 0], R = 3.5 / .36;
-    for (const sg of [1, -1]) {
-      quad(trim, RED, [1.6, .30, sg * .958], [-2.2, .30, sg * .958], [-2.2, .39, sg * .946], [1.6, .39, sg * .946], cen);
-      tq(chq, [[1.3, .44, sg * .943], [-2.2, .44, sg * .943], [-2.2, .80, sg * .890], [1.3, .80, sg * .890]], [[0, 0], [R, 0], [R, 1], [0, 1]], cen);
+    const body = G(true), glass = G(), trim = G(), rim = G(), tail = G(), lamps = G();
+    const K = C(DARK), K2 = C('#0c0d0f'), SIL = C('#c9ced5'), CH = C('#b8bec6'), GL = C(GLS);
+    carShell({ body, glass, trim, rim, L: 4.84, H: 1.5, st: SC_ST, cab: SC_CAB, role: scRole, wheels: [[1.45, .355, .29], [-1.38, .355, .30]], rimCol: '#aeb4bc', shadeY: .19 });
+    // glass colour: the glass accumulator got the paint colour function: recolour to a dark tint
+    for (let k = 0; k < glass.c.length; k += 3) { glass.c[k] = GL[0]; glass.c[k + 1] = GL[1]; glass.c[k + 2] = GL[2]; }
+    // front: grille, intake, splitter, lamps
+    box(trim, K2, 2.40, .40, 0, .05, .18, .86); box(trim, K, 2.31, .225, 0, .26, .045, 1.56); box(trim, K, 2.39, .285, 0, .05, .05, 1.1);
+    for (const y of [.35, .395, .44]) box(trim, C('#2a2d32'), 2.425, y, 0, .02, .014, .84);
+    for (const sd of [1, -1]) {
+      ell(glass, C('#e8f0ff'), [2.18, topY(stAt(SC_ST, 2.18), .68) - .07, sd * .68], [.13, .042, .2], 2.4, 6, 10, -sd * .5, 0);
+      ell(trim, C('#2a2d32'), [2.34, .32, sd * .74], [.05, .06, .1], 2.2, 5, 8, -sd * .5, 0);   // intake / fog lamp
+      ell(tail, C('#d02818'), [-2.36, .72, sd * .64], [.06, .045, .27], 2.4, 6, 10, sd * .45, 0);   // tail lamps
+      ell(trim, K, [-2.40, .27, sd * .46], [.1, .045, .045], 2.2, 5, 8, 0, 0);                    // exhaust tips
+      bodyEll(body, [.58, .91, sd * .97], [.1, .05, .06], sd * .1);                                // mirrors
+      box(trim, K, .6, .86, sd * .93, .05, .04, .1);
     }
-    tq(chq, [[-2.457, .44, -.8], [-2.457, .44, .8], [-2.457, .8, .8], [-2.457, .8, -.8]], [[0, 0], [4.4, 0], [4.4, 1], [0, 1]], cen);
-    for (const [x, r, w, z] of [[1.55, .37, .27, .88], [-1.45, .37, .27, .88]]) for (const sg of [1, -1]) wheel(trim, trim, x, r, w, z, sg, C(TYRE), C(RIM), D, .985);
-    return { parts: [['body', body, 'white'], ['trim', trim, 'lam'], ['glass', glass, 'glass'], ['lamp', lamps, null], ['lampB', lampB, null], ['chq', chq, 'chequer']] };
+    for (const sd of [1, -1]) cyl(rim, C('#9aa0a8'), 'x', [-2.45, .27, sd * .46], .042, .042, .06, 10);
+    box(trim, K, -2.30, .30, 0, .22, .09, 1.24);                                                    // diffuser
+    box(tail, C('#d02818'), -2.438, .69, 0, .02, .035, 1.2);                                         // tail lamp bar
+    box(trim, C('#d6d9de'), -2.41, .47, 0, .02, .1, .36);                                           // plate
+    // roof light bar: housing, two dark ends, amber lens
+    box(trim, K, -.35, 1.285, 0, .22, .04, 1.2); box2(trim, K, -.35, 1.30, .5, .17, .07, .05);
+    ell(lamps, C('#8c5610'), [-.35, 1.345, 0], [.085, .058, .56], 2.6, 7, 10);
+    for (const sd of [1, -1]) ell(trim, K, [-.35, 1.34, sd * .6], [.11, .062, .045], 2.2, 5, 8);
+    return { parts: [['body', body, 'paintSC'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['tail', tail, 'tail'], ['lamp', lamps, null]] };
   }
 
+  // ------------------------------------------------------------------ the medical car: a red estate / SUV
+  const MC_ST = [[2.46, .36, .80, .70, 2.8, 3.2], [2.43, .32, .85, .82, 2.9, 3.4], [2.34, .29, .90, .90, 3.0, 3.6], [2.15, .27, .94, .95, 3.1, 3.8], [1.85, .27, .98, .965, 3.2, 4.0],
+    [1.52, .27, 1.01, .98, 3.4, 4.2], [1.10, .27, 1.03, .975, 3.8, 4.4], [.60, .27, 1.04, .965, 4.0, 4.4], [0, .27, 1.04, .96, 4.0, 4.4], [-.80, .27, 1.04, .965, 4.0, 4.4],
+    [-1.42, .27, 1.04, .98, 4.0, 4.2], [-2.0, .28, 1.04, .975, 3.6, 4.0], [-2.35, .30, 1.03, .96, 3.2, 3.8], [-2.46, .33, 1.00, .92, 2.8, 3.4]];
+  const MC_CAB = [[1.0, 1.06, .86, 2.8, .06], [.65, 1.25, .86, 2.9, .06], [.35, 1.46, .86, 3.0, .06], [.05, 1.62, .86, 3.1, .06], [-.48, 1.68, .86, 3.3, .06], [-.58, 1.69, .86, 3.4, .06],
+    [-1.42, 1.69, .86, 3.4, .06], [-1.52, 1.69, .86, 3.4, .06], [-2.10, 1.67, .86, 3.4, .06], [-2.30, 1.64, .86, 3.4, .06], [-2.475, 1.62, .86, 3.4, .06]];
+  // the cabin's roof height at x, z (rails, a light bar): the cab rows are [x, yTop, halfWidth, exp, dy]
+  function cabTop(st, cab, x, z) {
+    const c = stAt(cab, x), yb = topY(stAt(st, x), c[2]) - c[4], co = Math.pow(Math.min(1, Math.abs(z) / c[2]), c[3] / 2);
+    return yb + (c[1] - yb) * Math.pow(Math.sqrt(1 - co * co), 2 / c[3]);
+  }
+  const mcRole = (x, jj) => {
+    if (x > 0.05) return jj >= 2 ? 'g' : 'p';
+    if (x > -0.48) return jj <= 4 ? 'g' : 'p';
+    if (x > -0.58) return 'p';
+    if (x > -1.42) return jj <= 4 ? 'g' : 'p';
+    if (x > -1.52) return 'p';
+    if (x > -2.1) return jj <= 4 ? 'g' : 'p';
+    return 'p';
+  };
+  function defMedicalCar() {
+    const body = G(true), glass = G(), trim = G(), rim = G(), tail = G(), lamps = G(), lampB = G();
+    const K = C(DARK), K2 = C('#0c0d0f'), GL = C(GLS), WH = C('#f3f3ef'), RD = C('#c3151d');
+    const CP = carShell({ body, glass, trim, rim, L: 4.94, H: 1.6, st: MC_ST, cab: MC_CAB, role: mcRole, wheels: [[1.52, .385, .25], [-1.42, .385, .26]], rimCol: '#c3c8cf', shadeY: .27 });
+    for (let k = 0; k < glass.c.length; k += 3) { glass.c[k] = GL[0]; glass.c[k + 1] = GL[1]; glass.c[k + 2] = GL[2]; }
+    // rear window: an inset of the tailgate cap (the cap itself is paint)
+    const rear = CP[CP.length - 1], rc = cen3(rear), inset = rear.map(p => [p[0] - 0.006, rc[1] + (p[1] - rc[1]) * 0.85, p[2] * 0.88]);
+    fan(glass, GL, inset, [-1, 0, 0]);
+    // front: grille, bumper, lamps
+    box(trim, K2, 2.455, .58, 0, .05, .26, .9); box(trim, K, 2.44, .38, 0, .09, .14, 1.4);
+    for (const y of [.5, .55, .6, .65]) box(trim, C('#2a2d32'), 2.485, y, 0, .02, .012, .86);
+    box(trim, C('#8d9096'), 2.38, .26, 0, .22, .03, 1.2);                                           // skid plate
+    for (const sd of [1, -1]) {
+      ell(glass, C('#e8f0ff'), [2.28, topY(stAt(MC_ST, 2.28), .68) - .1, sd * .68], [.12, .05, .2], 2.4, 6, 10, -sd * .5, 0);
+      ell(trim, C('#2a2d32'), [2.40, .42, sd * .77], [.05, .06, .09], 2.2, 5, 8, -sd * .45, 0);
+      ell(tail, C('#d02818'), [-2.44, .84, sd * .78], [.04, .20, .07], 2.4, 7, 8, sd * .2, 0);                // tail lamps
+      bodyEll(body, [.97, 1.0, sd * .98], [.1, .06, .07], sd * .1);                                        // mirrors
+      box(trim, K, .93, .96, sd * .95, .05, .05, .08);
+      box(trim, K, -1.05, cabTop(MC_ST, MC_CAB, -1.05, .62) + .02, sd * .62, 2.3, .045, .05);               // roof rails
+    }
+    box(trim, K, -2.47, .31, 0, .12, .16, 1.76);                                                       // rear bumper
+    box(trim, C('#d6d9de'), -2.475, .56, 0, .02, .1, .36);                                             // plate
+    // rear chequered strip (tailgate): alternating white / red cells
+    for (let k = 0; k < 14; k++) for (let r = 0; r < 2; r++) box(trim, (k + r) % 2 ? WH : RD, -2.472, .64 + r * .08, -.78 + (k + .5) * .1114, .014, .08, .1114);
+    // roof light bar on a cross beam: red half + amber half, white end caps
+    box(trim, K, -.2, 1.735, 0, .24, .05, 1.36); box2(trim, K, -.2, 1.715, .55, .12, .06, .08);
+    ell(lamps, C('#8c1810'), [-.2, 1.815, -.33], [.11, .06, .31], 2.6, 7, 10);
+    ell(lampB, C('#8c5610'), [-.2, 1.815, .33], [.11, .06, .31], 2.6, 7, 10);
+    for (const sd of [1, -1]) ell(trim, C('#dfe3e8'), [-.2, 1.805, sd * .69], [.11, .055, .04], 2.2, 5, 8);
+    // grille strobes (front) and a rear pair: the same lamps
+    for (const sd of [1, -1]) { ell(sd > 0 ? lampB : lamps, C('#9a9a98'), [2.465, .72, sd * .5], [.03, .03, .08], 2.4, 5, 8); ell(sd > 0 ? lamps : lampB, C('#9a9a98'), [-2.47, 1.1, sd * .6], [.03, .03, .1], 2.4, 5, 8); }
+    return { parts: [['body', body, 'paintMC'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['tail', tail, 'tail'], ['lamp', lamps, null], ['lampB', lampB, null]] };
+  }
+
+  // ------------------------------------------------------------------ the marshal: orange suit, standing, arms a little forward (the world rotation leans / bobs it)
   function defMarshal() {
-    const A = G(), O = C('#f26a14'), S = C('#c9cfd6'), SK = C('#c68a63'), D = C('#1f2124'), H = C('#f1f1ee');
-    box2(A, O, 0, .42, .1, .16, .84, .16); box2(A, D, .05, .04, .1, .27, .08, .18);          // legs, boots
-    box(A, O, 0, 1.14, 0, .26, .62, .46); box(A, S, 0, 1.0, 0, .27, .06, .47); box(A, S, 0, 1.24, 0, .27, .05, .47);   // torso + reflective bands
-    box2(A, O, 0, 1.12, .30, .12, .58, .11); box2(A, SK, 0, .78, .30, .1, .1, .1);              // arms, hands
-    box(A, SK, 0, 1.58, 0, .2, .22, .2); box(A, H, 0, 1.70, 0, .25, .1, .25);                 // head, helmet
-    return { parts: [['body', A, 'lam']] };
+    const A = G(), O = C('#f06a12'), REF = C('#d6dbe0'), SK = C('#c9936b'), BK = C('#1d1f22'), HEL = C('#eceef0'), VIS = C('#0f171f');
+    const ringXZ = (y, cx, rx, rz, e, n) => { const o = []; for (let k = 0; k < n; k++) { const a = k / n * TAU, c = Math.cos(a), s = Math.sin(a); o.push([cx + rx * sgn(c) * Math.pow(Math.abs(c), 2 / e), y, rz * sgn(s) * Math.pow(Math.abs(s), 2 / e)]); } return o; };
+    // torso, hips -> shoulders -> neck
+    const T = [[.88, .01, .105, .165, 2.4], [1.0, .0, .10, .15, 2.4], [1.14, .0, .105, .155, 2.4], [1.3, .005, .12, .19, 2.5], [1.41, .0, .108, .232, 2.6], [1.48, -.005, .075, .15, 2.2], [1.52, -.005, .05, .055, 2]];
+    const P = T.map(t => ringXZ(t[0], t[1], t[2], t[3], t[4], 10));
+    grid(A, O, P, { closed: true }); fan(A, O, P[0], [0, -1, 0]); fan(A, BK, P[P.length - 1], [0, 1, 0]);
+    // reflective bands (torso) and a belt
+    const band = (y0, y1, k, col) => { const B = [ringXZ(y0, 0, .105 * k, .155 * k, 2.4, 10), ringXZ(y1, 0, .108 * k, .16 * k, 2.4, 10)]; grid(A, col, B, { closed: true }); };
+    band(1.14, 1.2, 1.04, REF); band(1.27, 1.33, 1.02, REF); band(.98, 1.02, 1.03, BK);
+    const ring = (c, d, r) => tube(A, REF, [add(c, mul(d, -.025)), add(c, mul(d, .025))], [r, r], 7, true);   // a reflective band round a limb
+    for (const sd of [1, -1]) {
+      const z = sd * .095;
+      tube(A, O, [[0, .93, z], [.03, .5, z * 1.05], [0, .1, z]], [.088, .064, .05], 7);                      // legs
+      ring([.019, .7, z * 1.04], [0, 1, 0], .082); ring([.01, .3, z * 1.04], [0, 1, 0], .062);
+      ell(A, BK, [.07, .045, z], [.125, .05, .058], 2.4, 4, 7);                                              // boots
+      tube(A, O, [[0, 1.42, sd * .238], [.03, 1.14, sd * .262], [.17, .96, sd * .25]], [.05, .042, .036], 7);   // arms
+      ring([.105, 1.05, sd * .256], [.7, -.7, 0], .047);
+      ell(A, BK, [.215, .91, sd * .245], [.05, .05, .042], 2.2, 4, 7);                                       // gloves
+    }
+    tube(A, SK, [[0, 1.5, 0], [0, 1.6, 0]], [.05, .05], 6);                                                   // neck
+    ell(A, SK, [.02, 1.66, 0], [.1, .105, .085], 2.2, 5, 10);                                                 // head
+    ell(A, HEL, [-.005, 1.715, 0], [.123, .103, .103], 2.2, 5, 10);                                           // helmet
+    ell(A, VIS, [.085, 1.7, 0], [.05, .042, .088], 2.2, 4, 6);                                                // visor
+    return { parts: [['body', A, 'cloth']] };
   }
 
-  // roof beacon / light-bar parts shared by the service vehicles
+  // ------------------------------------------------------------------ recovery tractor with a lifting arm
   function defTractor() {
-    const body = G(), glass = G(), lamps = G(), arm = G(), O = C(ORG), D = C(GREY), K = C(DARK);
-    box(body, D, .35, .75, 0, 3.1, .35, .8);                                       // chassis
-    loft(body, O, [[1.95, .65, 1.25, .38, .34], [1.3, .62, 1.4, .42, .38], [.3, .62, 1.45, .45, .40]]);   // hood
-    box(body, O, -.5, 1.28, 0, 1.5, .1, 1.5);                                      // cab floor
-    for (const x of [.1, -1.1]) box2(body, O, x, 1.95, .72, .08, 1.3, .08);        // pillars
-    box(body, O, -.5, 2.6, 0, 1.45, .08, 1.62);                                    // cab roof
-    loft(glass, C(GLS), [[.12, 1.32, 2.55, .74, .72], [-1.12, 1.32, 2.55, .74, .72]]);
-    box2(body, O, -.7, 1.64, 1.0, 1.5, .06, .66);                                  // rear fenders
-    box(body, K, .55, 1.62, .3, .1, .6, .1);                                       // exhaust
-    box(body, K, 1.98, .85, 0, .05, .3, .6);
-    box(lamps, C('#ffa21a'), -.5, 2.7, 0, .22, .12, .22);                          // beacon
-    for (const sg of [1, -1]) { wheel(body, body, -.7, .78, .55, 1.0, sg, C(TYRE), C('#c7cbd0'), null, 0); wheel(body, body, 1.35, .5, .34, .8, sg, C(TYRE), C('#c7cbd0'), null, 0); }
-    // lifting arm (pivot at x .05, y 1.8): two booms forward with a cross beam, a drop bar and fork prongs at the tip
-    for (const sg of [1, -1]) { box(arm, D, 1.55, 0, sg * .88, 3.2, .14, .12); box(arm, D, 3.0, -.4, sg * .88, .1, .75, .1); }
-    box(arm, O, 3.08, -.05, 0, .12, .12, 1.8); box(arm, K, 3.4, -.74, 0, .8, .06, .08); box(arm, K, 3.4, -.74, -.5, .8, .06, .08); box(arm, K, 3.4, -.74, .5, .8, .06, .08);
-    return { parts: [['body', body, 'lam'], ['glass', glass, 'glass'], ['lamp', lamps, null]], arm: [arm, [.05, 1.8, 0]] };
+    const body = G(), glass = G(), trim = G(), rim = G(), lamps = G(), arm = G();
+    const O = C(ORG), GR = C(GREY), K = C(DARK), GL = C(GLS), STL = C(STEEL), O2 = C('#d96a08');
+    loftX(body, GR, [[1.75, .52, 1.0, .40, 3, 4], [1.2, .5, 1.05, .42, 3, 4], [.2, .5, 1.10, .45, 3, 4], [-1.3, .55, 1.12, .45, 3, 4], [-1.62, .58, 1.05, .40, 3, 4]], 12);   // chassis / gearbox
+    loftX(body, O, [[2.0, .92, 1.32, .33, 2.6, 3], [1.95, .86, 1.46, .43, 3, 3.6], [1.5, .85, 1.53, .45, 3.2, 3.8], [.7, .85, 1.56, .46, 3.2, 3.8], [.28, .85, 1.53, .45, 3.2, 3.8]], 14);   // hood
+    box(trim, K, 2.005, 1.15, 0, .04, .44, .62);                                                          // grille
+    for (const y of [1.02, 1.12, 1.22, 1.32]) box(trim, GR, 2.03, y, 0, .03, .025, .58);
+    box(trim, K, 2.1, .62, 0, .3, .34, 1.1); box(trim, STL, 2.12, .8, 0, .2, .05, .9);                    // front weight, bumper bar
+    cyl(trim, K, 'x', [1.2, .52, 0], .09, .09, .2, 8); box(trim, K, 1.35, .5, 0, .16, .16, 1.5);          // front axle
+    for (const sd of [1, -1]) ell(glass, C('#eaf2ff'), [1.93, 1.38, sd * .32], [.07, .07, .1], 2.2, 5, 8);
+    // cab: a rounded box, glass panes on its flat faces
+    loftX(body, O, [[.18, 1.28, 2.50, .70, 8, 6], [.12, 1.28, 2.62, .76, 8, 6], [-.3, 1.28, 2.66, .77, 8, 6], [-1.0, 1.28, 2.66, .77, 8, 6], [-1.24, 1.28, 2.62, .74, 8, 6], [-1.28, 1.28, 2.5, .68, 8, 6]], 20);
+    box(body, O, -.55, 2.69, 0, 1.62, .05, 1.64);                                                         // roof slab
+    pane(glass, GL, [[.19, 1.55, -.6], [.19, 1.55, .6], [.19, 2.5, .62], [.19, 2.5, -.62]], [1, 0, 0]);   // windscreen
+    pane(glass, GL, [[-1.29, 1.55, -.58], [-1.29, 1.55, .58], [-1.29, 2.48, .6], [-1.29, 2.48, -.6]], [-1, 0, 0]);
+    for (const sd of [1, -1]) {
+      pane(glass, GL, [[.02, 1.62, sd * .775], [-1.14, 1.62, sd * .775], [-1.14, 2.45, sd * .775], [.02, 2.45, sd * .775]], [0, 0, sd]);
+      box(trim, K, -.5, 1.55, sd * .78, .02, .6, .02);                                                    // door line
+      box(trim, K, -.2, 1.85, sd * .79, .14, .03, .03);                                                   // handle
+      box(trim, K, -.4, 1.2, sd * .84, .5, .05, .3);                                                      // step
+      fender(body, O, -.7, .8, .93, .35, PI - .35, sd * .66, sd * 1.3, .13);                               // rear mudguards
+    }
+    cyl(trim, STL, 'y', [.55, 1.95, .26], .042, .042, .85, 8); cyl(trim, K, 'y', [.55, 2.4, .26], .065, .065, .05, 8);   // exhaust
+    box(trim, K, -.55, 2.74, 0, .5, .03, .12); box2(trim, C('#f2f2f2'), .15, 2.73, .5, .1, .07, .3);       // roof rack, work lights
+    cyl(lamps, C('#8c5610'), 'y', [-.5, 2.86, 0], .09, .09, .2, 12); cyl(trim, K, 'y', [-.5, 2.74, 0], .13, .13, .06, 12);
+    box(trim, GR, -1.62, .62, 0, .3, .3, 1.2); cyl(trim, K, 'x', [-1.78, .7, 0], .05, .05, .3, 8);        // hitch
+    // wheels (lugged): rear 0.80 x .55, front .52 x .36
+    const lug = k => (k % 2 ? 1 : 0.955);
+    for (const sg of [1, -1]) { wheel(trim, rim, -.7, .8, .55, sg * 1.25, sg, '#d96a08', 6, lug); wheel(trim, rim, 1.35, .52, .36, sg * .97, sg, '#c9ced4', 5, lug); }
+    // lifting arm (pivot at x .05, y 1.8): two booms with braces forward, a cross bar, a drop bar and fork prongs at the tip
+    for (const sd of [1, -1]) {
+      beam(arm, GR, [0, 0, sd * .88], [3.05, 0, sd * .88], .16, .16); beam(arm, O, [1.2, 0, sd * .88], [3.0, -.5, sd * .88], .07, .07);
+      cyl(arm, STL, 'z', [0, 0, sd * .88], .13, .13, .22, 12); beam(arm, GR, [3.0, 0, sd * .88], [3.0, -.74, sd * .88], .11, .11);
+      beam(arm, O, [1.3, 0, sd * .7], [2.0, 0, sd * .7], .05, .05);
+    }
+    beam(arm, O, [3.05, -.02, -.88], [3.05, -.02, .88], .12, .13); beam(arm, GR, [3.0, -.74, -.9], [3.0, -.74, .9], .1, .1);
+    for (const z of [-.5, 0, .5]) { beam(arm, K, [3.0, -.74, z], [3.85, -.72, z], .09, .06); box(arm, C('#5a2c10'), 3.7, -.69, z, .3, .03, .1); }
+    cyl(arm, STL, 'z', [0, 0, 0], .08, .08, 1.76, 8);
+    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['lamp', lamps, null]], arm: [arm, [.05, 1.8, 0]] };
   }
 
-  function truckCab(body, glass, x0, x1, h, col) {
-    box(body, col, (x0 + x1) / 2, (.72 + h) / 2, 0, x1 - x0, h - .72, 2.1);
-    box(glass, C(GLS), x1 + .01, h - .85, 0, .04, .9, 1.7);
-    box2(glass, C(GLS), (x0 + x1) / 2 + .1, h - .85, 1.06, (x1 - x0) * .6, .8, .04);
-    box(body, C(DARK), x1 + .06, .95, 0, .14, .3, 2.2);                           // bumper
+  // a truck cab: rounded box x0..x1, roof y, glass on the flat faces (windscreen, side windows), mirrors, step, bumper, grille
+  function truckCab(body, glass, trim, x0, x1, h, col, wW) {
+    const K = C(DARK), GL = C(GLS), a = wW, s = (x1 - x0);
+    loftX(body, col, [[x1, .95, h - .35, a * .93, 6, 4.5], [x1 - .06, .92, h - .1, a * .98, 6, 4.5], [x1 - .22, .9, h, a, 6, 4.5], [x0 + .4, .9, h + .02, a, 6, 4.5], [x0, .9, h + .02, a, 6, 4.5], [x0 - .05, .9, h - .08, a * .96, 6, 4.5]], 20);
+    pane(glass, GL, [[x1 + .006, h - 1.15, -a * .82], [x1 + .006, h - 1.15, a * .82], [x1 + .006, h - .45, a * .7], [x1 + .006, h - .45, -a * .7]], [1, 0, 0]);
+    for (const sd of [1, -1]) {
+      pane(glass, GL, [[x0 + .12, h - 1.0, sd * (a + .004)], [x1 - .3, h - 1.0, sd * (a + .004)], [x1 - .3, h - .45, sd * (a + .004)], [x0 + .12, h - .45, sd * (a + .004)]], [0, 0, sd]);
+      box(trim, K, x0 + s * .55, h - .65, sd * (a + .01), .02, .75, .02);
+      box(trim, K, x0 + s * .75, h - 1.12, sd * (a + .02), .13, .03, .03);
+      beam(trim, K, [x1 - .25, h - .45, sd * (a + .02)], [x1 - .15, h - .45, sd * (a + .32)], .03, .03); box(trim, K, x1 - .15, h - .55, sd * (a + .34), .06, .34, .16);   // mirror arm + head
+      box(trim, K, x1 - .35, .62, sd * (a + .1), .4, .05, .26); box(trim, K, x1 - .35, .4, sd * (a + .1), .04, .4, .2);   // steps
+    }
+    box(trim, K, x1 + .08, .93, 0, .14, .3, 2.2);                                                      // bumper
+    box(trim, K, x1 + .005, 1.28, 0, .03, .5, 1.1); for (const y of [1.14, 1.24, 1.34, 1.44]) box(trim, C('#2e3136'), x1 + .02, y, 0, .02, .02, 1.04);
+    for (const sd of [1, -1]) { ell(glass, C('#eaf2ff'), [x1 - .02, 1.3, sd * (a - .15)], [.05, .1, .15], 2.3, 5, 8, 0, 0); }
   }
 
+  // ------------------------------------------------------------------ crane truck
   function defCrane() {
-    const body = G(), glass = G(), lamps = G(), boom = G(), O = C(ORG), D = C(GREY), K = C(DARK);
-    box(body, D, -.7, .95, 0, 5.4, .5, 2.0);                                       // chassis
-    truckCab(body, glass, 2.1, 3.5, 2.6, O);
-    box(body, O, -.9, 1.35, 0, 2.2, .45, 2.1); box(body, K, -2.1, 1.85, 0, .8, .6, 1.6);   // slewing base, counterweight
-    box(body, K, -2.9, .6, 0, .3, .2, 3.8); for (const z of [-1.8, 1.8]) box(body, K, -2.9, .35, z, .5, .3, .5);   // outriggers
-    box(lamps, C('#ffa21a'), 2.8, 2.72, 0, .22, .12, .22);
-    for (const x of [2.6, -1.7, -3.0]) for (const sg of [1, -1]) wheel(body, body, x, .55, .4, .98, sg, C(TYRE), C('#c7cbd0'), null, 0);
-    // boom (pivot at x -.7, y 1.75): two telescopic sections, hook line and block
-    loft(boom, O, [[0, -.28, .28, .26, .22], [4.5, -.18, .18, .19, .16]]);
-    loft(boom, C('#f2b21c'), [[4.3, -.14, .14, .15, .13], [7.2, -.11, .11, .12, .10]]);
-    box(boom, K, 7.2, -.95, 0, .04, 1.9, .04); box(boom, K, 7.2, -2.0, 0, .22, .3, .22);
-    return { parts: [['body', body, 'lam'], ['glass', glass, 'glass'], ['lamp', lamps, null]], boom: [boom, [-.7, 1.75, 0]] };
+    const body = G(), glass = G(), trim = G(), rim = G(), lamps = G(), boom = G();
+    const O = C(ORG), GR = C('#3c4046'), K = C(DARK), STL = C(STEEL), Y = C('#f2b01c'), GL = C(GLS);
+    box(trim, GR, -.45, .98, 0, 6.9, .3, 1.5); box(trim, K, -.45, 1.17, 0, 6.8, .12, 1.7);                // frame rails + deck plate
+    truckCab(body, glass, trim, 2.1, 3.58, 2.7, O, 1.05);
+    // turret + counterweight + operator cab on the left
+    loftX(body, O, [[.45, 1.15, 1.85, .92, 4, 5], [.3, 1.15, 2.0, .95, 4, 5], [-.5, 1.15, 2.05, .95, 4, 5], [-1.5, 1.15, 2.1, .95, 4, 5], [-2.5, 1.15, 2.05, .9, 4, 5], [-2.9, 1.15, 1.85, .82, 4, 5]], 16);
+    box(trim, K, -2.95, 1.55, 0, .5, .8, 1.5); stripes(trim, -3.206, 1.2, 1.9, .7, 9, -1);
+    loftX(body, O, [[.1, 1.7, 2.55, .42, 4.5, 5], [-.1, 1.7, 2.6, .46, 4.5, 5], [-.7, 1.7, 2.6, .46, 4.5, 5], [-.85, 1.7, 2.5, .42, 4.5, 5]], 12, { xf: p => [p[0], p[1], p[2] - .98] });
+    pane(glass, GL, [[.115, 1.85, -1.24], [.115, 1.85, -.72], [.115, 2.5, -.74], [.115, 2.5, -1.22]], [1, 0, 0]);
+    pane(glass, GL, [[-.1, 1.85, -1.446], [-.7, 1.85, -1.446], [-.7, 2.5, -1.446], [-.1, 2.5, -1.446]], [0, 0, -1]);
+    box2(trim, K, -.7, 1.8, .36, .5, .5, .06);                                                           // boom cheek plates
+    for (const sd of [1, -1]) {
+      cyl(trim, STL, 'x', [1.45, .8, sd * 1.0], .27, .27, 1.3, 14);                                       // fuel / hydraulic tanks
+      for (const x of [1.55, -3.0]) { box(trim, GR, x, .66, sd * 1.15, .3, .26, 1.0); cyl(trim, STL, 'y', [x, .5, sd * 1.5], .08, .08, .45, 8); cyl(trim, K, 'y', [x, .27, sd * 1.5], .22, .22, .05, 12); }   // outrigger beams, jacks
+      box(trim, C('#7a7f87'), -2.0, 1.04, sd * 1.05, 1.4, .3, .08);                                       // tool box
+    }
+    cyl(lamps, C('#8c5610'), 'y', [2.8, 2.82, 0], .09, .09, .2, 12); cyl(trim, K, 'y', [2.8, 2.72, 0], .13, .13, .06, 12);
+    box(trim, K, 2.8, 2.76, 0, .4, .04, .1);
+    // wheels: front steer + tandem
+    for (const x of [2.6, -1.7, -3.0]) for (const sg of [1, -1]) { wheel(trim, rim, x, .55, .36, sg * 1.1, sg, '#c9ced4', 6); if (x < 0) fender(body, GR, x, .55, .66, .25, PI - .25, sg * .78, sg * 1.22, .1); }
+    for (const sg of [1, -1]) fender(body, O, 2.6, .55, .66, .2, PI - .2, sg * .8, sg * 1.24, .1);
+    // boom (pivot at x -.7, y 1.75): box sections, a fly section, sheave, cable and hook block
+    loftX(boom, O, [[0, -.30, .30, .27, 4, 4], [4.6, -.22, .22, .21, 4, 4]], 12);
+    loftX(boom, Y, [[4.3, -.17, .17, .17, 4, 4], [7.4, -.13, .13, .13, 4, 4]], 12);
+    cyl(boom, STL, 'z', [0, 0, 0], .24, .24, .62, 14); box(boom, K, 7.48, 0, 0, .24, .34, .34); cyl(boom, STL, 'z', [7.5, 0, 0], .13, .13, .4, 10);
+    for (const sd of [1, -1]) box(boom, K, 4.6, 0, sd * .22, .12, .5, .04);
+    cyl(boom, K, 'y', [7.45, -1.0, 0], .014, .014, 2.0, 5); box(boom, K, 7.45, -2.1, 0, .22, .26, .2); cyl(boom, Y, 'z', [7.45, -2.28, 0], .1, .1, .12, 10);
+    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['lamp', lamps, null]], boom: [boom, [-.7, 1.75, 0]] };
   }
 
+  // ------------------------------------------------------------------ sweeper truck
   function defSweeper() {
-    const body = G(), glass = G(), lamps = G(), brush = G(), O = C(ORG), D = C(GREY), K = C(DARK), W = C(WHITE);
-    box(body, D, -.5, .9, 0, 5.4, .4, 1.9);
-    truckCab(body, glass, 2.3, 3.4, 2.45, O);
-    loft(body, W, [[1.9, 1.1, 2.4, 1.05, .98], [-1.0, 1.1, 2.55, 1.05, .95], [-3.0, 1.1, 2.45, 1.05, .92]]);   // hopper
-    box2(body, O, -.6, 1.7, 1.06, 4.4, .25, .02);                                  // stripe
-    box(body, K, 1.65, .95, 0, 1.0, .5, 2.1);                                      // brush housing
-    box(body, K, -3.1, 1.2, 0, .2, .3, 1.2);
-    box(lamps, C('#ffa21a'), 2.8, 2.57, 0, .22, .12, .22);
-    for (const x of [2.7, -2.0]) for (const sg of [1, -1]) wheel(body, body, x, .5, .4, .95, sg, C(TYRE), C('#c7cbd0'), null, 0);
-    cyl(brush, C('#2b2d30'), 'z', 0, 0, 0, .4, 2.0, 12);
-    return { parts: [['body', body, 'lam'], ['glass', glass, 'glass'], ['lamp', lamps, null]], brush: [brush, [1.65, .42, 0]] };
+    const body = G(), glass = G(), trim = G(), rim = G(), tail = G(), lamps = G(), brush = G();
+    const O = C(ORG), GR = C(GREY), K = C(DARK), W = C(WHITE);
+    box(trim, GR, -.5, .9, 0, 5.4, .4, 1.9);
+    truckCab(body, glass, trim, 2.3, 3.4, 2.48, O, 1.0);
+    loftX(body, W, [[1.95, 1.1, 2.35, 1.0, 3.4, 4], [1.8, 1.1, 2.5, 1.05, 3.6, 4], [-1.0, 1.1, 2.58, 1.05, 3.6, 4], [-2.9, 1.1, 2.5, 1.0, 3.6, 4], [-3.1, 1.1, 2.35, .95, 3.4, 4]], 20);   // hopper
+    for (const sd of [1, -1]) { box(body, O, -.6, 1.72, sd * 1.055, 4.4, .24, .03); box(trim, GR, -2.95, 1.35, sd * .75, .06, .4, .2); }
+    box(trim, K, 1.65, .95, 0, 1.0, .5, 2.1); box(trim, GR, -.6, 2.64, 0, 3.0, .1, .6); box(trim, K, -3.12, 1.25, 0, .06, .3, 1.5); stripes(trim, -3.156, 1.1, 1.4, .7, 9, -1);   // brush housing, roof vent, tail board + hazard bars
+    for (const sd of [1, -1]) ell(tail, C('#d02818'), [-3.1, 1.3, sd * .9], [.04, .1, .1], 2.4, 5, 8);
+    cyl(lamps, C('#8c5610'), 'y', [2.8, 2.6, 0], .09, .09, .2, 12); cyl(trim, K, 'y', [2.8, 2.5, 0], .13, .13, .06, 12);
+    for (const x of [2.7, -2.0]) for (const sg of [1, -1]) { wheel(trim, rim, x, .5, .38, sg * 1.05, sg, '#c9ced4', 6); fender(body, GR, x, .5, .6, .2, PI - .2, sg * .78, sg * 1.2, .08); }
+    // brush roller: a star of bristle bundles about z
+    const n = 24, P = [[], []];
+    for (let k = 0; k < n; k++) { const a = k / n * TAU, r = k % 2 ? .4 : .33; P[0].push([Math.cos(a) * r, Math.sin(a) * r, -.95]); P[1].push([Math.cos(a) * r, Math.sin(a) * r, .95]); }
+    grid(brush, C('#2b2d30'), P, { closed: true, cen: [0, 0, 0] }); fan(brush, C('#2b2d30'), P[0], [0, 0, -1]); fan(brush, C('#2b2d30'), P[1], [0, 0, 1]);
+    cyl(brush, C('#8a8f96'), 'z', [0, 0, 0], .08, .08, 2.1, 8);
+    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['tail', tail, 'tail'], ['lamp', lamps, null]], brush: [brush, [1.65, .42, 0]] };
   }
 
+  // ------------------------------------------------------------------ the light-panel housing (shared by the instanced panels: one 'body' mesh, vertex colours, Lambert)
   function defPanel() {
-    const A = G(), D = C('#2a2d31');
-    box(A, D, 0, 1.55, 0, .14, 3.1, .14); box(A, D, 0, 3.65, 0, .3, 1.3, 1.75);
+    const A = G(), D = C('#2a2d31'), D2 = C('#1b1d20'), M = C('#5b6068');
+    cyl(A, D, 'y', [0, 1.55, 0], .075, .08, 3.1, 8); cyl(A, M, 'y', [0, .06, 0], .2, .2, .12, 10);
+    box(A, D, 0, 3.65, 0, .3, 1.3, 1.75);                                                             // housing (front face x = .15; the screen is drawn at .155)
+    for (const [y, h] of [[4.25, .1], [3.05, .1]]) box(A, D2, .165, y, 0, .06, h, 1.8);               // bezel top / bottom
+    for (const sd of [1, -1]) box(A, D2, .165, 3.65, sd * .83, .06, 1.3, .1);                          // bezel sides
+    beam(A, D, [0, 2.5, 0], [-.2, 3.05, 0], .07, .07); cyl(A, D2, 'y', [-.05, 4.36, 0], .09, .09, .12, 8);
     return { parts: [['body', A, 'lam']] };
   }
 
@@ -80504,9 +80953,11 @@ const RCModels = (() => {
   function toGeo(A) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(A.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(A.n, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(A.c, 3));
     if (A.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(A.uv, 2));
-    else g.setAttribute('color', new THREE.Float32BufferAttribute(A.c, 3));
-    g.computeVertexNormals(); g.computeBoundingSphere();
+    g.setIndex(A.p.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(A.i, 1) : new THREE.Uint16BufferAttribute(A.i, 1));
+    g.computeBoundingSphere();
     return g;
   }
   function geometries(kind) {
@@ -80545,14 +80996,14 @@ const RCModels = (() => {
       };
     }
     for (const k of ['arm', 'boom', 'brush']) if (d[k]) {   // animated part: its own mesh on a pivot
-      const m = new THREE.Mesh(d[k][2], mat('lam')); m.castShadow = true; m.receiveShadow = true; m.name = k;
+      const m = new THREE.Mesh(d[k][2], mat('work')); m.castShadow = true; m.receiveShadow = true; m.name = k;
       if (k === 'brush') { m.position.fromArray(d[k][1]); u.brush = m; u.setBrush = a => { m.rotation.z = a; }; g.add(m); continue; }
       const pv = new THREE.Group(); pv.name = k + 'Pivot'; pv.position.fromArray(d[k][1]); pv.add(m); g.add(pv);
       u[k] = pv;
       u[k === 'arm' ? 'setArm' : 'setBoom'] = a => { pv.rotation.z = a; };
       pv.rotation.z = k === 'arm' ? -0.16 : 0.5;
     }
-    if (kind === 'marshal') u.inst = { geometry: d.geo.body, material: mat('lam') };
+    if (kind === 'marshal') u.inst = { geometry: d.geo.body, material: mat('cloth') };
     if (kind === 'panel') {
       const sm = mat('screen'), uv = new Float32Array(8);
       const sg = new THREE.BufferGeometry();
@@ -80567,7 +81018,8 @@ const RCModels = (() => {
       const show = c => {
         if (c === shown) return; shown = c;
         const u0 = c / 9, u1 = (c + 1) / 9;
-        uv.set([u1, 0, u0, 0, u0, 1, u1, 1]);   // (seen from +x, +z is on the left) ua.needsUpdate = true;
+        uv.set([u1, 0, u0, 0, u0, 1, u1, 1]);   // (seen from +x, +z is on the left)
+        ua.needsUpdate = true;
       };
       u.setScreen = s => { state = typeof s === 'string' ? (NAMES[s] != null ? NAMES[s] : 0) : (s | 0); show(CELL[state] != null ? CELL[state] : 0); };
       u.tick = t => {
@@ -80581,7 +81033,7 @@ const RCModels = (() => {
 
   // drop a model's own materials / geometries (its lamps, a panel's screen); the shared ones stay
   function dispose(g) { for (const m of (g.userData.mats || [])) if (m.dispose) m.dispose(); g.userData.mats = []; }
-  function tris(kind) { geometries(kind); let n = kind === 'panel' ? 2 : 0; for (const q of GEOS[kind]) n += q.attributes.position.count / 3; return n; }
+  function tris(kind) { geometries(kind); let n = kind === 'panel' ? 2 : 0; for (const q of GEOS[kind]) n += (q.index ? q.index.count : q.attributes.position.count) / 3; return n; }
 
   // ------------------------------------------------------------------ the parking spot (race control's: the same on the server)
   function parkSpot(T) { return typeof RaceControl !== 'undefined' && RaceControl.parkSpot ? RaceControl.parkSpot(T) : null; }
@@ -90450,12 +90902,12 @@ const HUD = (() => {
   }
 
   // ---------- race control (racecontrol.js): the flag in the zone ahead / here as a banner; green past the end of it ----------
-  const RCB = { key: '', t: 0, dk: null, on: false, neu: '' };
+  const RCB = { key: '', t: 0, dk: null, on: false, neu: '', dv: {}, f: 9 };
   function rcHud(G, car, dt) {
     const race = G.race, rc = race && race.rc;
-    if (!rc || typeof RaceControl === 'undefined' || race.phase !== 'racing' || car.finished || car.dnf) { RCB.key = ''; RCB.neu = ''; vscBar(null); return; }
+    if (!rc || typeof RaceControl === 'undefined' || race.phase !== 'racing' || car.finished || car.dnf) { RCB.key = ''; RCB.neu = ''; RCB.dv.k = ''; vscBar(null); return; }
     const si = RaceControl.scInfo ? RaceControl.scInfo(G, car) : null;
-    vscBar(RaceControl.delta(G, car), si);
+    vscBar(RaceControl.deltaView(RCB.dv, G, car, dt));
     if ((RCB.t -= dt) > 0) return;
     RCB.t = 0.2;
     // the red flag: the drive in (the AI has the car) / the restart from the grid / lights out
@@ -90495,35 +90947,39 @@ const HUD = (() => {
     } else if (RCB.key && !rc.vs && !rc.sp) flash('GREEN FLAG', { kind: 'alert', color: COL.green, sub: rc.yel ? 'END OF THE YELLOW ZONE' : 'TRACK CLEAR', duration: 2.5, key: 'rcf', priority: 1 });
     RCB.key = key;
   }
-  // the VSC / SC delta (d: RaceControl.delta: { on 1 | 2, d, end, sc } | null): the number + the bar; in the SC queue (si:
-  // RaceControl.scInfo, mode 2 / 4) the gap to the car / SC ahead as car-length cells instead (white, amber past 8, red past 10)
-  function vscBar(d, si) {
+  // the VSC / SC delta (w: RaceControl.deltaView, per frame: glided, steady 0.1 s digits): the number + the bar; in the SC queue
+  // the gap to the car / SC ahead as car-length cells instead (white, amber past 8, red past 10)
+  const DCOL = [COL.green, COL.yellow, COL.red];
+  function vscBar(w) {
     const el = E.vsc;
     if (!el) return;
-    const g = si && si.sp === 1 && (si.m === 2 || si.m === 4) ? si : null, on = !!(d || g);
+    const on = !!w;
     if (on !== RCB.on) { RCB.on = on; el.style.display = on ? 'flex' : 'none'; RCB.dk = null; }
     if (!on) return;
-    if (g) {
-      const v = g.gap, n = Math.min(10, Math.max(0, Math.ceil(v - 0.05))), over = v > 10, key = 'g' + (over ? 11 : n) + (v > 8 ? 'y' : '');
+    if (w.g) {
+      const n = w.cells, key = 'g' + n;
       if (key === RCB.dk) return;
       const mode = RCB.dk && RCB.dk[0];
       RCB.dk = key;
       if (mode !== 'g') { E.vscD.style.display = 'none'; E.vscB.style.display = 'none'; E.vscG.style.display = 'flex'; }
-      const col = over ? COL.red : v > 8 ? COL.yellow : '#ffffff', C = E.vscG.children;
+      const over = n > 10, col = over ? COL.red : n > 8 ? COL.yellow : '#ffffff', C = E.vscG.children;
       for (let i = 0; i < C.length; i++) C[i].style.background = over || i < n ? col : 'rgba(255,255,255,.16)';
       el.style.borderBottomColor = col;
       return;
     }
-    const v = Math.round(d.d * 10) / 10, key = 'd' + v;
-    if (key === RCB.dk) return;
-    const mode = RCB.dk && RCB.dk[0];
-    RCB.dk = key;
-    if (mode !== 'd') { E.vscD.style.display = ''; E.vscB.style.display = ''; E.vscG.style.display = 'none'; }
-    const pos = v >= 0, col = pos ? COL.green : v >= -0.2 ? COL.yellow : COL.red, f = Math.min(1, Math.abs(d.d) / 1.5);
-    E.vscD.textContent = (pos ? '+' : '\u2212') + Math.abs(v).toFixed(1);
-    E.vscD.style.color = col; el.style.borderBottomColor = col; E.vscN.style.background = col;
-    E.vscP.style.transform = 'scaleX(' + (pos ? f : 0).toFixed(3) + ')';
-    E.vscN.style.transform = 'scaleX(' + (pos ? 0 : f).toFixed(3) + ')';
+    const key = 'd' + w.n;
+    if (key !== RCB.dk) {   // (the digits / colour: only when the tenth shown changes)
+      const mode = RCB.dk && RCB.dk[0];
+      RCB.dk = key; RCB.f = 9;
+      if (mode !== 'd') { E.vscD.style.display = ''; E.vscB.style.display = ''; E.vscG.style.display = 'none'; }
+      const col = DCOL[w.col];
+      E.vscD.textContent = w.txt;
+      E.vscD.style.color = col; el.style.borderBottomColor = col; E.vscN.style.background = col;
+    }
+    if (Math.abs(w.f - RCB.f) < 0.002) return;   // (the bar: every frame it moves)
+    RCB.f = w.f;
+    E.vscP.style.transform = 'scaleX(' + (w.f > 0 ? w.f : 0).toFixed(3) + ')';
+    E.vscN.style.transform = 'scaleX(' + (w.f < 0 ? -w.f : 0).toFixed(3) + ')';
   }
   // race control's marshals / vehicles out on a job, on the minimaps: marshals small orange dots, vehicles orange squares
   // (xy(x, z) -> sets RCX / RCY; false = outside)
@@ -101576,6 +102032,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-18 13:36 -->
+<!-- Apex GP build 2026-10-18 17:00 -->
 </body>
 </html>

@@ -8354,13 +8354,9 @@ const RaceControl = (() => {
     cs.vS = R.dist;
     if (!(ds > -5 && ds < 150)) ds = 0;
     const i = c.idx >= 0 ? c.idx : T.idxAt(c.s), dd = dt - ds / vref(rc, T, i);
-    let D = cs.vD + dd;
     cs.vU += dd;
-    if (lane && !cs.vL) cs.vE = cs.vD;   // (into the pit lane: no cap in it)
-    else if (!lane && cs.vL) { D = cs.vE + Math.max(0, D - cs.vE - VSC_PIT * (race.pitLossEst || 20)); cs.vC = Math.max(DCAP, D); }   // (out: the time lost past VSC_PIT x the pit loss may be made up)
-    cs.vL = lane;
-    if (!lane) { if (D > cs.vC) D = cs.vC; cs.vC = Math.max(DCAP, Math.min(cs.vC, D)); }
-    cs.vD = D;
+    dAdv(cs, dd, lane, race);
+    const D = cs.vD;
     if (z !== cs.vZ) {   // (a zone end: its minimum time)
       const zz = cs.vZ;
       cs.vZ = z;
@@ -8368,6 +8364,50 @@ const RaceControl = (() => {
     }
     return true;
   }
+  // one step of a delta (o: a car's cs, or a client's own follower rc.ow): + dd s; into the pit lane: no cap in it; out: the
+  // time lost past VSC_PIT x the pit loss may be made up; the cap (time banked by going slower)
+  function dAdv(o, dd, lane, race) {
+    let D = o.vD + dd;
+    if (lane && !o.vL) o.vE = o.vD;
+    else if (!lane && o.vL) { D = o.vE + Math.max(0, D - o.vE - VSC_PIT * (race.pitLossEst || 20)); o.vC = Math.max(DCAP, D); }
+    o.vL = lane;
+    if (!lane) { if (D > o.vC) D = o.vC; o.vC = Math.max(DCAP, Math.min(o.vC, D)); }
+    o.vD = D;
+  }
+  // a multiplayer client: its own car's delta followed here every physics step from its own (local) car, as the server
+  // integrates it (netcore sessionTick); the server's value (rc.dl / the SC queue's, 2 Hz, ~0.1-0.3 s old) only corrects it:
+  // rc.ow.c glides (OW_RATE s/s) to the server's value minus the local one at the server's time, at once past OW_SNAP (an
+  // offence's reset, the pit exit). The server still judges. (Before: the server's value alone - frozen up to 20 s, then jumps)
+  const OW_N = 512, OW_RATE = 0.3, OW_SNAP = 0.3;
+  function ownStep(G, car, dt) {
+    const race = G.race, rc = race && race.rc;
+    if (!rc || !rc.cl || !car || !rc.vc) return;
+    const T = G.track, q = rc.sp ? scQ(rc, car) : null, key = rc.vs ? 'v' + rc.vsN : rc.sp === 1 && q && q.m === 1 ? 's' + rc.scN : '';
+    let o = rc.ow;
+    if (!key || car.finished || car.dnf || race.phase !== 'racing') { if (o) o.key = ''; return; }
+    const lane = !!(car.inPitLane || (car._race && car._race.pit));
+    if (!o || o.key !== key) {
+      if (!o) o = rc.ow = { h: new Float64Array(2 * OW_N) };
+      o.key = key; o.id = car.id; o.vD = D0; o.vC = DCAP; o.vE = D0; o.vL = lane; o.s = car.s; o.c = 0; o.cT = 0; o.n = 0; o.hn = 0; o.st = rc.dlT;
+    } else {
+      let ds = T.deltaS(o.s, car.s);
+      o.s = car.s;
+      if (!(ds > -5 && ds < 150)) ds = 0;
+      dAdv(o, dt - ds / vref(rc, T, car.idx >= 0 ? car.idx : T.idxAt(car.s)), lane, race);
+    }
+    const k = (o.hn++ % OW_N) * 2;
+    o.h[k] = race.t; o.h[k + 1] = o.vD;
+    if (rc.dlT !== o.st) {   // (a new server value: at its time ts, compared with the local one then)
+      o.st = rc.dlT;
+      const Ds = rc.vs ? rc.dl[car.id] : q ? q.d : null;
+      let I = null;
+      for (let j = 1; j <= Math.min(o.hn, OW_N); j++) { const m = ((o.hn - j) % OW_N) * 2; if (o.h[m] <= o.st) { I = o.h[m + 1]; break; } }
+      if (Ds != null && I != null) { o.cT = Ds - I; if (!o.n++ || Math.abs(o.cT - o.c) > OW_SNAP) o.c = o.cT; }
+    }
+    const g = o.cT - o.c, m = OW_RATE * dt;
+    o.c += g > m ? m : g < -m ? -m : g;
+  }
+  const ownD = (rc, car) => { const o = rc.cl && rc.ow; return o && o.key && o.id === car.id ? Math.min(o.vD + o.c, Math.max(o.vC, DCAP)) : null; };
   // a human's offence (kind 'vsc': under the delta, 'ob': too fast past marshals / vehicles): a warning, then 5 s each time.
   // AI ones (and without penalties) are logged only ('vscAI' / 'obAI')
   const OFF = { vsc: ['VSC WARNING', 'UNDER THE DELTA', 'Under the VSC delta'], ob: ['MARSHALS WARNING', 'TOO FAST PAST THE MARSHALS', 'Too fast past marshals on the track'],
@@ -8393,17 +8433,64 @@ const RaceControl = (() => {
     if (!cs || cs.vN !== rc.vsN || cs.ic || cs.vL || !rc.vc) return 0;
     return clamp(1 + VG * (cs.vD - cs.vT), 0.55, 2.5);
   }
-  // the HUD: { on 1 | 2, d (the delta, s), end (s to green while ending) } | null (no VSC). Clients: the server's (rc.dl)
+  // the HUD: { on 1 | 2, d (the delta, s), end (s to green while ending) } | null (no VSC). Clients: their own car's followed
+  // locally (ownStep), others the server's (rc.dl)
   const _dl = { on: 0, d: 0, end: 0, sc: 0 };
   function delta(G, car) {
     const rc = G && G.race && G.race.rc;
     if (!rc || !car) return null;
-    if (rc.sp) { const q = scQ(rc, car); if (!q || q.m !== 1) return null; _dl.on = 1; _dl.d = q.d; _dl.end = 0; _dl.sc = 1; return _dl; }   // (the SC: until in the queue)
+    const od = ownD(rc, car);   // (a client: its own car's, followed locally)
+    if (rc.sp) { const q = scQ(rc, car); if (!q || q.m !== 1) return null; _dl.on = 1; _dl.d = od != null ? od : q.d; _dl.end = 0; _dl.sc = 1; return _dl; }   // (the SC: until in the queue)
     if (!rc.vs) return null;
     const cs = rc.cs[car.id];
-    _dl.sc = 0; _dl.on = rc.vs; _dl.d = cs && cs.vN === rc.vsN ? cs.vD : rc.dl[car.id] != null ? rc.dl[car.id] : D0;
+    _dl.sc = 0; _dl.on = rc.vs; _dl.d = od != null ? od : cs && cs.vN === rc.vsN ? cs.vD : rc.dl[car.id] != null ? rc.dl[car.id] : D0;
     _dl.end = rc.vs === 2 ? Math.max(0, rc.vsEnd - G.race.t) : 0;
     return _dl;
+  }
+
+  // the HUD's view, per frame (st: the caller's state, {} at first; dt the frame's s): the delta (delta()) or, in the SC queue,
+  // the gap to the car / SC ahead in car lengths (a client: its own, from the cars it draws, rc.sa). Both glide (glide: the
+  // input's rate fed forward, so no lag while it is smooth; a jump closed in ~0.2 s); the number to 0.1 s with a 0.03 s
+  // hysteresis (no flicker between two digits), the bar from the glided value every frame; the cells with a 0.15 hysteresis
+  // -> { g: 0 delta | 1 cells, v (s, glided), n (tenths shown), txt, col 0 green | 1 amber | 2 red, f (bar -1..1), gap (car
+  // lengths, glided), cells (0-10, 11 = over 10) } | null (none)
+  const DV_RATE = 2, DV_TAU = 0.07, DV_HYS = 0.3, GP_HYS = 0.15;
+  function glide(o, x, dt, rmax) {
+    if (o.p == null || !(dt > 0) || dt > 0.25) { o.x = o.p = x; return x; }
+    const r = clamp((x - o.p) / dt, -rmax, rmax);
+    o.p = x; o.x += r * dt; o.x += (x - o.x) * (1 - Math.exp(-dt / DV_TAU));
+    return o.x;
+  }
+  const cellsOf = u => (u > 10 ? 11 : Math.max(0, Math.ceil(u - 0.05)));
+  function deltaView(st, G, car, dt) {
+    const rc = G && G.race && G.race.rc;
+    const si = rc && rc.sp ? scInfo(G, car) : null, gm = si && si.sp === 1 && (si.m === 2 || si.m === 4);
+    const d = gm ? null : delta(G, car);
+    if (!gm && !d) { st.k = ''; return null; }
+    const k = gm ? 'g' : 'd';
+    if (st.k !== k) { st.k = k; st.a = {}; st.n = null; st.cells = null; }
+    st.g = gm ? 1 : 0;
+    if (gm) {
+      let gap = si.gap;
+      if (rc.cl && rc.sa && rc.sa[car.id] != null) {   // (a client: the gap to what it draws ahead, not the server's 2 Hz one)
+        const a = rc.sa[car.id], T = G.track;
+        let s = null;
+        if (a === -1) { const V = vehicles(G)[0]; if (V.on) s = V.s; }
+        else for (const c of G.cars) if (c.id === a) { s = c.s; break; }
+        if (s != null) gap = Math.max(0, T.deltaS(car.s, s)) / CL;
+      }
+      const u = st.gap = glide(st.a, st.gi = gap, dt, 15);
+      let c = cellsOf(u);
+      if (st.cells != null && c !== st.cells && (c > st.cells ? cellsOf(u - GP_HYS) <= st.cells : cellsOf(u + GP_HYS) >= st.cells)) c = st.cells;
+      st.cells = c;
+      return st;
+    }
+    const v = st.v = glide(st.a, d.d, dt, DV_RATE);
+    if (st.n == null || Math.abs(v * 10 - st.n) > 0.5 + DV_HYS) st.n = Math.round(v * 10);
+    const n = st.n;
+    st.txt = (n >= 0 ? '+' : '\u2212') + (Math.abs(n) / 10).toFixed(1); st.col = n >= 0 ? 0 : n >= -2 ? 1 : 2; st.f = clamp(v / DCAP, -1, 1);
+    st.on = d.on; st.end = d.end; st.sc = d.sc;
+    return st;
   }
 
   // ---------- phase 4: the safety car (a physical vehicle) + the medical car ----------
@@ -8432,7 +8519,7 @@ const RaceControl = (() => {
   const Q_JOIN = 12 * CL, Q_LEAVE = 22 * CL, Q_MAX = 10 * CL, Q_T = 4, WAVE_R = 150, PASSED = 60, PASS_K = 0.85, PASS_K3 = 1.0, REL_T = 7, SC_PIT = 0.5;
   const GRIP_DROP = 0.03, RS_K = 1.35, RS_T = 20, SC_HIT = 10, VB = [[2.35, 0.98], [2.45, 0.95]], CB = [2.8, 1.0];
   const newVeh = k => ({ k, st: 0, s: 0, d: 0, v: 0, a: 0, x: 0, z: 0, h: 0, li: 0, run: 0, hs: 0, inL: 0,
-    w: 0, ph: 0, tg: -1, ps: 0, pd: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0 });   // (the MC: see mcStep)
+    w: 0, ph: 0, tg: -1, ps: 0, pd: 0, sT: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0 });   // (the MC: see mcStep)
   // speed profile (m/s per track sample): k 0 the SC, 1 the medical car; x vq (the race's pace); braking-feasible
   const profC = new WeakMap();
   function vprof(T, k, vq) {
@@ -8858,7 +8945,7 @@ const RaceControl = (() => {
     }
     if (V.ph === 2) { mcScene(G, race, rc, V); solid(G, race, rc, Lo, H, V); return; }
     let r = vehTrack(G, V, vprof(T, 1, rc.mq || 1), MC_BRK, MC_FOL);
-    if (!V.ph && !V.inL) mcTarget(G, race, rc, Lo, V);
+    if (!V.ph && !V.inL) { const ds = mcTarget(G, race, rc, Lo, V); if (ds >= 0) r.v = Math.min(r.v, Math.sqrt(2 * 4 * Math.max(0, ds - MC_EASE))); }
     if (V.ph === 1) {
       const to = T.deltaS(V.s, V.ps), lat = Math.abs(V.pd - V.d) > 0.4;   // (not over yet: on at a crawl, up to 12 m on)
       if (to < 150) r.d = V.pd;
@@ -8866,6 +8953,7 @@ const RaceControl = (() => {
       if (((to < 0.6 && !lat) || to < -12) && V.v < 2.5) { mcPark(G, race, rc, V); return; }
     } else {
       if (!V.inL && V.run > V.le - 600) V.inL = 1;
+      if (!V.inL) mcYield(G, V, r);
       if (V.inL) r = vehIn(T, V, r.v, r.d, MC_BRK);
     }
     if (!r) return;
@@ -8873,24 +8961,32 @@ const RaceControl = (() => {
     vehMove(T, V, r.v, V.d + clamp(r.d - V.d, -k, k), MC_ACC, MC_BRK, dt);
     solid(G, race, rc, Lo, H, V);
   }
-  // a car retired on the opening lap ahead (its recovery planned): ph 1 to a spot near it
+  // a car retired on the opening lap ahead: the MC eases off for it (-> its distance, m; -1 none: it stops MC_EASE m short);
+  // once it is stopped and its recovery planned, ph 1 to a spot near it (mcSpot, every 0.25 s: a spot ahead but too near to
+  // stop for -> eases off and tries again; none at all -> skipped)
+  const MC_EASE = 30;
   function mcTarget(G, race, rc, Lo, V) {
     const T = G.track, left = Math.min(700, V.le - V.run - 120);
     let best = null, bd = Infinity;
     for (const c of G.cars) {
       const R = c._race;
-      if (!R || !c.dnf || c.finished || c.inPitLane || R.pit || !(R.dist < V.d1) || (c.speed || 0) > 0.5 || V.att.indexOf(c.id) >= 0) continue;
+      if (!R || !c.dnf || c.finished || c.inPitLane || R.pit || !(R.dist < V.d1) || V.att.indexOf(c.id) >= 0) continue;
       const cs = rc.cs[c.id], ds = T.wrapS(c.s - V.s);
       if ((cs && cs.done) || ds < 10 || ds > left || ds >= bd) continue;
-      const o = incOf(rc, c, null, 0);
-      if (o && o.est) { best = c; bd = ds; }
+      best = c; bd = ds;
     }
-    if (!best) return;
-    V.att.push(best.id);
-    const sp = mcSpot(G, rc, best, V, V.v * V.v / 16 + 15);   // (room to stop: the approach brakes at 4 m/s2, up to MC_BRK)
-    if (!sp) { rc.log.push([+race.t.toFixed(2), 'mcSkip', zoneAt(Lo, best.s), best.id]); return; }
-    V.ph = 1; V.tg = best.id; V.ps = sp.s; V.pd = sp.d; V.cl = 0; rc.rev++;
+    if (!best) return -1;
+    const o = incOf(rc, best, null, 0);
+    if ((best.speed || 0) > 0.5 || !o || !o.est || race.t < (V.sT || 0)) return bd;
+    V.sT = race.t + 0.25;
+    const sp = mcSpot(G, rc, best, V, V.v * V.v / 16 + 5);   // (room to stop: the approach brakes at 4 m/s2, up to MC_BRK)
+    if (!sp) {
+      if (mcSpot(G, rc, best, V, 5)) return bd;
+      V.att.push(best.id); rc.log.push([+race.t.toFixed(2), 'mcSkip', zoneAt(Lo, best.s), best.id]); return -1;
+    }
+    V.att.push(best.id); V.ph = 1; V.tg = best.id; V.ps = sp.s; V.pd = sp.d; V.cl = 0; rc.rev++;
     rc.log.push([+race.t.toFixed(2), 'mcTo', zoneAt(Lo, best.s), best.id]);
+    return -1;
   }
   // where it parks: 16-72 m before the car (else 16-34 m after it), first on the car's side: the verge (grass / kerb), then
   // the asphalt's edge (>= 4.5 m off the racing line, >= 7 m of track left), then the run-off; clear of the barrier, the
@@ -8952,11 +9048,22 @@ const RaceControl = (() => {
     if (!clr || (V.dB >= 0 && t < V.dB + V.dw + 0.8) || !mcRoom(G, rc, V)) return;
     V.ph = 0; V.tg = -1; V.dO = V.dB = -1; rc.rev++; rc.log.push([+t.toFixed(2), 'mcGo', zoneAt(layout(T), V.s), 0]);
   }
-  // room to drive on to the pit entry: no running car within 0.3 x the way there + 150 m behind (150 m under a VSC / SC)
+  // room to drive on to the pit entry: no running car within 0.3 x the way there + 150 m (<= 600 m) behind (a car that still
+  // comes up behind: mcYield)
   function mcRoom(G, rc, V) {
-    const T = G.track, need = rc.vs || rc.sp ? 150 : 0.3 * T.wrapS(T.pit.entryS - V.s) + 150;
+    const T = G.track, need = Math.min(600, 0.3 * T.wrapS(T.pit.entryS - V.s) + 150);
     for (const c of G.cars) if (c._race && !c.dnf && !c.finished && !c.inPitLane && !c._race.pit && T.wrapS(V.s - c.s) < need) return false;
     return true;
+  }
+  // a running car within 250 m behind: the medical car keeps to the edge away from the racing line (it goes round it, k 5)
+  function mcYield(G, V, r) {
+    const T = G.track;
+    for (const c of G.cars) {
+      if (!c._race || c.dnf || c.finished || c.inPitLane || c._race.pit || T.wrapS(V.s - c.s) > 250) continue;
+      const i = T.idxAt(V.s), ln = T.raceLine[i];
+      r.d = (ln >= 0 ? -1 : 1) * (T.halfW[i] - 1.4);
+      return;
+    }
   }
   // the doctor at t: { x, z, h, a (1 walking, 2 at the car), s, d } | null
   const _doc = { x: 0, z: 0, h: 0, a: 0, s: 0, d: 0 };
@@ -9053,21 +9160,26 @@ const RaceControl = (() => {
   function restartPh(race) { const rc = race.rc; return !!rc && ((rc.sp === 2 && rc.go) || rc.sp === 3 || (rc.rsT > 0 && race.t - rc.rsT < RS_T)); }
   // restart contacts: judged RS_K x more leniently from the SC's pit entry until RS_T s after the green
   function contactK(race) { const rc = race && race.rc; return rc && rc.on && (rc.sp === 2 || (rc.rsT != null && race.t - rc.rsT < RS_T)) ? RS_K : 1; }
-  // (the pack: [sp, scN, inL, lapW, fin, pick, scL, SC, MC, t, [id, mode, gap, sx, delta, ...], go] | 0)
+  // (the pack: [sp, scN, inL, lapW, fin, pick, scL, SC, MC, t, [id, mode, gap, sx, delta, ...], go, [id, the car ahead (-1 the SC)
+  // ... in the queue], vq, vc] | 0)
   function scPack(race, rc, r2) {
     const vp = V => (V ? (V.k && V.ph ? [V.st, r2(V.s), r2(V.d), r2(V.v), V.li, V.ph, V.tg, r2(V.dO), r2(V.dB), r2(V.dw), r2(V.aS), r2(V.aD), r2(V.bS), r2(V.bD), V.cl | 0] : [V.st, r2(V.s), r2(V.d), r2(V.v), V.li]) : 0), V = rc.sc, M = rc.mc;   // (the MC at a lap-1 DNF: + ph, tg, the doctor's times / walk)
     if (!rc.sp && !(V && V.st > 0 && V.st < 4) && !(M && M.st > 0 && M.st < 4)) return 0;
     const q = [];
-    if (rc.sp) for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN) q.push(+id, cs.sm | 0, Math.round(cs.sg || 0), cs.sx === rc.scN ? 1 : 0, cs.vN === rc.vsN ? r2(cs.vD) : D0, rc.sp === 3 && cs.gE > 0 ? Math.round((cs.gD || 0) * 1e4) : 0); }
-    return [rc.sp, rc.scN, rc.inL | 0, rc.lapW | 0, rc.fin | 0, rc.pick | 0, rc.scL | 0, vp(V), vp(M), r2(race.t), q, rc.go | 0];
+    const qa = [];
+    if (rc.sp) for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN && (cs.sm === 2 || cs.sm === 4)) qa.push(+id, cs.sa); if (cs.sN === rc.scN) q.push(+id, cs.sm | 0, Math.round(cs.sg || 0), cs.sx === rc.scN ? 1 : 0, cs.vN === rc.vsN ? r2(cs.vD) : D0, rc.sp === 3 && cs.gE > 0 ? Math.round((cs.gD || 0) * 1e4) : 0); }
+    return [rc.sp, rc.scN, rc.inL | 0, rc.lapW | 0, rc.fin | 0, rc.pick | 0, rc.scL | 0, vp(V), vp(M), r2(race.t), q, rc.go | 0, qa, +rc.vq.toFixed(4), r2(rc.vc)];
   }
   function scUnpack(race, rc, a, G) {
     const ev = G && G.events, was = { sp: rc.sp | 0, inL: rc.inL | 0, lapW: rc.lapW | 0 };
     const veh = (k, v) => { if (!v) { if (rc[k] && rc[k].st > 0 && rc[k].st < 4) rc[k].st = k === 'mc' ? 4 : 0; return; } const V = rc[k] || (rc[k] = newVeh(k === 'mc' ? 1 : 0)); V.st = v[0] | 0; V.s = +v[1]; V.d = +v[2]; V.v = +v[3]; V.li = v[4] | 0; V.ph = v[5] | 0; if (V.ph) { V.tg = v[6]; V.dO = +v[7]; V.dB = +v[8]; V.dw = +v[9]; V.aS = +v[10]; V.aD = +v[11]; V.bS = +v[12]; V.bD = +v[13]; V.cl = v[14] | 0; } else { V.tg = -1; V.dO = V.dB = -1; } };
-    if (!Array.isArray(a)) { veh('sc', 0); veh('mc', 0); rc.sp = 0; rc.sq = null; }
+    if (!Array.isArray(a)) { veh('sc', 0); veh('mc', 0); rc.sp = 0; rc.sq = null; rc.sa = null; }
     else {
       rc.sp = a[0] | 0; rc.scN = a[1] | 0; rc.inL = a[2] | 0; rc.lapW = a[3] | 0; rc.fin = a[4] | 0; rc.pick = a[5] | 0; rc.scL = a[6] | 0; veh('sc', a[7]); veh('mc', a[8]); rc.vt = +a[9] || 0; rc.go = a[11] | 0;
-      const q = a[10] || [], old = rc.sq || {};
+      const q = a[10] || [], old = rc.sq || {}, qa = a[12] || [];
+      if (!rc.vs) rc.dlT = rc.vt;   // (the deltas' race time: the own car's follower, ownStep)
+      if (a[14]) { rc.vq = +a[13] || rc.vq; rc.vc = +a[14]; rc.vf = VC_K * rc.vq; }
+      rc.sa = {}; for (let k = 0; k + 1 < qa.length; k += 2) rc.sa[qa[k]] = qa[k + 1];
       rc.sq = {};
       for (let k = 0; k + 5 < q.length; k += 6) {
         rc.sq[q[k]] = [q[k + 1] | 0, +q[k + 2] || 0, q[k + 3] | 0, +q[k + 4], +q[k + 5] || 0];
@@ -9791,14 +9903,14 @@ const RaceControl = (() => {
     const rc = race && race.rc;
     const r2 = x => Math.round(x * 100) / 100;
     return rc && rc.on ? [rc.rev, rc.want, rc.zf.slice(), rc.zw.slice(), rc.jobs.map(J => [J.id, J.k, J.car, J.side, J.post, J.dep, r2(J.t0), J.ci, J.n,
-      r2(J.h0), r2(J.hf), r2(J.vh), r2(J.cs), r2(J.cd), r2(J.fs), r2(J.fd), r2(J.end), r2(J.clr), J.P.map(q => q.map(r2))]), vscPack(rc, r2), scPack(race, rc, r2), rfPack(race, rc), barPack(rc)] : null;
+      r2(J.h0), r2(J.hf), r2(J.vh), r2(J.cs), r2(J.cd), r2(J.fs), r2(J.fd), r2(J.end), r2(J.clr), J.P.map(q => q.map(r2))]), vscPack(rc, r2, race), scPack(race, rc, r2), rfPack(race, rc), barPack(rc)] : null;
   }
-  // (the VSC: [vs, vsN, vsEnd, [id, delta, ...], vq, vc], 0 = none)
-  function vscPack(rc, r2) {
+  // (the VSC: [vs, vsN, vsEnd, [id, delta, ...], vq, vc, t (the deltas' race time)], 0 = none)
+  function vscPack(rc, r2, race) {
     if (!rc.vs) return 0;
     const d = [];
     for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.vN === rc.vsN) d.push(+id, r2(cs.vD)); }
-    return [rc.vs, rc.vsN, r2(rc.vsEnd), d, +rc.vq.toFixed(4), r2(rc.vc)];
+    return [rc.vs, rc.vsN, r2(rc.vsEnd), d, +rc.vq.toFixed(4), r2(rc.vc), r2(race.t)];
   }
   // (a client: the flags as the server has them; events for its HUD / engineer on every change, like offline)
   function unpack(race, p, G) {
@@ -9808,7 +9920,7 @@ const RaceControl = (() => {
     const v = Array.isArray(p[5]) ? p[5] : null, vs = v ? v[0] | 0 : 0;
     if (vs !== rc.vs && G && G.events) G.events.push(vs ? { type: 'rcVsc', on: vs, n: v[1] | 0, end: +v[2] || 0 } : { type: 'rcVsc', on: 0, n: rc.vsN });
     rc.vs = vs;
-    if (v) { rc.vsN = v[1] | 0; rc.vsEnd = +v[2] || 0; rc.dl = {}; const d = v[3] || []; for (let k = 0; k + 1 < d.length; k += 2) rc.dl[d[k]] = +d[k + 1]; rc.vq = +v[4] || 0; rc.vc = +v[5] || 0; rc.vf = VC_K * rc.vq; }
+    if (v) { rc.vsN = v[1] | 0; rc.vsEnd = +v[2] || 0; rc.dl = {}; const d = v[3] || []; for (let k = 0; k + 1 < d.length; k += 2) rc.dl[d[k]] = +d[k + 1]; rc.vq = +v[4] || 0; rc.vc = +v[5] || 0; rc.vf = VC_K * rc.vq; if (v[6] != null) rc.dlT = +v[6]; }
     scUnpack(race, rc, p[6], G);
     rfUnpack(race, rc, p[7], G);
     barUnpack(race, rc, p[8]);
@@ -9833,7 +9945,7 @@ const RaceControl = (() => {
   }
 
   return { create, step, layout, zoneAt, turnAt, clean, effLevel, aiFlag, passOK, ahead, panelState, pack, unpack,
-    actors, stopInput, jobInfo, obstacles, aiVsc, vscV, delta, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
+    actors, stopInput, jobInfo, obstacles, aiVsc, vscV, delta, deltaView, ownStep, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT,
@@ -19080,6 +19192,7 @@ const NetCore = (() => {
         if (G.race && G.race.rc && G.race.rc.cl && typeof RaceControl !== 'undefined' && RaceControl.gripLocal) RaceControl.gripLocal(G, me);   // (cold tyres after an SC restart: the server's drop for this car)
         pitRoadFlags(S);
       }
+      if (race.rc && race.rc.cl && (race.rc.vs || race.rc.sp) && typeof RaceControl !== 'undefined' && RaceControl.ownStep) RaceControl.ownStep(G, me, dt);   // (the VSC / SC delta of its own car, followed here every step: the server's corrects it)
     }
     if (me && me._race && !me.finished) me.curLapTime = race.phase === 'racing' || (quali && !S.follow) ? Math.max(0, race.t - (me._race.lapStartT || 0)) : 0;
     if (me && me.giveBack) gbSync(me, race.t);   // (an order the server's verdict never came for: dropped after its window)
