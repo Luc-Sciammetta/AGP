@@ -33,7 +33,7 @@ const log = (...a) => { if (!QUIET) console.log(new Date().toISOString().slice(1
 const now = () => performance.now();
 
 // ---------------------------------------------------------------- game logic (same code as the browser)
-const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'ai.js', 'race.js', 'quali.js', 'ghost.js', 'netcore.js'];
+const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'damage.js', 'ai.js', 'race.js', 'quali.js', 'ghost.js', 'netcore.js'];
 function loadLogic() {
   const bundle = path.join(HERE, 'logic.js');
   let src;
@@ -42,11 +42,11 @@ function loadLogic() {
     const dir = ARG.src || process.env.AGP_SRC || path.join(HERE, '..', 'src');
     src = LOGIC.map(f => `// ===== ${f}\n` + fs.readFileSync(path.join(dir, f), 'utf8')).join('\n;\n');
   }
-  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'AI', 'Race', 'Quali', 'Ghost', 'NetCore'];
+  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'Damage', 'AI', 'Race', 'Quali', 'Ghost', 'NetCore'];
   return new Function(src + '\n;return {' + names.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : undefined`).join(',') + '};')();
 }
 const L = loadLogic();
-const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, AI, Race, Quali, Ghost, NetCore: N } = L;
+const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, Damage, AI, Race, Quali, Ghost, NetCore: N } = L;
 // a player's custom livery (src/livery.js): sanitised here (hex colours, name / code lengths, a known pattern), shown to
 // everyone (room players, race entry list, time-trial roster / leaderboard); the car keeps its team slot (p.team)
 const LV = L.Livery, cleanLivery = o => (o && LV ? LV.clean(o) : null);
@@ -323,7 +323,8 @@ class RaceSim {
       usedNum.add(car.number);
     }
     G.world = { track, cars: G.cars, race, events: G.events, weather: G.weather, assists: { tc: true, abs: true }, wearPerMetre: wearPerMetre(S, track),
-      grassSlip: CFG.grass ? CFG.grass.val(S.grassSlip) : undefined };   // (the room's grass slipperiness: every car, AI included)
+      grassSlip: CFG.grass ? CFG.grass.val(S.grassSlip) : undefined,   // (the room's grass slipperiness: every car, AI included)
+      damage: S.mode !== 'timetrial' && typeof Damage !== 'undefined' ? Damage.worldFor(S.damage) : null };   // (contact damage: authoritative here; 'none' = off)
     this.byPid = new Map(); for (const car of G.cars) if (car.net) this.byPid.set(car.net.p.id, car);
     this.names = new Set(humans.map(p => nameKey(dname(p))));   // (numberNames: names in this race are not given to a newcomer)
     this.ghost = S.contact === 'ghost';
@@ -420,6 +421,22 @@ class RaceSim {
     Physics.ghostStart(car);
   }
   // tyre choice made in the pit lane (after the limiter line the server drives: no STATE packets carry it then)
+  // contact damage: a client's own wall hit (its car's physics runs there); judged here: the car is client-driven, racing,
+  // next to a wall, the numbers plausible; at most 8 per message, ~20 a second
+  onWallHit(p, m) {
+    const car = this.byPid.get(p.id), w = this.G.world, race = this.race;
+    if (!car || !w || !w.damage || !car.net || car.net.auth !== 'client' || race.phase !== 'racing' || !Array.isArray(m.h)) return;
+    const n = car.net, tNow = now();
+    if (tNow - (n.whT || 0) > 1000) { n.whT = tNow; n.whN = 0; }
+    const T = this.track, i = car.idx >= 0 ? car.idx : T.idxAt(car.s), cor = T.corridor(car.s, car.d, { min: 0, max: 0, pit: false });
+    if (Math.min(cor.max - car.d, car.d - cor.min) > 3.5) return;   // (not near a wall)
+    for (const h of m.h.slice(0, 8)) {
+      if (!Array.isArray(h) || h.length < 6 || !h.every(x => typeof x === 'number' && isFinite(x)) || n.whN++ > 20) continue;
+      const [lx, lz, nlx, nlz, vn, vt] = h;
+      if (Math.abs(lx) > 3.2 || Math.abs(lz) > 1.4 || !(vn > 0) || vn > Math.max(5, (car.speed || 0) * 1.3 + 5) || Math.abs(vt) > 110) continue;
+      Damage.hit(car, lx, lz, nlx, nlz, vn, vt, w, 'wall', null);
+    }
+  }
   onPitc(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c)) { car.nextCompound = m.c; car.wxStop = true; } }
   // ---- control hand-over (epochs): the client ignores / the server rejects everything from an older epoch
   ctl(car, stT) {   // stT: the time of the car's state (its last physics step) when handing it back
@@ -481,7 +498,7 @@ class RaceSim {
     }
     // ghosting: human cars touch nobody (AI cars still race each other); contact: everyone collides
     if (this.ghost) for (const c of cars) if (c.net && !c.kinematic) { c._gk = true; c.kinematic = true; }
-    Physics.collide(cars, dt, G.events);
+    Physics.collide(cars, dt, G.events, G.world);
     if (this.ghost) for (const c of cars) if (c._gk) { c._gk = false; c.kinematic = false; }
     if (gm) for (const c of cars) if (c.ghosted && !Physics.ghostStep(c, cars, this.track, dt)) sendAll(this.room, { t: 'rg', id: c.id, on: 0 });   // (reset ghost over)
     const wasRacing = race.phase === 'racing';
@@ -673,7 +690,8 @@ class RaceSim {
     }
     const r = { phase: race.phase, laps: race.laps, leaderLap: race.leaderLap, fl: race.fastestLap ? [race.fastestLap.car.id, race.fastestLap.time, race.fastestLap.lap] : null,
       sbs: race.sessionBestSectors, lf: !!race.leaderFinished, tca: !!race.twoCompoundActive, t: race.t };
-    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca]);
+    if (this.G.world && this.G.world.damage && typeof Damage !== 'undefined') r.db = Damage.packDebris(race);   // (contact damage: debris)
+    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db]);
     const msg = { t: 'info', c: ch };
     if (full || rk !== this.rKey) { this.rKey = rk; msg.r = r; }
     if (!ch.length && !msg.r) return;
@@ -873,6 +891,7 @@ function onText(p, raw) {
     case 'reclaim': if (sim) sim.onReclaim(p); break;
     case 'away': if (sim && sim.onAway) sim.onAway(p, m); break;   // (m.lobby: went back to the lobby)
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
+    case 'wh': if (sim && sim.onWallHit) sim.onWallHit(p, m); break;   // (contact damage: a client's wall hit)
     case 'rst': if (sim && sim.onReset) sim.onReset(p); break;   // (reset ghost: the player pressed R)
     case 'qgo': case 'qret': case 'qready': case 'qcont': if (sim && sim.onQ) sim.onQ(p, m); break;   // (qualifying)
     case 'lap': if (sim && sim.onLap) sim.onLap(p, m); break;
