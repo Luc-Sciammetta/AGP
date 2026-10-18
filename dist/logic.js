@@ -7338,14 +7338,16 @@ const RaceControl = (() => {
   const SCAN = 0.25;                                           // s between incident scans
   const ZB = 10;                                               // m per zone-lookup bin
   const FREQ = { less: 0.6, realistic: 1, more: 1.6 };
-  const DEF = { on: true, yellow: true, vsc: true, sc: true, red: true, freq: 'realistic' };
+  const DEF = { on: true, yellow: true, vsc: true, sc: true, red: true, freq: 'realistic', fail: true };   // (fail: mechanical failures, Settings > Rules; read even with race control off: race.mechFail)
   const HOLD = { off: 10, spin: 10, stopped: 10, slow: 3, debris: 5, retired: 5 };   // s the flags stay after the hazard ends
   const DY_MAX = 0.9;    // double yellow: a human's mean speed through the zone over this share of its own pace = not slowed
-  const AI_SLOW = 0.82;  // double yellow: the AI's share of its corner speeds / of the reference speed on straights
+  const AI_SLOW = 0.87;  // double yellow: the AI's share of its corner speeds / of the reference speed on straights (~80 % measured through the zone, user 2026-10-18)
   // phase 2: posts <= POST_MAX m apart (>= POST_MIN), a GAP_W m gap in the wall GAP_OFF m past each post; vehicle depots
   // >= DEP_GAP m apart per side; speeds (m/s): marshals running / pushing a car, vehicles on the service road / off it /
   // towing, crane truck, sweeper; job phase modes (M)
   const POST_MAX = 135, POST_MIN = 70, GAP_W = 5, GAP_OFF = 6, DEP_GAP = 800, ROAD = 4.5;
+  // a post: POST_OUT m behind the barrier, then out by POST_EX m / along by POST_DS m until clear of every run-off
+  const POST_OUT = 1.2, POST_EX = [0, 1, 2.5, 5, 8, 12, 18, 25], POST_DS = [0, 3, -3, 6, -6, 10, -10, 15, -15];
   const MV = { run: 4.5, push: 2.0, road: 11, off: 6, tow: 4, crane: 9, sweep: 4, sweepRoad: 15 };
   const M = { WAIT: 0, GO: 1, WORK: 2, CARRY: 3, ROAD: 4, TOW: 5, LIFT: 6, HOOK: 7 };
   const KJ = { push: 0, tow: 1, lift: 2, pick: 3, sweep: 4, fix: 5 };
@@ -7369,7 +7371,7 @@ const RaceControl = (() => {
   function clean(o) {
     o = o && typeof o === 'object' ? o : {};
     const r = {};
-    for (const k of ['on', 'yellow', 'vsc', 'sc', 'red']) r[k] = o[k] == null ? DEF[k] : !!o[k];
+    for (const k of ['on', 'yellow', 'vsc', 'sc', 'red', 'fail']) r[k] = o[k] == null ? DEF[k] : !!o[k];
     r.freq = FREQ[o.freq] ? o.freq : DEF.freq;
     return r;
   }
@@ -7405,6 +7407,108 @@ const RaceControl = (() => {
   function wallD(T, s, side) { const i = T.idxAt(s), w = side > 0 ? T.wallR[i] : -T.wallL[i]; return w > 150 || !(w > 0) ? T.halfW[i] + 20 : w; }
   // the same, clamped to 1-15 m past the asphalt (open run-off: the marshals' / vehicles' line stays near the track)
   function gwAt(T, s, side) { const i = T.idxAt(s); return Math.max(Math.min(wallD(T, s, side), T.halfW[i] + 15), T.halfW[i] + 1); }
+  // where the safety car and the medical car wait (DOM-free, the same on the server and the clients): inside the speed-limited
+  // part of the pit lane, as near its end line (pit.limiterS1) as they fit, clear of the lane's centre line (the driving
+  // line) and of the track edge / kerbs: on the garage-side edge of the lane past the boxes (>= BOX_A m after the last, so
+  // a car leaving it gets by), else on the pit-wall side; one behind the other (PK_GAP m), side by side where the lane is
+  // wide enough. -> { layout: 'abreast' | 'tandem', side: 1 garage / -1 wall, back (m before the limiter end), cars: [{ s, d,
+  // x, z, h }] (the safety car first; h = heading, car.h convention) } or null
+  const HWC = 0.98, HLC = 2.6, PK_GAP = 6.6, BOX_A = 14, BOX_B = 25;
+  function parkSpot(T) {
+    const p = T && T.pit; if (!p || typeof p.laneD !== 'function') return null;
+    const sd = p.side, lhw = p.laneHalfW || 5, N = T.N, st = T.step || T.length / N, L = T.length;
+    const KW = (typeof CFG !== 'undefined' && CFG.kerbWidth) || 1.4, K = sd < 0 ? T.kerbL : T.kerbR, PIT = typeof SURF !== 'undefined' ? SURF.PIT : 5;
+    const loop = (a, b) => ((b - a) % L + L) % L, len = p.length || loop(p.entryS, p.exitS), u = s => loop(p.entryS, s);
+    const l0 = p.limiterS0 != null ? u(p.limiterS0) : Math.min(120, len * 0.25), l1 = p.limiterS1 != null ? u(p.limiterS1) : len - Math.min(120, len * 0.25);
+    let b0 = Infinity, b1 = -Infinity; for (const q of p.boxS || []) { b0 = Math.min(b0, u(q)); b1 = Math.max(b1, u(q)); }
+    const tun = T.scenery && T.scenery.tunnel && T.scenery.tunnel.s0 != null ? [u(T.scenery.tunnel.s0 - 4), u(T.scenery.tunnel.s1 + 4)] : null;
+    const idx = s => { const i = Math.round(T.wrapS(s) / st); return ((i % N) + N) % N; };
+    const laneAbs = s => {   // |lane centre offset| at s, null off the plain lane (outside it, or on a pit road)
+      s = T.wrapS(s);
+      if (p.onRoad && p.onRoad(s) >= 0) return null;
+      const v = p.laneD(s); return v == null || !isFinite(v) || Math.abs(v) > 1e3 ? null : Math.abs(v);
+    };
+    // visible lane asphalt at s (the outer edge is pulled in along the exit blend, as Render3D's pitVis)
+    const vis = s => {
+      const a = laneAbs(s); if (a == null) return null;
+      const hw = T.halfW[idx(s)], q = u(T.wrapS(s)), end = q < len / 2 ? p.entryS : p.exitS;
+      const a0 = laneAbs(end) ?? a, a1 = laneAbs(p.entryS + len / 2) ?? a;
+      const t = a1 - a0 > 0.01 ? Math.max(0, Math.min(1, (a - a0) / (a1 - a0))) : 1;
+      return { a, hw, out: Math.max(a + lhw - Math.max(0, a0 + lhw - hw) * (1 - t), hw) };
+    };
+    // offsets k (m from the lane centre line, g: +1 towards the garages, -1 towards the pit wall) a car standing at s may take:
+    // [lo, hi] (hi: the lane's asphalt edge, lo: clear of the centre line; the wall side also clear of the track + kerb).
+    // relax 1, 2 (a narrow lane): nearer the centre line, the cars closer together
+    let relax = 0;
+    const EDGE = [0.2, 0.1, 0.05], CLR = [0.95, 0.52, 0.1], gap = () => (relax > 1 ? 5.6 : PK_GAP);
+    const slot = (s, g) => {
+      let hi = Infinity, lo = 0;
+      for (const o of [HLC, 0, -HLC]) {
+        const v = vis(s + o); if (!v) return null;
+        const kb = v.hw + (K[idx(s + o)] ? KW : 0) + 0.45 + HWC;
+        lo = Math.max(lo, HWC + CLR[relax]);
+        if (g > 0) { hi = Math.min(hi, v.out - v.a - EDGE[relax] - HWC); lo = Math.max(lo, kb - v.a); }
+        else hi = Math.min(hi, lhw - EDGE[relax] - HWC, v.a - kb);
+      }
+      return hi >= lo ? { hi, lo } : null;
+    };
+    const onPit = (s, d) => { for (const o of [HLC, -HLC]) for (const e of [HWC, -HWC]) if (T.surface(T.wrapS(s + o), d + e) !== PIT) return false; return T.surface(T.wrapS(s), d) === PIT; };
+    const place = (q, k, g) => { const c = laneAbs(q) + g * k, w = T.toWorld(T.wrapS(q), sd * c); return { s: T.wrapS(q), d: sd * c, x: w.x, z: w.z, h: head(q) }; };
+    const fits = (q, g) => {   // the car at q: inside the limiter zone, clear of the boxes / tunnel, a slot on the pit surface -> its k
+      const x = u(T.wrapS(q));
+      if (x - HLC < l0 || x + HLC > l1) return null;
+      if (g > 0 && x + HLC > b0 - BOX_B && x - HLC < b1 + BOX_A) return null;
+      if (tun && (tun[0] <= tun[1] ? x >= tun[0] && x <= tun[1] : x >= tun[0] || x <= tun[1])) return null;
+      const a = slot(q, g); if (!a) return null;
+      for (let k = a.hi; k >= a.lo - 1e-6; k -= 0.1) { const c = place(q, k, g); if (onPit(c.s, c.d)) return { hi: k, lo: a.lo }; }
+      return null;
+    };
+    const head = q => {   // heading of the lane centre line at q (car.h: nose = (cos h, sin h) in x, z)
+      const v0 = p.laneD(T.wrapS(q - 3)), v1 = p.laneD(T.wrapS(q + 3)), i = idx(q);
+      if (laneAbs(q - 3) == null || laneAbs(q + 3) == null) return Math.atan2(T.tz[i], T.tx[i]);
+      const a = T.toWorld(T.wrapS(q - 3), v0), c = T.toWorld(T.wrapS(q + 3), v1);
+      return Math.atan2(c.z - a.z, c.x - a.x);
+    };
+    const bend = (q, r) => { const d = Math.abs(head(q) - head(r)) % (2 * Math.PI); return d > Math.PI ? 2 * Math.PI - d : d; };
+    // the first fit back from the limiter end (front car at b m before it): the garage side, else the pit-wall side (+30 m
+    // handicap); strict, then relaxed while none within 60 m
+    const lim1 = T.wrapS(p.entryS + l1);
+    let best = null;
+    for (relax = 0; relax < 3; relax++) {
+      for (const g of [1, -1]) {
+        let bt = null, ba = null;
+        for (let b = HLC + 1.4; b < l1 - l0 && (bt == null || ba == null); b += 0.5) {
+          const s = T.wrapS(lim1 - b), a = fits(s, g); if (!a) continue;
+          if (ba == null && a.hi - a.lo >= 2 * HWC + 0.4 && (() => { const c = place(s, a.hi - 2 * HWC - 0.4, g); return onPit(c.s, c.d); })()) ba = b;
+          if (bt == null && fits(s - gap(), g) && bend(s, s - gap()) < (relax > 1 ? 0.6 : 0.26)) bt = b;
+        }
+        if (bt == null && ba == null) continue;
+        const abreast = ba != null && (bt == null || ba <= bt + 30), b = abreast ? ba : bt, sc = b + (g < 0 ? 30 : 0);
+        if (!best || (best.sc > 60 && sc < best.sc)) best = { abreast, b, relax, g, sc };
+      }
+      if (best && best.sc <= 60) break;
+    }
+    if (!best) return null;
+    relax = best.relax;
+    const { abreast, b, g } = best, s = T.wrapS(lim1 - b), A = fits(s, g), cars = [place(s, A.hi, g)];
+    if (abreast) cars.push(place(s, A.hi - 2 * HWC - 0.4, g));
+    else cars.push(place(s - gap(), fits(s - gap(), g).hi, g));
+    return { layout: abreast ? 'abreast' : 'tandem', side: g, back: b, cars };
+  }
+  // (x, z) clear of the track: no sample (within 250 m) has it on its asphalt / kerb / run-off / pit lane or within 0.6 m of
+  // its barrier (surface() is WALL beyond a barrier), and no pit road under it
+  const _pr = {};
+  function postClear(T, x, z) {
+    const N = T.N, st = T.step || T.length / N, WALL = typeof SURF !== 'undefined' ? SURF.WALL : 6;
+    for (let i = 0; i < N; i++) {
+      const dx = x - T.px[i], dz = z - T.pz[i]; if (dx * dx + dz * dz > 62500) continue;
+      const al = dx * T.tx[i] + dz * T.tz[i]; if (al > st * 0.75 || al < -st * 0.75) continue;
+      const d = dx * T.nx[i] + dz * T.nz[i], w = d > 0 ? T.wallR[i] : -T.wallL[i];
+      if ((d < 0 ? -d : d) < w + 0.6 || T.surface(T.wrapS(i * st + al), d) !== WALL) return false;
+    }
+    _pr.road = null; const pr = T.project(x, z, -1, _pr, true);
+    return pr.road == null || T.surface(pr.s, pr.d) === WALL;
+  }
   function layout(track) {
     let Lo = cache.get(track);
     if (Lo) return Lo;
@@ -7439,7 +7543,11 @@ const RaceControl = (() => {
     // marshal posts (light panels), each with a gap in the wall GAP_OFF m past it: every zone start (20 m in: clear of the
     // start gantry), 40 m before every 45 deg+ corner (>= POST_MIN m from the others), then more on long stretches so that
     // none is over POST_MAX m from the next; on the outside of the next corner (else the side with more room), never on the
-    // pit-lane side along the pit lane. A post where the wall is within 15 m of the asphalt stands behind it (gap: true)
+    // pit-lane side along the pit lane. A post stands POST_OUT m behind the barrier, never on the run-off / kerbs / the pit
+    // lane (postClear: every part of the track); where that spot is not clear (a bay, another part's run-off) it moves out (up
+    // to 25 m), along (up to 15 m), then to the other side. gw = the barrier at the gap (the marshals' way out), gv = the
+    // vehicles' line there (gwAt: the service road), nw = the barrier within 15 m of the asphalt (depots), (hs, hd) = where
+    // the post's marshals wait (behind the gap, else beside the post)
     const P = track.pit, posts = [], zi = s => zAt[clamp(Math.floor(wrap(s) / ZB), 0, zAt.length - 1)];
     const inPit = (s, side) => P && side === P.side && wrap(s - P.entryS + 40) <= wrap(P.exitS - P.entryS) + 80;
     const cand = zones.map(Z => wrap(Z.s0 + 20));
@@ -7451,29 +7559,51 @@ const RaceControl = (() => {
       all.push(a);
       for (let j = 1; j <= m; j++) all.push(wrap(a + g * j / (m + 1)));
     }
-    for (const s of all) {
-      const i = track.idxAt(s);
-      let side = 0;
-      for (const c of track.corners || []) { const u = wrap(c.s - s); if (u < 220) { side = -c.dir; break; } }
-      const wl = -track.wallL[i], wr = track.wallR[i];
-      if (!side) side = wr >= wl ? 1 : -1;
-      if (inPit(s, side)) side = -side;
-      const hw = track.halfW[i], wall = side > 0 ? wr : wl, wd = Math.max(Math.min(wall, hw + 15), hw + 1);
-      const d = side * (wd + 1.2), p = track.toWorld(s, d);
-      const gs = wrap(s + GAP_OFF), gw = gwAt(track, gs, side);
-      posts.push({ s, side, d, x: p.x, z: p.z, h: Math.atan2(track.tz[i], track.tx[i]), zone: zi(s), wd, gap: wall <= hw + 15, gs, gw });
+    const wAt = (i, side) => (side > 0 ? track.wallR[i] : -track.wallL[i]);
+    for (const s0 of all) {
+      const i0 = track.idxAt(s0);
+      let side0 = 0;
+      for (const c of track.corners || []) { const u = wrap(c.s - s0); if (u < 220) { side0 = -c.dir; break; } }
+      if (!side0) side0 = wAt(i0, 1) >= wAt(i0, -1) ? 1 : -1;
+      if (inPit(s0, side0)) side0 = -side0;
+      let f = null;
+      for (const side of [side0, -side0]) {
+        if (inPit(s0, side)) continue;
+        for (const ex of POST_EX) { for (const ds of POST_DS) {
+          const s = wrap(s0 + ds), i = track.idxAt(s), w = wAt(i, side);
+          if (!(w > 0) || w > track.halfW[i] + 150) continue;
+          const d = side * (w + POST_OUT + ex), p = track.toWorld(s, d);
+          if (postClear(track, p.x, p.z)) { f = { s, side, d, p, i }; break; }
+        } if (f) break; }
+        if (f) break;
+      }
+      if (!f) { const w = Math.max(Math.min(wAt(i0, side0), track.halfW[i0] + 15), track.halfW[i0] + 1), d = side0 * (w + POST_OUT); f = { s: s0, side: side0, d, p: track.toWorld(s0, d), i: i0 }; }   // (none clear: the old spot)
+      const { s, side, d, p, i } = f, hw = track.halfW[i];
+      let gs = wrap(s + GAP_OFF), gap = false;
+      for (const o of [GAP_OFF, -GAP_OFF, 3, -3, 10, -10]) {   // (the gap: where the barrier is in front of the post)
+        const q = wrap(s + o), gi = track.idxAt(q), w = wAt(gi, side);
+        if (w > 0 && w < Math.abs(d) - 0.6 && w <= track.halfW[gi] + 150) { gs = q; gap = true; break; }
+      }
+      const gi = track.idxAt(gs), gw = gap ? Math.max(wAt(gi, side), track.halfW[gi] + 1) : gwAt(track, gs, side), gv = gwAt(track, gs, side);
+      let hs = s, hd = d + side * 0.9;
+      for (const [a, b] of [[wrap(gs - 4), Math.max(gw, wAt(track.idxAt(gs - 4), side))], [gs, gw]]) {
+        const q = track.toWorld(a, side * (b + 1.5)); if (postClear(track, q.x, q.z)) { hs = a; hd = side * (b + 1.5); break; }
+      }
+      posts.push({ s, side, d, x: p.x, z: p.z, h: Math.atan2(track.tz[i], track.tx[i]), zone: zi(s), wd: Math.abs(d) - POST_OUT, gap, nw: wAt(i, side) <= hw + 15, gs, gw, gv, hs, hd });
     }
     // recovery vehicles, parked behind the wall beside a gap: tractors (permanent circuits) / crane trucks (street circuits)
     // >= DEP_GAP m apart on each side, and two sweepers: at the gaps nearest the pit exit and half a lap on
     const street = isStreet(track), dep = [], vk = street ? 'crane' : 'tractor';
     const park = (k, kind, back = 10) => { const q = posts[k], s = wrap(q.s - back), i = track.idxAt(s), d = q.side * (gwAt(track, s, q.side) + ROAD), w = track.toWorld(s, d); dep.push({ post: k, kind, side: q.side, s, d, x: w.x, z: w.z, h: Math.atan2(track.tz[i], track.tx[i]) }); };
-    for (const side of [-1, 1]) { let last = -Infinity; posts.forEach((q, k) => { if (q.side === side && q.gap && q.s - last >= DEP_GAP) { park(k, vk); last = q.s; } }); }
+    for (const side of [-1, 1]) { let last = -Infinity; posts.forEach((q, k) => { if (q.side === side && q.nw && q.s - last >= DEP_GAP) { park(k, vk); last = q.s; } }); }
     for (const at of [P ? P.exitS : 0, wrap((P ? P.exitS : 0) + L / 2)]) {
       let sw = -1, sb = Infinity;
-      posts.forEach((q, k) => { const ds = Math.abs(track.deltaS(at, q.s)); if (q.gap && ds < sb && !(P && q.side === P.side && inPit(q.s, q.side))) { sb = ds; sw = k; } });
+      posts.forEach((q, k) => { const ds = Math.abs(track.deltaS(at, q.s)); if (q.nw && ds < sb && !(P && q.side === P.side && inPit(q.s, q.side))) { sb = ds; sw = k; } });
       if (sw >= 0) { park(sw, 'sweeper'); park(sw, 'truck', 24); }   // (phase 6: the barrier crew's truck beside it)
     }
-    Lo = { L, n, zones, zAt, posts, dep, street,
+    const spot = parkSpot(track), pk = spot ? spot.cars.map(c => ({ s: c.s, d: c.d })) : null;
+    Lo = { L, n, zones, zAt, posts, dep, street, spot, park: pk,
+      outX: P && pk ? Math.max(0, (wrap(P.exitS - pk[0].s) - 45) / PIT_V) : 0,   // (s the SC needs from its spot past the old 45 m one: released that much earlier)
       sc1: P ? wrap(P.entryS - 25) : null,      // SC line 1 (before the pit entry)
       sc2: P ? wrap(P.exitS + 40) : null,       // SC line 2 (after the pit exit)
       deploy: P ? P.exitS : 0 };                // SC deploy point (the pit exit)
@@ -7534,13 +7664,13 @@ const RaceControl = (() => {
   }
 
   // ---------- phase 7: the frequency (race incidents) ----------
-  // The AI rarely stops on its own, so race control draws mechanical failures from the race seed: an AI car (never a human's)
-  // retires at a seeded race distance of the leader and pulls over (car.retired.pull: stopInput); its recovery decides the
+  // The AI rarely stops on its own, so race control draws mechanical failures from the race seed: a car (any: the player's too, user
+  // 2026-10-18; Settings > Rules > Mechanical failures off: none) retires at a seeded race distance of the leader and pulls over (car.retired.pull: stopInput); its recovery decides the
   // level (pushed through a gap: double yellow; the tractor: VSC / SC by its time; a street circuit's crane, gravel, the
   // racing surface: SC). TGT = the share of full-length races (FULL m) with a VSC or SC at Realistic (user: street ~50 %,
   // permanent 25-30 %); HZ_P = P(VSC or SC | a failure) per track, measured with headless field sims (HANDOFF §59 'Phase 7'),
   // else HZ_PK by kind; failures per full-length race (Poisson) = -ln(1 - TGT) / p (hzLam). A shorter race proportionally
-  // fewer (x its distance / FULL), Less / More x FREQ, under HZ_N AI cars x n / HZ_N. A failure due under a VSC / SC / red
+  // fewer (x its distance / FULL), Less / More x FREQ, under HZ_N cars x n / HZ_N. A failure due under a VSC / SC / red
   // flag waits for the green (+ half a lap). None in qualifying, the time trial, a championship at Extreme (its own reliability).
   const FULL = 305000, TGT = { street: 0.5, perm: 0.275 }, HZ_PK = { street: 1, perm: 0.63 }, HZ_N = 6, HZ_D0 = 0.04, HZ_D1 = 0.95;
   const HZ_P = { vortex: 0.6, kotori: 0.87, mirage: 0.5, serrano: 0.63, leman: 0.77, dorado: 0.77, sepang: 0.5, silverstone: 0.43 };   // (30 sims each; street circuits 80 / 80: 1)
@@ -7548,9 +7678,9 @@ const RaceControl = (() => {
   const HZ_WHY = ['Engine', 'Gearbox', 'Hydraulics', 'Electrics', 'Power unit', 'Brakes'];
   function hzPlan(G, race, rc) {
     rc.hz = [];
-    const T = G.track, ai = G.cars.filter(c => !isHuman(c)).length;
-    if (!race.laps || race.carSpread || !ai || !(T.length > 0)) return;
-    const D = race.laps * T.length, lam = hzLam(T) * Math.min(1.5, D / FULL) * (FREQ[rc.cfg.freq] || 1) * Math.min(1, ai / HZ_N);
+    const T = G.track, nc = G.cars.length;   // (every car, the human ones too: user 2026-10-18)
+    if (!race.laps || race.carSpread || rc.cfg.fail === false || !nc || !(T.length > 0)) return;   // (Mechanical failures off: none)
+    const D = race.laps * T.length, lam = hzLam(T) * Math.min(1.5, D / FULL) * (FREQ[rc.cfg.freq] || 1) * Math.min(1, nc / HZ_N);
     let n = 0, p = Math.exp(-lam), F = p;
     const u = rnd(race, 7001, 1);
     while (u > F && n < 6) { n++; p *= lam / n; F += p; }
@@ -7564,7 +7694,7 @@ const RaceControl = (() => {
     for (const e of rc.hz) {
       if (e.done || ld < e.d) continue;
       if (rc.vs || rc.sp || rc.rf || rc.want >= LV.vsc) { e.d = ld + 0.5 * G.track.length; continue; }   // (after the green)
-      const L = G.cars.filter(c => !isHuman(c) && live(c) && !c.inPitLane && !c._race.pit && !c.kinematic);
+      const L = G.cars.filter(c => live(c) && !c.inPitLane && !c._race.pit && !c.kinematic);
       e.done = 1;
       if (!L.length) continue;
       const c = L[Math.floor(e.r * L.length) % L.length];
@@ -7786,23 +7916,23 @@ const RaceControl = (() => {
   // marshals push a car through the gap (n 4): run out, ready it, push it to the gap, through it (parked nose / tail first
   // behind the wall), back to the post
   function planPush(T, Lo, race, rc, o, c, gi) {
-    const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, out = sd * (wd + 1.5), mouth = sd * (wd - 1.4), beh = sd * (wd + 3.4), r = rnd(race, o.id, 31), r2 = rnd(race, o.id, 32);
+    const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, hs = p.hs, out = p.hd, mouth = sd * (wd - 1.4), beh = sd * (wd + 3.4), r = rnd(race, o.id, 31), r2 = rnd(race, o.id, 32);
     const J = newJob(race, rc, o, KJ.push, c, sd, gi, -1, c.h), cs = c.s, cd = c.d || 0;
     J.n = 4; J.hf = nearH(c.h, Math.atan2(sd * T.nz[T.idxAt(gs)], sd * T.nx[T.idxAt(gs)]));
-    ph(J, M.WAIT, 3 + 3 * r, gs - 4, out);
-    go(T, J, M.GO, MV.run, 0, gs - 4, out, gs, mouth);
+    ph(J, M.WAIT, 3 + 3 * r, hs, out);
+    go(T, J, M.GO, MV.run, 0, hs, out, gs, mouth);
     go(T, J, M.GO, MV.run, 0, gs, mouth, cs, cd);
     ph(J, M.WORK, 6 + 6 * r2, cs, cd);
     go(T, J, M.CARRY, MV.push, 2, cs, cd, gs, mouth);
     ph(J, M.CARRY, 6, gs, mouth, gs, beh);
-    go(T, J, M.GO, MV.run, 1, gs, beh, gs - 4, out);
+    go(T, J, M.GO, MV.run, 1, gs, beh, hs, out);
     J.ci = J.P.length - 1;
     return J;
   }
   // a tractor (permanent circuits) from its depot: the service road behind the wall to the gap, through it to the car, lifts
   // it (n 2 marshals strap it), backs out through the gap with it, sets it down behind the wall, drives back
   function planTow(T, Lo, race, rc, o, c, di, gi) {
-    const D = Lo.dep[di], g = Lo.posts[gi], sd = g.side, gs = g.gs, wd = g.gw, r = rnd(race, o.id, 33 + di), r2 = rnd(race, o.id, 34);
+    const D = Lo.dep[di], g = Lo.posts[gi], sd = g.side, gs = g.gs, wd = g.gv, r = rnd(race, o.id, 33 + di), r2 = rnd(race, o.id, 34);
     const J = newJob(race, rc, o, KJ.tow, c, sd, gi, di, c.h), cs = c.s, cd = c.d || 0, mouth = sd * (wd - 1.4), road = sd * (wd + ROAD), beh = sd * (wd + 7.5);
     const ds = T.deltaS(gs, cs), dd = cd - mouth, l = Math.max(0.1, Math.hypot(ds, dd)), as = gs + ds * Math.max(0, l - 3.6) / l, ad = mouth + dd * Math.max(0, l - 3.6) / l;
     J.n = 2; J.vh = headSD(T, gs, mouth, cs, cd, trackH(T, gs));
@@ -7836,16 +7966,16 @@ const RaceControl = (() => {
   }
   // marshals (n 2) pick the pieces up one by one (1.5-2.5 s each), from the gap nearest them, then back
   function planPick(T, Lo, race, rc, o, gi, pcs) {
-    const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, out = sd * (wd + 1.5), mouth = sd * (wd - 1.4);
+    const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, hs = p.hs, out = p.hd, mouth = sd * (wd - 1.4);
     const J = newJob(race, rc, o, KJ.pick, null, sd, gi, -1, 0);
     J.n = 2;
-    ph(J, M.WAIT, 2 + 2 * rnd(race, o.id, 38), gs - 4, out);
-    go(T, J, M.GO, MV.run, 0, gs - 4, out, gs, mouth);
+    ph(J, M.WAIT, 2 + 2 * rnd(race, o.id, 38), hs, out);
+    go(T, J, M.GO, MV.run, 0, hs, out, gs, mouth);
     let s = gs, d = mouth;
     const L = pcs.slice().sort((a, b) => T.deltaS(gs, a[1]) - T.deltaS(gs, b[1]));
     for (const q of L) { go(T, J, M.GO, MV.run, 0, s, d, q[1], q[2]); ph(J, M.WORK, 1.5 + rnd(race, q[0], 39), q[1], q[2], null, null, q[0]); s = q[1]; d = q[2]; }
     go(T, J, M.GO, MV.run, 0, s, d, gs, mouth);
-    go(T, J, M.GO, MV.run, 0, gs, mouth, gs - 4, out);
+    go(T, J, M.GO, MV.run, 0, gs, mouth, hs, out);
     J.ci = J.P.length - 1;
     return J;
   }
@@ -7856,7 +7986,7 @@ const RaceControl = (() => {
     const before = (s, back) => { let best = -1, bd = Infinity; Lo.posts.forEach((p, k) => { if (p.side !== sd) return; const u = back ? T.deltaS(p.gs, s) : T.deltaS(s, p.gs); if (u >= 15 && u < bd) { bd = u; best = k; } }); return best; };
     const g1 = before(L[0][1], true), g2 = before(L[L.length - 1][1], false);
     if (g1 < 0 || g2 < 0) return null;
-    const a = Lo.posts[g1].gs, b = Lo.posts[g2].gs, wa = Lo.posts[g1].gw, wb = Lo.posts[g2].gw;
+    const a = Lo.posts[g1].gs, b = Lo.posts[g2].gs, wa = Lo.posts[g1].gv, wb = Lo.posts[g2].gv;
     const J = newJob(race, rc, o, KJ.sweep, null, sd, g1, di, 0);
     ph(J, M.WAIT, 8 + 6 * rnd(race, o.id, 40), D.s, D.d);
     ph(J, M.ROAD, Math.abs(T.deltaS(D.s, a)) / MV.sweepRoad + 2, D.s, ROAD, a, ROAD);
@@ -8221,13 +8351,13 @@ const RaceControl = (() => {
     for (let r = 0; r < 2; r++) for (let i = 0; i < N; i++) { const j = (i + 1) % N; v[j] = Math.min(v[j], Math.sqrt(v[i] * v[i] + 2 * A * st)); }
     return (m[key] = v);
   }
-  // the park spot in the pit lane (render3d hands over the drawn one: setPark), else 45 / 58 m before the exit
+  // the park spot in the pit lane (layout: parkSpot, render3d draws the same), else just before the limiter end
   function parkOf(T, Lo, k) {
     const P = T.pit;
     if (!P) return null;
     const q = Lo.park && Lo.park[k];
     if (q) return q;
-    const s = T.wrapS(P.exitS - (k ? 58 : 45)), ld = P.laneD ? P.laneD(s) : null;
+    const s = T.wrapS((P.limiterS1 != null ? P.limiterS1 : P.exitS - 45) - (k ? 3 + PK_GAP : 3)), ld = P.laneD ? P.laneD(s) : null;
     return { s, d: ld != null ? ld + P.side * 1.2 : P.side * (T.halfW[T.idxAt(s)] + 6) };
   }
   function setPark(track, spot) { const Lo = layout(track); Lo.park = spot && spot.cars ? spot.cars.map(c => ({ s: c.s, d: c.d })) : null; }
@@ -8411,7 +8541,9 @@ const RaceControl = (() => {
     const lp = leaderOf(race);
     if (rc.sp === 1 && V.st === 0 && !rc.inL) {
       let go = !lp || t - rc.scT0 > 2.2 * (race.lapTimeEst || 90);
-      if (lp) { const dd = T.deltaS(lp.s, Lo.deploy); if (dd > 30 && dd <= Math.max(120, REL_T * (lp.speed || 0))) go = true; }
+      // (REL_T s at the leader's speed, + Lo.outX s the SC needs to reach the exit from its spot, at the leader's pace there)
+      if (lp) { const dd = T.deltaS(lp.s, Lo.deploy), v = lp.speed || 0, vx = Lo.outX ? T.raceSpeed[T.idxAt(Lo.deploy - 100)] * clamp(v / Math.max(5, T.raceSpeed[T.idxAt(lp.s)]), 0.3, 1.2) : 0;
+        if (dd > 30 && dd <= Math.max(120, REL_T * v + Lo.outX * vx)) go = true; }
       if (go) { vehOut(T, Lo, V); rc.rev++; rc.log.push([+t.toFixed(2), 'scOut', -1, lp ? lp.id : -1]); }
     }
     if (race.leaderLap > rc.scLp) { if (rc.sp <= 2) rc.scL += race.leaderLap - rc.scLp; rc.scLp = race.leaderLap; }
@@ -9465,7 +9597,7 @@ const RaceControl = (() => {
   return { create, step, layout, zoneAt, turnAt, clean, effLevel, aiFlag, passOK, ahead, panelState, pack, unpack,
     actors, stopInput, jobInfo, obstacles, aiVsc, vscV, delta, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0,
-    aiSc, scOb, inQueue, passerNear, scInfo, vehicles, solidLocal, gripLocal, setPark, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
+    aiSc, scOb, inQueue, passerNear, scInfo, vehicles, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT,
     bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED };
 })();
@@ -13909,6 +14041,7 @@ const Race = (() => {
     race.pitTolKmh = race.pen ? race.pen.pitTol : PIT_TOL_KMH;
     // race control (racecontrol.js: flags, VSC / SC / red flags): opts.raceControl, else the game's settings; race.rc
     if (typeof RaceControl !== 'undefined') RaceControl.create(race, track, opts.raceControl != null ? opts.raceControl : gs.raceControl);
+    { const o = opts.raceControl != null ? opts.raceControl : gs.raceControl; race.mechFail = !(o && o.fail === false); }   // (Settings > Rules > Mechanical failures: everyone or no one, user 2026-10-18)
     // (waived: a sprint of <= TWO_COMPOUND_MIN_LAPS laps — nobody needs a stop there — and a wet start; a race that turns
     // wet later is declared wet in strategyHook, see ruleOpen)
     race.twoCompoundActive = race.twoCompound && race.wearScale > 0 && laps > TWO_COMPOUND_MIN_LAPS && wet < 0.25;
@@ -14058,8 +14191,10 @@ const Race = (() => {
       car.carK = D > 0 ? { pw: 1 - wP * D / E.pw, cl: 1 - wC * D / E.cl, cd: 1 + wD * D / E.cd, lap: 1 + D, D } : null;
       car.drvK = { aggr: o.aggr, err: o.err, mist: o.mist };
       const f = U.rng(mix32(mix32(ss, 5000 + car.teamIndex), round + 1)), p = U.lerp(GRID.fail[0], GRID.fail[1], S > 0 ? D / S : 0);
-      car.relia = f() < p ? { d: (0.03 + 0.95 * f()) * laps * L, why: GRID.WHY[Math.floor(f() * GRID.WHY.length) % GRID.WHY.length] } : null;
+      car.relia = f() < p && race.mechFail !== false ? { d: (0.03 + 0.95 * f()) * laps * L, why: GRID.WHY[Math.floor(f() * GRID.WHY.length) % GRID.WHY.length] } : null;
     }
+    // the player's car fails too (its team's stream, the grid's mean rate; Mechanical failures off: no one), user 2026-10-18
+    for (const car of cars) if (car.isPlayer) { const f = U.rng(mix32(mix32(ss, 5000 + car.teamIndex), round + 1)); car.relia = f() < (GRID.fail[0] + GRID.fail[1]) / 2 && race.mechFail !== false ? { d: (0.03 + 0.95 * f()) * laps * L, why: GRID.WHY[Math.floor(f() * GRID.WHY.length) % GRID.WHY.length] } : null; }
   }
   // a scheduled mechanical failure: retire() at its race distance (not in the pit lane); parked once stopped, as damageStep
   // does (that runs only with the damage flag)
@@ -18078,7 +18213,7 @@ const NetCore = (() => {
       ps: car.pitStops | 0, pst: car.pitState || null, ipl: car.inPitLane ? 1 : 0, plim: car.pitLimiter ? 1 : 0,
       ppr: car.pitProgress == null ? null : r2(car.pitProgress), pel: car.pitState === 'service' ? r2(car.pitElapsed) : null, pdu: car.pitState === 'service' ? r2(car.pitDur) : null, ppn: r2(car.pitPen || 0),
       c: car.tyre ? car.tyre.compound : 'M', w: car.tyre ? r2(car.tyre.wear) : 0, cu: (car.compoundsUsed || []).join(''),
-      ot: car.overtake ? 1 : 0, otn: car.overtakeNext ? 1 : 0, f: car.finished ? 1 : 0, ft: r3(car.finishTime), dnf: car.dnf ? 1 : 0,
+      ot: car.overtake ? 1 : 0, otn: car.overtakeNext ? 1 : 0, f: car.finished ? 1 : 0, ft: r3(car.finishTime), dnf: car.dnf ? (car.retired && car.retired.pull ? 2 : 1) : 0,
       al: car.aeroLock ? 1 : 0, bc: r2(car.batteryCap), g: car.grid | 0, js: car.jumpStart ? 1 : 0,
       // qualifying (quali.js public fields): state, knocked out after session (-1), locked in until (clock s), flying lap,
       // a flying car behind (id, -1), lap deleted
@@ -18107,7 +18242,7 @@ const NetCore = (() => {
       else if (!o.ot && car.overtake) { car.batteryCap = E.cap; if (car.battery > car.batteryCap) car.battery = car.batteryCap; }
     } else if (o.bc > 0) car.batteryCap = o.bc;
     car.overtake = !!o.ot; car.overtakeNext = !!o.otn;
-    car.finished = !!o.f; car.finishTime = o.ft; car.dnf = !!o.dnf; car.aeroLock = !!o.al; car.jumpStart = !!o.js;
+    car.finished = !!o.f; car.finishTime = o.ft; car.dnf = !!o.dnf; car.rcPull = o.dnf === 2; car.aeroLock = !!o.al; car.jumpStart = !!o.js;
     if (o.g) car.grid = o.g;
     if (o.dm && typeof Damage !== 'undefined') Damage.unpack(car, o.dm, w || { damage: { perf: true } });
     if (o.qt != null) { car.qSt = o.qt; car.qOut = o.qo != null ? o.qo : -1; car.qLock = o.ql || 0; car.qPush = !!o.qf; car.qBehind = o.qb != null ? o.qb : -1; car.qDel = !!o.qd; }
@@ -18267,7 +18402,7 @@ const NetCore = (() => {
   // grass slipperiness of the room (CFG.grass: 0 = grips like the track, 0.8 = standard, 1 = 15 % less grip): the host's
   // setting, in 5 % steps; every car (server physics + AI, each client's own car) runs on it
   // race control (racecontrol.js): { on, yellow, vsc, sc, red, freq } (the host's settings; defaults: all on, realistic)
-  const rcOf = v => { v = v && typeof v === 'object' ? v : {}; const o = {}; for (const k of ['on', 'yellow', 'vsc', 'sc', 'red']) o[k] = v[k] !== false; o.freq = ['less', 'realistic', 'more'].includes(v.freq) ? v.freq : 'realistic'; return o; };
+  const rcOf = v => { v = v && typeof v === 'object' ? v : {}; const o = {}; for (const k of ['on', 'yellow', 'vsc', 'sc', 'red', 'fail']) o[k] = v[k] !== false; o.freq = ['less', 'realistic', 'more'].includes(v.freq) ? v.freq : 'realistic'; return o; };
   const grassOf = v => (v != null && v !== '' && isFinite(+v) ? Math.round(clamp(+v, 0, 1) * 20) / 20 : DEF.grassSlip);
   const Q_CUSTOM = { q1: 18, q2: 15, q3: 13 };   // custom session minutes (3..30)
   const MAX_CARS = 20;   // humans + AI on one grid (also the most drivers in a room)
@@ -18637,7 +18772,7 @@ const NetCore = (() => {
       let input;
       const racing = race.phase === 'racing' || race.phase === 'finished' || (quali && !!S.qClk);
       if (!sc && !racing) input = HOLD;                        // waiting for everyone to load
-      else if (me.dnf && G.race && G.race.rc && G.race.rc.on && typeof RaceControl !== 'undefined' && RaceControl.stopInput) input = RaceControl.stopInput(me);   // (race control on: it stays where it stops)
+      else if (me.dnf && G.race && G.race.rc && G.race.rc.on && typeof RaceControl !== 'undefined' && RaceControl.stopInput) input = me.rcPull && typeof Damage !== 'undefined' && Damage.retireInput ? Damage.retireInput(me, G.track) : RaceControl.stopInput(me);   // (race control on: it stays where it stops; a mechanical failure (dnf 2): pulls over first)
       else if (me.dnf && G.world && G.world.damage && typeof Damage !== 'undefined') input = Damage.retireInput(me, G.track);   // (contact damage: retired by the server)
       else if (me.finished || (S.bot && racing)) input = S.drive ? S.drive(S, dt) : aiInput(S, dt);   // cool-down lap (bots: always)
       else if (S.bot) input = HOLD;
