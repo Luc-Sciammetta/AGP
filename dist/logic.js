@@ -7441,18 +7441,25 @@ const RaceControl = (() => {
   // the same, clamped to 1-15 m past the asphalt (open run-off: the marshals' / vehicles' line stays near the track)
   function gwAt(T, s, side) { const i = T.idxAt(s); return Math.max(Math.min(wallD(T, s, side), T.halfW[i] + 15), T.halfW[i] + 1); }
   // where the safety car and the medical car wait (DOM-free, the same on the server and the clients): inside the speed-limited
-  // part of the pit lane, as near its end line (pit.limiterS1) as they fit, clear of the lane's centre line (the driving
-  // line) and of the track edge / kerbs: on the garage-side edge of the lane past the boxes (>= BOX_A m after the last, so
-  // a car leaving it gets by), else on the pit-wall side; one behind the other (PK_GAP m), side by side where the lane is
-  // wide enough. -> { layout: 'abreast' | 'tandem', side: 1 garage / -1 wall, back (m before the limiter end), cars: [{ s, d,
-  // x, z, h }] (the safety car first; h = heading, car.h convention) } or null
-  const HWC = 0.98, HLC = 2.6, PK_GAP = 6.6, BOX_A = 14, BOX_B = 25;
+  // part of the pit lane, as near its end line (pit.limiterS1) as they fit, clear of everything a race car drives there
+  // (user 2026-10-19): Race's autopilot line (the fast lane, laneD with no stop) through the lane and on to the exit, every
+  // box's line in and out of it and the box itself, each as a race car's box swept along it + PK_M m round the parked car's
+  // own box (the models' bounding boxes, HWC / HLC); also clear of the lane's centre line where the lane is wide enough, the
+  // track edge / kerbs, every corner on PIT surface. On the garage-side edge of the lane past the boxes (>= BOX_A m after the
+  // last), else on the pit-wall side; one behind the other (PK_GAP m), side by side where the lane is wide enough. No room
+  // within PK_NEAR m of the end line: the nearest clear spot just after it (the exit road, off the line), else further back
+  // in the limiter zone (before the first box). tools/park_probe.mjs checks it against Race's own lines on every track.
+  // -> { layout: 'abreast' | 'tandem', side: 1 garage / -1 wall, back (m before the limiter end; < 0 after it), cars: [{ s,
+  // d, x, z, h }] (the safety car first; h = heading, car.h convention) } or null
+  // (HWC / HLC: the larger model's half width / length, rc_models.js 2026-10-19: safety car 4.82 x 2.06 m, medical car 5.10 x 2.10 m)
+  const HWC = 1.05, HLC = 2.55, PK_GAP = 6.6, BOX_A = 14, BOX_B = 25, PK_M = 0.5, PK_NEAR = 60, PK_EXIT = 12;
   function parkSpot(T) {
     const p = T && T.pit; if (!p || typeof p.laneD !== 'function') return null;
     const sd = p.side, lhw = p.laneHalfW || 5, N = T.N, st = T.step || T.length / N, L = T.length;
     const KW = (typeof CFG !== 'undefined' && CFG.kerbWidth) || 1.4, K = sd < 0 ? T.kerbL : T.kerbR, PIT = typeof SURF !== 'undefined' ? SURF.PIT : 5;
+    const CC = (typeof CFG !== 'undefined' && CFG.car) || {}, CLh = (CC.length || 5.6) / 2, CWh = (CC.width || 1.9) / 2;
     const loop = (a, b) => ((b - a) % L + L) % L, len = p.length || loop(p.entryS, p.exitS), u = s => loop(p.entryS, s);
-    const l0 = p.limiterS0 != null ? u(p.limiterS0) : Math.min(120, len * 0.25), l1 = p.limiterS1 != null ? u(p.limiterS1) : len - Math.min(120, len * 0.25);
+    const l0 = p.limiterS0 != null ? u(p.limiterS0) : Math.min(120, len * 0.25), l1 = Math.max(l0, p.limiterS1 != null ? Math.min(len, u(p.limiterS1)) : len - Math.min(120, len * 0.25));
     let b0 = Infinity, b1 = -Infinity; for (const q of p.boxS || []) { b0 = Math.min(b0, u(q)); b1 = Math.max(b1, u(q)); }
     const tun = T.scenery && T.scenery.tunnel && T.scenery.tunnel.s0 != null ? [u(T.scenery.tunnel.s0 - 4), u(T.scenery.tunnel.s1 + 4)] : null;
     const idx = s => { const i = Math.round(T.wrapS(s) / st); return ((i % N) + N) % N; };
@@ -7460,6 +7467,50 @@ const RaceControl = (() => {
       s = T.wrapS(s);
       if (p.onRoad && p.onRoad(s) >= 0) return null;
       const v = p.laneD(s); return v == null || !isFinite(v) || Math.abs(v) > 1e3 ? null : Math.abs(v);
+    };
+    // what race cars drive (Race's laneD / pitGeometry: the fast lane lhw / 2 to the track side of the centre once the lane
+    // has opened out, a road's own shift; a box: eased over bb m from the fast lane to the box line and back), sampled every
+    // 0.5 m of lane as { x, z, h } in 1 m buckets of lane distance
+    const a0 = Math.abs(p.laneD(T.wrapS(p.entryS + 0.05)) || 0);
+    const a1 = Math.max(p.laneCenterD != null ? Math.abs(p.laneCenterD) : Math.abs(p.laneD(T.wrapS(p.entryS + len / 2)) || a0 + 1), a0 + 0.1);
+    const sm = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+    const fastD = q => {
+      const s = T.wrapS(p.entryS + clamp(q, 0.05, len - 0.05));
+      let d = p.laneD(s);
+      if (d != null && p.roadD && Math.abs(d) > p.roadD / 2) { const pd = p.pathD ? Math.abs(p.pathD(s) || 0) : a1; return d - sd * Math.max(0, (p.roadHW ? p.roadHW(s) : lhw) - lhw * 0.5) * clamp((pd - a0) / (a1 - a0), 0, 1); }
+      if (d == null) d = sd * T.halfW[idx(s)];
+      return d - sd * lhw * 0.5 * clamp((Math.abs(d) - a0) / (a1 - a0), 0, 1);
+    };
+    const BK = [], put = (q, x, z, h, hl, hw) => { const k = Math.floor(q); (BK[k] || (BK[k] = [])).push({ x, z, h, hl, hw }); };
+    const sweep = (fd, qa, qb) => {
+      for (let q = Math.max(0.05, qa); q <= Math.min(len - 0.05, qb); q += 0.5) {
+        const a = T.toWorld(T.wrapS(p.entryS + q - 0.5), fd(q - 0.5)), b = T.toWorld(T.wrapS(p.entryS + q + 0.5), fd(q + 0.5)), c = T.toWorld(T.wrapS(p.entryS + q), fd(q));
+        put(q, c.x, c.z, Math.atan2(b.z - a.z, b.x - a.x), CLh, CWh);
+      }
+    };
+    sweep(fastD, l0 - 30, len);
+    const B = p.boxS || [], bsp = B.length > 1 ? Math.abs(T.deltaS(B[0], B[1])) : 99, bb = clamp(1.45 * bsp, 14, 22);
+    for (const bs of B) {
+      const ub = clamp(Math.min(len, u(bs)), l0 + 1, Math.max(l0 + 1, l1 - 1)), bd = p.boxDAt ? p.boxDAt(bs) : p.boxD;
+      if (bd == null) continue;
+      sweep(q => { const f = fastD(q); return f + (bd - f) * sm(1 - Math.abs(q - ub) / bb); }, ub - bb, ub + bb);
+      const gd = p.garageD != null ? p.garageD : bd + sd * 2.5, c = T.toWorld(bs, (bd + gd) / 2), i = idx(bs);   // (the box itself, to the garage front)
+      put(u(bs), c.x, c.z, Math.atan2(T.tz[i], T.tx[i]), CLh, Math.abs(gd - bd) / 2 + CWh);
+    }
+    const clear = c => {   // a parked car's box (+ PK_M) overlaps none of them
+      const q0 = Math.floor(u(c.s)), ca = Math.cos(c.h), sa = Math.sin(c.h), al = HLC + PK_M, aw = HWC + PK_M;
+      for (let k = q0 - 12; k <= q0 + 12; k++) for (const o of BK[k] || []) {
+        const dx = o.x - c.x, dz = o.z - c.z; if (dx * dx + dz * dz > 225) continue;
+        const cb = Math.cos(o.h), sb = Math.sin(o.h);
+        let sep = false;
+        for (let a = 0; a < 4 && !sep; a++) {
+          const ux = a === 0 ? ca : a === 1 ? -sa : a === 2 ? cb : -sb, uz = a === 0 ? sa : a === 1 ? ca : a === 2 ? sb : cb;
+          const ra = al * Math.abs(ca * ux + sa * uz) + aw * Math.abs(-sa * ux + ca * uz), rb = o.hl * Math.abs(cb * ux + sb * uz) + o.hw * Math.abs(-sb * ux + cb * uz);
+          if (ra + rb <= Math.abs(dx * ux + dz * uz)) sep = true;
+        }
+        if (!sep) return false;
+      }
+      return true;
     };
     // visible lane asphalt at s (the outer edge is pulled in along the exit blend, as Render3D's pitVis)
     const vis = s => {
@@ -7487,13 +7538,15 @@ const RaceControl = (() => {
     };
     const onPit = (s, d) => { for (const o of [HLC, -HLC]) for (const e of [HWC, -HWC]) if (T.surface(T.wrapS(s + o), d + e) !== PIT) return false; return T.surface(T.wrapS(s), d) === PIT; };
     const place = (q, k, g) => { const c = laneAbs(q) + g * k, w = T.toWorld(T.wrapS(q), sd * c); return { s: T.wrapS(q), d: sd * c, x: w.x, z: w.z, h: head(q) }; };
-    const fits = (q, g) => {   // the car at q: inside the limiter zone, clear of the boxes / tunnel, a slot on the pit surface -> its k
+    const ok = c => onPit(c.s, c.d) && clear(c);
+    let zone = 0;   // (0: inside the limiter zone; 1: anywhere from the limiter line to PK_EXIT m before the exit)
+    const fits = (q, g) => {   // the car at q: in the zone, clear of the boxes / tunnel, a clear slot on the pit surface -> its k
       const x = u(T.wrapS(q));
-      if (x - HLC < l0 || x + HLC > l1) return null;
+      if (x - HLC < l0 || x + HLC > (zone ? len - PK_EXIT : l1)) return null;
       if (g > 0 && x + HLC > b0 - BOX_B && x - HLC < b1 + BOX_A) return null;
       if (tun && (tun[0] <= tun[1] ? x >= tun[0] && x <= tun[1] : x >= tun[0] || x <= tun[1])) return null;
       const a = slot(q, g); if (!a) return null;
-      for (let k = a.hi; k >= a.lo - 1e-6; k -= 0.1) { const c = place(q, k, g); if (onPit(c.s, c.d)) return { hi: k, lo: a.lo }; }
+      for (let k = a.hi; k >= a.lo - 1e-6; k -= 0.1) { const c = place(q, k, g); if (ok(c)) return { hi: k, lo: a.lo }; }
       return null;
     };
     const head = q => {   // heading of the lane centre line at q (car.h: nose = (cos h, sin h) in x, z)
@@ -7503,26 +7556,31 @@ const RaceControl = (() => {
       return Math.atan2(c.z - a.z, c.x - a.x);
     };
     const bend = (q, r) => { const d = Math.abs(head(q) - head(r)) % (2 * Math.PI); return d > Math.PI ? 2 * Math.PI - d : d; };
-    // the first fit back from the limiter end (front car at b m before it): the garage side, else the pit-wall side (+30 m
-    // handicap); strict, then relaxed while none within 60 m
+    // the first fit from bs m before the limiter end (front car; < 0: after it) on to be (back, or on past the line when be < bs):
+    // the garage side, else the pit-wall side (+30 m handicap); strict, then relaxed while none within PK_NEAR m of bs
     const lim1 = T.wrapS(p.entryS + l1);
-    let best = null;
-    for (relax = 0; relax < 3; relax++) {
-      for (const g of [1, -1]) {
-        let bt = null, ba = null;
-        for (let b = HLC + 1.4; b < l1 - l0 && (bt == null || ba == null); b += 0.5) {
-          const s = T.wrapS(lim1 - b), a = fits(s, g); if (!a) continue;
-          if (ba == null && a.hi - a.lo >= 2 * HWC + 0.4 && (() => { const c = place(s, a.hi - 2 * HWC - 0.4, g); return onPit(c.s, c.d); })()) ba = b;
-          if (bt == null && fits(s - gap(), g) && bend(s, s - gap()) < (relax > 1 ? 0.6 : 0.26)) bt = b;
+    const search = (bs, be) => {
+      let best = null; const dir = be < bs ? -1 : 1;
+      for (relax = 0; relax < 3; relax++) {
+        for (const g of [1, -1]) {
+          let bt = null, ba = null;
+          for (let b = bs; (dir > 0 ? b < be : b > be) && (bt == null || ba == null); b += dir * 0.5) {
+            const s = T.wrapS(lim1 - b), a = fits(s, g); if (!a) continue;
+            if (ba == null && a.hi - a.lo >= 2 * HWC + 0.4 && ok(place(s, a.hi - 2 * HWC - 0.4, g))) ba = b;
+            if (bt == null && fits(s - gap(), g) && bend(s, s - gap()) < (relax > 1 ? 0.6 : 0.26)) bt = b;
+          }
+          if (bt == null && ba == null) continue;
+          const abreast = ba != null && (bt == null || ba <= bt + 30), b = abreast ? ba : bt, sc = Math.abs(b - bs) + (g < 0 ? 30 : 0);
+          if (!best || (best.sc > PK_NEAR && sc < best.sc)) best = { abreast, b, relax, g, sc, zone };
         }
-        if (bt == null && ba == null) continue;
-        const abreast = ba != null && (bt == null || ba <= bt + 30), b = abreast ? ba : bt, sc = b + (g < 0 ? 30 : 0);
-        if (!best || (best.sc > 60 && sc < best.sc)) best = { abreast, b, relax, g, sc };
+        if (best && best.sc <= PK_NEAR) break;
       }
-      if (best && best.sc <= 60) break;
-    }
+      return best;
+    };
+    zone = 0; let best = search(HLC + 1.4, l1 - l0);
+    if (!best || best.sc > PK_NEAR) { zone = 1; const nb = search(Math.min(HLC + 1.4, -HLC), -(len - l1)); if (nb && nb.sc <= PK_NEAR) best = nb; }   // (no room near the end line: just after it)
     if (!best) return null;
-    relax = best.relax;
+    relax = best.relax; zone = best.zone;
     const { abreast, b, g } = best, s = T.wrapS(lim1 - b), A = fits(s, g), cars = [place(s, A.hi, g)];
     if (abreast) cars.push(place(s, A.hi - 2 * HWC - 0.4, g));
     else cars.push(place(s - gap(), fits(s - gap(), g).hi, g));
@@ -8479,6 +8537,8 @@ const RaceControl = (() => {
         else for (const c of G.cars) if (c.id === a) { s = c.s; break; }
         if (s != null) gap = Math.max(0, T.deltaS(car.s, s)) / CL;
       }
+      const sa = rc.cl ? (rc.sa ? rc.sa[car.id] : null) : rc.cs[car.id] ? rc.cs[car.id].sa : null;
+      st.lead = sa === -1 ? 1 : 0;   // (the one ahead is the SC)
       const u = st.gap = glide(st.a, st.gi = gap, dt, 15);
       let c = cellsOf(u);
       if (st.cells != null && c !== st.cells && (c > st.cells ? cellsOf(u - GP_HYS) <= st.cells : cellsOf(u + GP_HYS) >= st.cells)) c = st.cells;
@@ -8508,15 +8568,16 @@ const RaceControl = (() => {
   // the SC's lap = SC_K x the race lap (corners SC_CK x the reference, the straights capped); accel / braking (m/s2); the
   // medical car MC_CK; PIT_V pit lane (m/s); the queue: joined within Q_JOIN of the car ahead, kept to Q_LEAVE; a human
   // over Q_MAX behind for Q_T s: an offence; WAVE_R m behind the SC: a car that isn't the leader is waved past; PASSED m
-  // ahead of the SC = past it; PASS_K 'an appropriate speed' (share of the reference); REL_T s: the SC leaves when the
-  // leader is this far from the pit exit; SC_PIT a stop's share of the normal loss (the AI's re-plan); the restart: grip
+  // ahead of the SC = past it; PASS_K 'an appropriate speed' (share of the reference); the SC leaves its spot
+  // to reach the pit exit SC_M0-SC_M1 s before the leader (etaTo; REL_T unused since 2026-10-19), and before the pick-up runs
+  // at 0.8 x while no car is within SC_WAIT m behind it; SC_PIT a stop's share of the normal loss (the AI's re-plan); the restart: grip
   // drop GRIP_DROP for half a lap after 2+ SC laps, contacts judged RS_K x more leniently for RS_T s; SC_HIT s penalty
   const SC_K = 1.55, SC_CK = 0.78, SC_ACC = 4.5, SC_BRK = 9, MC_CK = 0.8, MC_ACC = 5, MC_BRK = 10, PIT_V = 22;
   // the medical car (user 2026-10-18): waits MC_BACK m behind the last grid slot, goes MC_W s after lights out, follows the
   // last car (>= MC_FOL m) at <= MC_VMAX m/s (~150 mph); a lap-1 DNF ahead: parks near it, the doctor walks (DOC_V m/s) to
   // the car and stays >= DOC_MIN s, until it is moved / cleared
   const MC_BACK = 22, MC_W = 1.2, MC_FOL = 60, MC_VMAX = 67, DOC_V = 2.6, DOC_MIN = 8;
-  const Q_JOIN = 12 * CL, Q_LEAVE = 22 * CL, Q_MAX = 10 * CL, Q_T = 4, WAVE_R = 150, PASSED = 60, PASS_K = 0.85, PASS_K3 = 1.0, REL_T = 7, SC_PIT = 0.5;
+  const Q_JOIN = 12 * CL, Q_LEAVE = 22 * CL, Q_MAX = 10 * CL, Q_T = 4, WAVE_R = 150, PASSED = 60, PASS_K = 0.85, PASS_K3 = 1.0, REL_T = 7, SC_PIT = 0.5, SC_M0 = 2, SC_M1 = 5, SC_WAIT = 250;
   const GRIP_DROP = 0.03, RS_K = 1.35, RS_T = 20, SC_HIT = 10, VB = [[2.35, 0.98], [2.45, 0.95]], CB = [2.8, 1.0];
   const newVeh = k => ({ k, st: 0, s: 0, d: 0, v: 0, a: 0, x: 0, z: 0, h: 0, li: 0, run: 0, hs: 0, inL: 0,
     w: 0, ph: 0, tg: -1, ps: 0, pd: 0, sT: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0 });   // (the MC: see mcStep)
@@ -8602,7 +8663,8 @@ const RaceControl = (() => {
     const T = G.track, P = T.pit, ld = P.laneD(T.wrapS(V.s));
     let dT = ld != null ? ld : V.d, vT = PIT_V;
     if (V.st === 1) {
-      if (T.deltaS(P.exitS, V.s) >= 0) { V.st = 2; V.run = 0; }
+      if (T.deltaS(P.exitS, V.s) >= 0) { V.st = 2; V.run = 0; V.hold = false; }
+      else if (V.hold) vT = Math.min(vT, Math.sqrt(2 * B * Math.max(0, T.deltaS(V.s, P.exitS) - 8)));   // (waiting at the lane's end for the leader)
     } else {
       const pk = parkOf(T, Lo, V.k), to = T.deltaS(V.s, pk.s);
       if (to < 30) dT += (pk.d - dT) * clamp(1 - to / 30, 0, 1);
@@ -8718,6 +8780,20 @@ const RaceControl = (() => {
     for (const o of rc.inc) if (o.want >= LV.sc) { if (o.clr == null) return false; last = Math.max(last, o.clr); }
     return last - race.t < 0.5 * SC_K * (race.lapTimeEst || 90);
   }
+  // the SC's release (user 2026-10-19): a car's earliest arrival (s) at s1 under the delta - the reference time (a table of
+  // cumulative times per track / reference, memoised) less the delta it has banked (used down to ~0.2 s); laneT: the SC's
+  // time over d m of pit lane from v0 (PIT_V, SC_ACC)
+  const etaC = new WeakMap();
+  function etaTo(G, rc, c, s1) {
+    const T = G.track, N = T.N, key = rc.vc.toFixed(3) + ':' + rc.vq.toFixed(4);
+    let m = etaC.get(T); if (!m) etaC.set(T, m = {});
+    let a = m[key];
+    if (!a) { a = m[key] = new Float64Array(N + 1); const st = T.step || T.length / N; for (let i = 0; i < N; i++) a[i + 1] = a[i] + st / vref(rc, T, i); }
+    let e = a[T.idxAt(s1)] - a[T.idxAt(c.s)]; if (e < 0) e += a[N];
+    const cs = rc.cs[c.id], bank = cs && cs.vN === rc.vsN ? Math.max(0, cs.vD - 0.2) : D0 - 0.2;
+    return Math.max(0, e - bank);
+  }
+  function laneT(d, v0) { const v = Math.min(v0, PIT_V), da = (PIT_V * PIT_V - v * v) / (2 * SC_ACC); return d <= da ? (Math.sqrt(v * v + 2 * SC_ACC * d) - v) / SC_ACC : (PIT_V - v) / SC_ACC + (d - da) / PIT_V; }
   const byId = [];
   const _ch = [];
   // every step of an SC period (rc.sp): the SC's release, waving cars past, the queue (each car's mode), the delta, the
@@ -8727,13 +8803,17 @@ const RaceControl = (() => {
     byId.length = 0;
     for (const c of G.cars) byId[c.id] = c;
     // 1. the SC leaves the pit lane when the leader nears the pit exit
-    const lp = leaderOf(race);
+    const lp = leaderOf(race), late = !lp || t - rc.scT0 > 2.2 * (race.lapTimeEst || 90);
     if (rc.sp === 1 && V.st === 0 && !rc.inL) {
-      let go = !lp || t - rc.scT0 > 2.2 * (race.lapTimeEst || 90);
-      // (REL_T s at the leader's speed, + Lo.outX s the SC needs to reach the exit from its spot, at the leader's pace there)
-      if (lp) { const dd = T.deltaS(lp.s, Lo.deploy), v = lp.speed || 0, vx = Lo.outX ? T.raceSpeed[T.idxAt(Lo.deploy - 100)] * clamp(v / Math.max(5, T.raceSpeed[T.idxAt(lp.s)]), 0.3, 1.2) : 0;
-        if (dd > 30 && dd <= Math.max(120, REL_T * v + Lo.outX * vx)) go = true; }
+      // (timed (user 2026-10-19): it reaches the pit exit SC_M0-SC_M1 s before the leader can - the leader at the delta's
+      // reference pace less the delta it has banked; the leader too close already: the next lap)
+      let go = late;
+      if (!go) { const e = etaTo(G, rc, lp, Lo.deploy) - laneT(T.deltaS(parkOf(T, Lo, 0).s, Lo.deploy), 0); go = e >= SC_M0 && e <= SC_M1; }
       if (go) { vehOut(T, Lo, V); rc.rev++; rc.log.push([+t.toFixed(2), 'scOut', -1, lp ? lp.id : -1]); }
+    } else if (rc.sp === 1 && V.st === 1) {   // (the lane's end: not clearly ahead of the leader -> it waits there for it)
+      const dr = T.deltaS(V.s, Lo.deploy);
+      if (!late && dr < 70) { const e = etaTo(G, rc, lp, Lo.deploy) - laneT(dr, V.v); V.hold = V.hold ? !(e >= SC_M0 && e <= SC_M1) : e < SC_M0 - 0.5 || e > SC_M1 + 15; }
+      else V.hold = false;
     }
     if (race.leaderLap > rc.scLp) { if (rc.sp <= 2) rc.scL += race.leaderLap - rc.scLp; rc.scLp = race.leaderLap; }
     // 2. the chain: the cars on the track in road order behind the SC (the restart: behind the leader)
@@ -8797,6 +8877,8 @@ const RaceControl = (() => {
       }
       prevB = b; prevId = c.id; first = false;
     }
+    // (the SC's lights green while a car is being waved past it)
+    if (on && V.li) { let w = 0; for (const c of _ch) { const q = rc.cs[c.id]; if (q.sx === N && !q.sxA) { w = 1; break; } } V.li = w ? 2 : 1; }
     // (passers near a queue car: it doesn't weave)
     for (const c of _ch) { const cs = rc.cs[c.id]; cs.pz = 0; if (cs.sm !== 2) continue; for (const o of _ch) { const q = rc.cs[o.id]; if (q.sm === 3) { const ds = T.deltaS(c.s, o.s); if (ds > -90 && ds < 25) { cs.pz = 1; break; } } } }
     if (rc.sp === 1 && on) scPhase(G, race, rc, Lo, H, lp, nMode1);
@@ -8907,6 +8989,7 @@ const RaceControl = (() => {
         const Z = rc.zi || rc.zf, yy = (Z[zoneAt(Lo, V.s)] | Z[zoneAt(Lo, V.s + V.v * V.v / (2 * SC_BRK) + 15)]) & YY;   // (slower past a double yellow / the incident under the SC: the queue too)
         let r = vehTrack(G, V, vprof(T, 0, rc.vq || 1), SC_BRK, 25, yy ? 0.85 : 1);
         if (rc.sp === 1 && rc.pick && rc.lg > 7 * CL) r.v *= 0.85;   // (the car behind falling back: the SC eases off)
+        else if (rc.sp === 1 && !rc.pick && !(rc.lg > 0 && rc.lg < SC_WAIT)) r.v *= 0.8;   // (before the pick-up: nobody close behind - it waits for the leader)
         if (rc.sp === 1 && passerNear(G, V)) { const i = T.idxAt(V.s), ln = T.raceLine[i]; r.d = (ln >= 0 ? 1 : -1) * Math.max(Math.abs(ln), T.halfW[i] - 2); }   // (a car going past: the SC keeps to its side)
         if (rc.inL === 2) { r = vehIn(T, V, r.v, r.d, SC_BRK); if (!r && rc.sp === 1) restart(G, race, rc, H); }
         if (r) { vehMove(T, V, r.v, r.d, SC_ACC, SC_BRK, dt); solid(G, race, rc, Lo, H, V); }
@@ -9128,13 +9211,13 @@ const RaceControl = (() => {
   }
   // the HUD / engineer: { sp, m, gap (car lengths), sc (the SC is the one ahead), inL, lapW, fin, wave (passing), lapped,
   // go } | null (no SC)
-  const _si = { sp: 0, m: 0, gap: 0, inL: 0, lapW: 0, fin: 0, wave: false, go: 0, n: 0 };
+  const _si = { sp: 0, m: 0, gap: 0, inL: 0, lapW: 0, fin: 0, wave: false, go: 0, n: 0, out: 0 };
   function scInfo(G, car) {
     const rc = G && G.race && G.race.rc;
     if (!rc || !rc.sp || !car) return null;
     const q = scQ(rc, car);
     _si.sp = rc.sp; _si.inL = rc.inL | 0; _si.lapW = rc.lapW | 0; _si.fin = rc.fin | 0; _si.go = rc.go | 0; _si.n = rc.scN;
-    _si.m = q ? q.m : 0; _si.gap = q ? q.gap / CL : 0; _si.wave = !!(q && q.sx);
+    _si.m = q ? q.m : 0; _si.gap = q ? q.gap / CL : 0; _si.wave = !!(q && q.sx); _si.out = rc.sc && rc.sc.st === 2 ? 1 : 0;
     return _si;
   }
   // the renderers / minimaps: [{ k 0 SC | 1 MC, on (out of its park spot), st, x, z, h, s, d, v, li }] (a client extrapolates
