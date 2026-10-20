@@ -8837,8 +8837,8 @@ const RaceControl = (() => {
   // medical car MC_CK; PIT_V pit lane (m/s); the queue: joined within Q_JOIN of the car ahead, kept to Q_LEAVE; a human
   // over Q_MAX behind for Q_T s: an offence; WAVE_R m behind the SC: a car that isn't the leader is waved past; PASSED m
   // ahead of the SC = past it; PASS_K 'an appropriate speed' (share of the reference); the SC leaves its spot
-  // when it is called (scCall: in front of the leader, the field on the SC delta meanwhile; user 2026-10-20), and before the pick-up runs
-  // at 0.8 x while no car is within SC_WAIT m behind it; SC_PIT a stop's share of the normal loss (the AI's re-plan); the restart: grip
+  // when it is called (scCall: in front of the leader, the field on the SC delta meanwhile; user 2026-10-20), and before the pick-up
+  // never runs away from the leader (scWait: slow, aside if need be; rc5); SC_PIT a stop's share of the normal loss (the AI's re-plan); the restart: grip
   // drop GRIP_DROP for half a lap after 2+ SC laps, contacts judged RS_K x more leniently for RS_T s; SC_HIT s penalty
   const SC_FK = 0.93, SC_FV = 83;   // (the SC at full pace: x the race speed in the corners, m/s cap)
   const SC_K = 1.55, SC_CK = 0.78, SC_ACC = 4.5, SC_BRK = 9, MC_CK = 1.0, MC_ACC = 8, MC_BRK = 12, PIT_V = 22;   // (MC_CK 0.8 -> 1.0, MC_ACC 5 -> 8, MC_BRK 10 -> 12, user 2026-10-20: quick through the corners, ~500 m behind the field)
@@ -8849,7 +8849,7 @@ const RaceControl = (() => {
   // MC_ROLL m clear), its own profile and MC_VMAX the limit: it never catches the field
   const MC_BACK = 22, MC_W = 1.2, MC_FOL = 60, MC_VMAX = 67, DOC_V = 2.6, DOC_MIN = 8, MC_GAP = 500, MC_GK = 0.25, MC_LOW = 0.6, MC_ROLL = 150;
   const Q_F = 10, Q_RE = 15;   // (the queue-gap judging: s after the pick-up, s between offences)
-  const Q_JOIN = 12 * CL, Q_LEAVE = 22 * CL, Q_MAX = 10 * CL, Q_T = 5, WAVE_R = 150, PASSED = 60, PASS_K = 0.85, PASS_K3 = 1.0, SC_PIT = 0.5, SC_WAIT = 250;
+  const Q_JOIN = 12 * CL, Q_LEAVE = 22 * CL, Q_MAX = 10 * CL, Q_T = 5, WAVE_R = 150, PASSED = 60, PASS_K = 0.85, PASS_K3 = 1.0, SC_PIT = 0.5;
   // (user 2026-10-20) after the SC's lights go out: the restart leader keeps KB_D m back from it until it is in the pit lane
   // (the AI goes only then); a human closing in within KB_D: the gap shown (scInfo.kb) + rcKeep (the engineer), closing KB_C m
   // more inside KB_W m: an offence 'scg' (a warning, then 5 s)
@@ -8900,7 +8900,7 @@ const RaceControl = (() => {
     const v0 = V.v, oT = bf ? dT - bf(V.s) : 0;
     V.v = Math.max(0, v0 + clamp(vT - v0, -B * dt, A * dt)); V.a = (V.v - v0) / dt;
     V.s = T.wrapS(V.s + V.v * dt); if (V.st === 2) V.run += V.v * dt;
-    const lat = (1.2 + 0.03 * V.v) * dt;
+    const lat = (bf ? Math.min(1.2 + 0.03 * V.v, 0.3 * V.v + 0.05) : 1.2 + 0.03 * V.v) * dt;   // (on the track: sideways only as it rolls - rc5, the SC waiting aside)
     if (bf) { const b1 = bf(V.s); if (V.o == null) V.o = V.d - b1; V.o += clamp(oT - V.o, -lat, lat); V.d = b1 + V.o; }
     else { V.o = null; V.d += clamp(dT - V.d, -lat, lat); }
     vehPose(T, V);
@@ -9114,7 +9114,7 @@ const RaceControl = (() => {
     rc.sp = 1; rc.scN++; rc.vsN++; rc.scT0 = t; rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
     if (rc.vs) { rc.vs = 0; rc.vsEnd = 0; }   // (a VSC turns into the SC)
     rc.vq = tr / Math.max(20, race.lapTimeEst || tr); rc.sdk = k > 0 && k < 1 ? +k.toFixed(3) : 1; rc.vf = VC_K * rc.vq * rc.sdk; rc.vc = vscCap(T, tr);
-    rc.pkT = 0; rc.qfT = 0;
+    rc.pkT = 0;
     const s3 = T.sectorS && T.sectorS[1] != null ? T.sectorS[1] : 2 * T.length / 3, P = T.pit, r = rnd(race, rc.scN, 71);
     let off = s3 + (r < 0.5 ? -1 : 1) * (100 + 200 * rnd(race, rc.scN, 72));   // (user 2026-10-19: the lights out at the end of S2 / start of S3 +-100-300 m)
     if (P.entryS > s3) off = Math.min(off, P.entryS - 250);
@@ -9189,14 +9189,21 @@ const RaceControl = (() => {
     if (race.leaderLap > rc.scLp) { if (rc.sp <= 2) rc.scL += race.leaderLap - rc.scLp; rc.scLp = race.leaderLap; }
     // 2. the chain: the cars on the track in road order behind the SC (the restart: behind the leader)
     const on = V.st === 2, head = rc.sp >= 2 ? (lp ? T.wrapS(lp.s + 1) : 0) : V.s;
+    // (rc5) the queue formed for SC IN THIS LAP: the car right behind the SC within Q_JOIN of it, every other running car in the
+    // queue within Q_CLOSE of the car ahead - not catching up / passing / in the pit lane - for Q_OT s or more (cs.nc: since
+    // when it is out; an accordion out of a slow corner doesn't count); a car that has not closed up for QF_L SC laps (damaged,
+    // a human dawdling) no longer holds it; nor a car that passed the SC (waved past / unlapping itself: cs.pX, until it is
+    // back in the queue) - F1: the SC in at the end of the following lap, not waiting for them to go round
+    let qOK = 1;
+    const qL = QF_L * SC_K * (race.lapTimeEst || 90), qOut = cs => { if (!cs.nc) cs.nc = t; if (cs.pX !== N && t - cs.nc >= Q_OT && t - Math.max(cs.nc, rc.pkT || t) < qL) qOK = 0; };   // (timed from the pick-up at the earliest)
     _ch.length = 0;
     for (const c of G.cars) {
       const R = c._race, cs = R ? csOf(rc, c) : null;
       if (!R) continue;
-      if (cs.sN !== N) { cs.sN = N; cs.sm = 1; cs.sa = -2; cs.sg = 0; cs.sq = 0; cs.sx = 0; cs.sxA = 0; cs.qT = 0; cs.wq = 0; cs.ww = 0; cs.pd = c.d || 0; cs.rx = 0; cs.rL = 0; cs.pb = 0; cs.lpd = 0; cs.gT = 3 * CL; cs.iz = 0; cs.kb = 0; cs.kbM = 0; }
+      if (cs.sN !== N) { cs.sN = N; cs.sm = 1; cs.sa = -2; cs.sg = 0; cs.sq = 0; cs.sx = 0; cs.sxA = 0; cs.qT = 0; cs.wq = 0; cs.ww = 0; cs.pd = c.d || 0; cs.rx = 0; cs.rL = 0; cs.pb = 0; cs.lpd = 0; cs.gT = 3 * CL; cs.iz = 0; cs.kb = 0; cs.kbM = 0; cs.nc = 0; }
       if (R.h && (rc.sp < 3 || cs.sm === 6)) R.h.nt = 2;   // (an SC lap: lap cards)
-      if (c.finished || c.dnf || c.retired || c.kinematic || cs.ic) { cs.sm = 0; continue; }
-      if (c.inPitLane || R.pit || R.preLane) { cs.sm = 0; if (cs.sq === N) cs.sq = -1; cs.vN = -1; if (cs.iz) izSet(G, rc, H, c, cs, 0); if (rc.sp === 1 && rc.pick && !c.finished && !c.dnf) rc.qfT = t; continue; }   // (a car stopping under the SC: the in-this-lap fallback runs from its rejoin)
+      if (c.finished || c.dnf || c.retired || c.kinematic || cs.ic) { cs.sm = 0; if (rc.sp === 1 && (c.inPitLane || R.pit) && !c.finished && !c.dnf && !c.retired) qOut(cs); continue; }   // (in its pit stop: kinematic)
+      if (c.inPitLane || R.pit || R.preLane) { cs.sm = 0; if (cs.sq === N) cs.sq = -1; cs.vN = -1; if (cs.iz) izSet(G, rc, H, c, cs, 0); if (rc.sp === 1 && !c.finished && !c.dnf) qOut(cs); continue; }   // (a car stopping under the SC: not in the queue until it has caught it up again)
       _ch.push(c);
       c._scB = T.wrapS(head - c.s);
     }
@@ -9209,8 +9216,8 @@ const RaceControl = (() => {
       if (cs.sx === N) {
         if (on && cs.pb < 200 && b > L - 200) cs.sxA = 1;
         cs.pb = b;
-        if (cs.sxA && L - b >= PASSED) { cs.sx = 0; cs.sm = 5; cs.pdT = t; rc.log.push([+t.toFixed(2), 'passed', -1, c.id]); }
-        else { cs.sm = 3; if (cs.lpd !== N) nOut++; scZone(G, race, rc, Lo, H, dt, c, cs, 3); if (!first) { prevB = b; prevId = c.id; } continue; }   // (the cars behind follow it: they don't pass it)
+        if (cs.sxA && L - b >= PASSED) { cs.sx = 0; cs.sm = 5; cs.pdT = t; cs.pX = N; rc.log.push([+t.toFixed(2), 'passed', -1, c.id]); }
+        else { cs.sm = 3; qOut(cs); if (cs.lpd !== N) nOut++; scZone(G, race, rc, Lo, H, dt, c, cs, 3); if (!first) { prevB = b; prevId = c.id; } continue; }   // (the cars behind follow it: they don't pass it)
       }
       cs.pb = b;
       // (the SC on its way out, user 2026-10-20: everyone runs to the SC delta - shown on the HUD as the VSC's, judged - until
@@ -9218,7 +9225,7 @@ const RaceControl = (() => {
       // before that a hidden one)
       if (!on && rc.sp === 1) { cs.sm = 1; cs.sa = -2; if (cs.iz) izSet(G, rc, H, c, cs, 0); scDelta(G, race, rc, Lo, H, dt, c, cs); nMode1++; nOut++; continue; }
       if (rc.sp === 1 && !rc.pick && first && lp && c !== lp && b < WAVE_R && R.dist < lp._race.dist - 30) {   // (before the pick-up: not the leader right behind the SC, waved past)
-        cs.sx = N; cs.sxA = 0; cs.sm = 3;
+        cs.sx = N; cs.sxA = 0; cs.sm = 3; qOut(cs);
         rc.log.push([+t.toFixed(2), 'wave', -1, c.id]);
         H.emit(G, { type: 'rcWave', car: c });
         continue;
@@ -9233,6 +9240,7 @@ const RaceControl = (() => {
       if (rc.sp === 1 && first && c === lp && m === 2 && !rc.pick) { rc.pick = 1; rc.pkT = t; rc.log.push([+t.toFixed(2), 'pick', -1, c.id]); }
       cs.gT = (prevId === -1 ? 3 + 2 * rnd(race, c.id, 90 + N) : 2 + 1.5 * rnd(race, c.id, 80 + N)) * CL;   // (behind the SC: a longer gap; + 0.3 s of travel: aiSc)
       if (m === 1) nMode1++;
+      if (m === 2 && gap <= (prevId === -1 ? Q_JOIN : Q_CLOSE)) { cs.nc = 0; cs.pX = 0; } else qOut(cs);
       if (m === 1 || (m === 5 && t - (cs.pdT || 0) < QF_W * SC_K * (race.lapTimeEst || 90))) nOut++;   // (a car waved past / lapped and through: waited for QF_W SC laps after its pass, then not - F1: the SC in at the end of the following lap)
       scZone(G, race, rc, Lo, H, dt, c, cs, m);
       if (m === 2) {
@@ -9265,7 +9273,7 @@ const RaceControl = (() => {
     if (on && V.li) { let w = 0; for (const c of _ch) { const q = rc.cs[c.id]; if (q.sx === N && !q.sxA) { w = 1; break; } } V.li = w ? 2 : 1; }
     // (passers near a queue car: it doesn't weave)
     for (const c of _ch) { const cs = rc.cs[c.id]; cs.pz = 0; if (cs.sm !== 2) continue; for (const o of _ch) { const q = rc.cs[o.id]; if (q.sm === 3) { const ds = T.deltaS(c.s, o.s); if (ds > -90 && ds < 25) { cs.pz = 1; break; } } } }
-    if (rc.sp === 1 && on) scPhase(G, race, rc, Lo, H, lp, nMode1, nOut);
+    if (rc.sp === 1 && on) scPhase(G, race, rc, Lo, H, lp, nMode1, nOut, qOK);
     if (rc.sp === 2 && V.st === 2 && !V.ap) for (const c of G.cars) {   // (the SC off to the pit entry: a human passing it before it peels off - a warning, then 5 s)
       const cs = rc.cs[c.id];
       if (!cs || !isHuman(c) || !live(c) || c.inPitLane) continue;
@@ -9297,10 +9305,13 @@ const RaceControl = (() => {
   }
   // lapped cars may overtake, SC in this lap, the lights off, into the pit lane -> the restart
   // (nOut: cars not in the queue yet - catching it, passing it, waved past / lapped and catching up the queue for QF_W SC laps
-  // after their pass; user 2026-10-20: the SC waits for them before
-  // SC IN THIS LAP, short races too, at most QF_S / QF_N SC laps after the pick-up / the lapped cars' pass)
-  const QF_S = 1.5, QF_N = 1.6, QF_W = 0.6;   // (a car that stopped just before the call can be ~half a lap back: ~1.2 SC laps to catch up)
-  function scPhase(G, race, rc, Lo, H, lp, nMode1, nOut) {
+  // after their pass: the lapped cars wait for them)
+  // (user 2026-10-20, rc5: never in while marshals / vehicles are still out, nor without the pack behind it) SC IN THIS LAP at
+  // the start of S2 only with the clean-up done (cleanUp 0) and the queue formed (qOK: scStep), short races too; else it stays
+  // out another lap (log 'scNotIn' [t, 'scNotIn', 1 a job / 2 the asphalt / 3 the medical car / 4 the queue, lap]). The lights
+  // out: the clean-up checked again (a job since: it stays out, 'scStay' 11-13)
+  const QF_W = 0.6, QF_L = 2, Q_CLOSE = Q_LEAVE, Q_OT = 10;   // (a car that stopped just before the call can be ~half a lap back: ~1.2 SC laps to catch up)
+  function scPhase(G, race, rc, Lo, H, lp, nMode1, nOut, qOK) {
     const T = G.track, t = race.t, V = rc.sc, N = rc.scN, L = T.length, scLap = SC_K * (race.lapTimeEst || 90);
     const left = race.laps ? race.laps - (race.leaderLap || 0) : 99, short = left <= SC_SHORT;
     // (user 2026-10-19: <= SC_SHORT laps left - the SC stays ~1 lap with the leader behind it: no unlapping, no wait for the
@@ -9323,22 +9334,38 @@ const RaceControl = (() => {
     } else if (rc.lapW === 1) {
       let busy = 0;
       for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === N && cs.lpd === N && cs.sx === N) busy++; }
-      if (!busy && rc.cs) { rc.lapW = 2; rc.qfT = t; rc.log.push([+t.toFixed(2), 'lappedDone', -1, 0]); }
+      if (!busy && rc.cs) { rc.lapW = 2; rc.log.push([+t.toFixed(2), 'lappedDone', -1, 0]); }
     }
     const finLap = !!race.laps && (race.leaderLap || 0) >= race.laps;
     if (!rc.inL) {
-      const qf = Math.max(rc.pkT || 0, rc.qfT || 0), ready = finLap || (rc.clr && rc.lapW === 2 && rc.pick && (!nOut || t - qf > (short ? QF_S : QF_N) * scLap));
+      const pre = rc.clr && rc.lapW === 2 && rc.pick, cu = pre ? cleanUp(G, rc) : 0, ready = finLap || (pre && qOK && !cu);
       const s2 = T.sectorS && T.sectorS[0] != null ? T.sectorS[0] : L / 3, atS2 = T.deltaS(s2, V.s) >= 0 && T.deltaS(s2, V.s) < 300 && V.s < rc.offS - 300;
+      if (pre && !ready && atS2 && rc.niL !== (race.leaderLap | 0)) { rc.niL = race.leaderLap | 0; rc.log.push([+t.toFixed(2), 'scNotIn', cu || 4, rc.niL]); }   // (stays out another lap)
       if (ready && (finLap || atS2 || (short && V.s < rc.offS - 100))) {   // (user 2026-10-19: SC IN THIS LAP at the start of sector 2 of its last lap)
         rc.inL = finLap ? 2 : 1; rc.fin = finLap ? 1 : 0; rc.rev++;
         rc.log.push([+t.toFixed(2), 'inLap', -1, rc.fin]);
         H.emit(G, { type: 'rcSc', on: 2, n: N, fin: rc.fin });
       }
+    } else if (rc.inL === 1 && V.s >= rc.offS && V.s < rc.offS + 500 && !rc.fin && cleanUp(G, rc)) {   // (a clean-up out again since the call: it stays out)
+      rc.inL = 0; rc.rev++;
+      rc.log.push([+t.toFixed(2), 'scStay', -1, 10 + cleanUp(G, rc)]);
+      H.emit(G, { type: 'rcSc', on: 1, n: N, again: true, why: '', turn: '', cid: -1 });
     } else if (rc.inL === 1 && V.s >= rc.offS && V.s < rc.offS + 500) {
       rc.inL = 2; V.li = 0; rc.rev++;
       rc.log.push([+t.toFixed(2), 'lightsOff', -1, Math.round(V.s)]);
       if (!rc.fin) restart(G, race, rc, H);   // (user 2026-10-19: from the lights out the leader controls the pace; the SC off at full pace to the pit entry)
     }
+  }
+  // (rc5) the clean-up still going -> 1 a job not done (queued, before its track-clear time, waiting for a gap in the traffic),
+  // 2 a marshal / vehicle on the asphalt (+ ASF_M: the job's phase now), 3 the medical car parked at a lap-1 DNF | 0 none
+  function cleanUp(G, rc) {
+    const T = G.track, t = G.race.t;
+    for (const J of rc.jobs) {
+      if (t < J.clr || J.hw >= 0) return 1;
+      phaseAt(J, t, _ph);
+      if (_ph.i < J.P.length && (J.oa && J.oaN === J.P.length ? J.oa[_ph.i] : onAsph(T, J.P[_ph.i]))) return 2;
+    }
+    return rc.mc && rc.mc.st === 2 && rc.mc.ph ? 3 : 0;
   }
   // the SC in the pit lane: the restart (rc.sp 2); the leader goes between the pit entry and 150 m before the line
   function restart(G, race, rc, H) {
@@ -9401,8 +9428,9 @@ const RaceControl = (() => {
         const Z = rc.zi || rc.zf, yy = (Z[zoneAt(Lo, V.s)] | Z[zoneAt(Lo, V.s + V.v * V.v / (2 * SC_BRK) + 15)]) & YY;   // (slower past a double yellow / the incident under the SC: the queue too)
         let r = vehTrack(G, V, rc.inL === 2 && rc.sp === 2 ? vprof(T, 2, 1) : vprof(T, 0, rc.vq || 1), SC_BRK, 25, yy ? 0.85 : 1);   // (lights out: full pace to the pit entry)
         if (rc.sp === 1 && rc.pick && rc.lg > 7 * CL) r.v *= 0.85;   // (the car behind falling back: the SC eases off)
-        else if (rc.sp === 1 && !rc.pick && !(rc.lg > 0 && rc.lg < SC_WAIT)) r.v *= 0.8;   // (before the pick-up: nobody close behind - it waits for the leader)
-        if (rc.sp === 1 && passerNear(G, V)) { const i = T.idxAt(V.s), ln = scLine(T, V.s); if (!V.pS) V.pS = ln >= 0 ? 1 : -1; r.d = V.pS * Math.max(V.pS * ln, T.halfW[i] - 2); }   // (a car going past: the SC keeps to its side - the one it chose, not switching with the line: 2026-10-19)
+        else if (rc.sp === 1 && !rc.pick) scWait(G, race, rc, Lo, V, r, dt);   // (before the pick-up: never away from the leader - slow, aside if need be: rc5)
+        else V.wS = 0;
+        if (rc.sp === 1 && passerNear(G, V)) { const i = T.idxAt(V.s), ln = scLine(T, V.s); if (!V.pS) V.pS = V.wS || (ln >= 0 ? 1 : -1); r.d = V.pS * Math.max(V.pS * ln, T.halfW[i] - 2); }   // (a car going past: the SC keeps to its side - the one it chose, not switching with the line: 2026-10-19; waiting aside: that side)
         else V.pS = 0;
         if (rc.inL === 2) { r = vehIn(G, V, r.v, r.d, SC_BRK); if (!r && rc.sp === 1) restart(G, race, rc, H); }
         if (r) { vehMove(T, V, r.v, r.d, SC_ACC, SC_BRK, dt, scLineF(T)); solid(G, race, rc, Lo, H, V); }
@@ -9410,6 +9438,47 @@ const RaceControl = (() => {
     }
     if (rc.mc && rc.mc.st > 0 && rc.mc.st < 4) mcStep(G, race, rc, Lo, H, dt, rc.mc);
   }
+  // (user 2026-10-20, rc5: the SC drove round too fast, the leaders never caught it - it ran at 0.8 x its pace with nobody
+  // close behind.) Before the pick-up the SC never runs away from the leader: the leader catches it before the incident zone
+  // (SW_M m before it), at the latest by the next sector-2 start (rc.scP: the nearest of those SW_DG + SW_MIN m ahead or more
+  // once the SC is on the track; passed without the pick-up: the next S2 start). The SC is to be caught SW_DG m before it
+  // (P*): its speed <= its distance to P* / (the leader's time to P* + SW_TM) - the leader at race pace x rc.lpK (an SW_E s
+  // average of its speed over the race pace there: a human may be slow) -, down to a stop if need be, off the racing line
+  // below SW_VS while the leader is more than SW_GO + SW_TS s away (V.wS: the side away from the line; back on it after).
+  // From SW_GO s (tA: the leader's time to the SC) it rolls again up to SW_VG (<= SW_VL x the leader's speed, rc.lpV), so the
+  // leader closes up gently (ai.js: the m 1 leader brakes to the SC's speed, SC_AP)
+  const SW_M = 40, SW_DG = 120, SW_MIN = 200, SW_TM = 2, SW_GO = 8, SW_VG = 24, SW_VS = 12, SW_TS = 5, SW_VL = 0.75, SW_E = 4;
+  function scTarget(G, race, rc, Lo, V, s2only) {
+    const T = G.track, L = T.length, s2 = T.sectorS && T.sectorS[0] != null ? T.sectorS[0] : L / 3, need = SW_DG + SW_MIN;
+    let best = T.wrapS(s2 - V.s), k = 1;
+    if (best < need) best += L;
+    if (!s2only) for (const o of rc.inc) {
+      const z = o.want >= LV.sc && Lo.zones[o.zone];
+      if (!z) continue;
+      const D = T.wrapS(z.s0 - SW_M - V.s);
+      if (D >= need && D < best) { best = D; k = 0; }
+    }
+    rc.scP = T.wrapS(V.s + best); rc.scPk = k; rc.scPN = rc.scN;
+    rc.log.push([+race.t.toFixed(2), 'scTgt', k, Math.round(best)]);
+  }
+  function scWait(G, race, rc, Lo, V, r, dt) {
+    const T = G.track, L = T.length, lp = leaderOf(race);
+    if (!lp) { V.wS = 0; return; }
+    const vq = Math.max(0.5, rc.vq || 1), vr = Math.max(8, T.raceSpeed[lp.idx >= 0 ? lp.idx : T.idxAt(lp.s)] * vq), e = Math.min(1, dt / SW_E);
+    if (rc.scPN !== rc.scN) { scTarget(G, race, rc, Lo, V, false); rc.lpK = 1; rc.lpV = lp.speed || 0; }
+    rc.lpK += (clamp((lp.speed || 0) / vr, 0.2, 1.2) - rc.lpK) * e; rc.lpV += ((lp.speed || 0) - rc.lpV) * e;
+    let D = T.wrapS(rc.scP - V.s);
+    if (D > L - 150) { scTarget(G, race, rc, Lo, V, true); D = T.wrapS(rc.scP - V.s); }   // (passed it without the pick-up)
+    const k = vq * clamp(rc.lpK, 0.3, 1), Ds = Math.max(0, D - SW_DG), tP = profT(T, T.raceSpeed, lp.s, T.wrapS(rc.scP - SW_DG)) / k, tA = profT(T, T.raceSpeed, lp.s, V.s) / k;
+    const v = Math.max(Ds / (tP + SW_TM), Math.min(SW_VG * clamp(1 - tA / SW_GO, 0, 1), Math.max(8, SW_VL * rc.lpV)));
+    if (v < r.v) r.v = v;
+    const i = T.idxAt(V.s), hw = T.halfW[i], ln = r.d;
+    if (r.v < SW_VS && tA > SW_GO + SW_TS && Math.abs(ln - scLine(T, V.s)) < 0.5) {   // (slow, the leader far: off the racing line, at the side with more room)
+      if (!V.wS) V.wS = Math.abs(hw - 2.2 - ln) >= Math.abs(-hw + 2.2 - ln) ? 1 : -1;
+      r.d = V.wS * (hw - 2.2);
+    } else if (tA <= SW_GO + SW_TS) V.wS = 0;
+  }
+
   // ---------- the medical car (user 2026-10-18) ----------
   // It waits on the track MC_BACK m behind the last grid slot (mcGrid: Race setupGrid; a red flag's standing restart),
   // goes MC_W s after lights out (lights on), follows the last car on the racing line (>= MC_FOL m, <= MC_VMAX m/s), into
@@ -9596,6 +9665,7 @@ const RaceControl = (() => {
     const o = _as, m = cs.sm;
     o.m = m; o.k = 0; o.lead = false; o.go = !!rc.go; o.car = null; o.pz = !!cs.pz; o.vp = 0; o.gT = cs.gT;
     if (m === 1 || m === 3 || m === 5) o.k = cs.vN === rc.vsN && rc.vc ? clamp(1 + VG * (cs.vD - cs.vT), 0.55, 2.5) : 0;   // (catching the SC: full pace (user 2026-10-19), but the SC delta while it is on its way out / in an incident zone (2026-10-20))
+    if (m === 1 && cs.sa === -1 && rc.sp === 1 && rc.sc && rc.sc.st === 2) { const V = rc.sc; o.lead = true; o.ds = cs.sg; o.v = V.v; o.a = V.a; o.gT = cs.gT + 0.25 * V.v; }   // (the car catching the SC itself: ai.js brakes to its speed by the gap, rc5)
     else if (m === 2) {
       o.ds = cs.sg;
       if (cs.sa === -1) { const V = rc.sc; o.v = V.v; o.a = V.a; o.lead = true; }
@@ -11226,9 +11296,11 @@ const AI = (() => {
       }
     }
     if (lo > hi) return (lo + hi) * 0.5;
-    if (b.rcOb) { const q = obDodge(b, A, s, d < lo ? lo : d > hi ? hi : d, lo, hi); return b.dbr ? dodge(b, A, s, q, lo, hi) : q; }   // (race control: round marshals / vehicles)
-    if (b.dbr) return dodge(b, A, s, d < lo ? lo : d > hi ? hi : d, lo, hi);   // (contact damage: round a piece of debris)
-    return d < lo ? lo : d > hi ? hi : d;
+    let dc = d < lo ? lo : d > hi ? hi : d;
+    if (b.rjOb) dc = rjDodge(b, A, s, dc, lo, hi);   // (a spun / stopped car: round it, safe rejoin)
+    if (b.rcOb) { const q = obDodge(b, A, s, dc, lo, hi); return b.dbr ? dodge(b, A, s, q, lo, hi) : q; }   // (race control: round marshals / vehicles)
+    if (b.dbr) return dodge(b, A, s, dc, lo, hi);   // (contact damage: round a piece of debris)
+    return dc;
   }
   // ---------- contact damage (damage.js flag): sharp debris pieces on the track ahead (race.debris) ----------
   // b.dbr = the pieces 10 m behind .. 160 m ahead of the car this step (dbrStep; null = none: pathD as before). Only the wheels
@@ -11290,7 +11362,7 @@ const AI = (() => {
   }
   // the SC queue (RaceControl.aiSc, mode 2): its gap gT behind the car / SC ahead (ds along the track): that one's speed +
   // SC_G per m over the gap, braking at SC_D down to SC_MIN m
-  const SC_G = 0.5, SC_D = 7, SC_MIN = 9, WV_A = 1.3;
+  const SC_G = 0.5, SC_D = 7, SC_MIN = 9, WV_A = 1.3, SC_AP = 9;   // (SC_AP: the car catching the SC brakes to its speed at this, rc5)
   function scFollow(b, vr) {
     const S = b.rcS, ds = S.ds;
     let lim = Math.min(Math.max(0, S.v + SC_G * (ds - S.gT)), Math.max(S.v, RaceControl.PASS_K * vr), S.cap);   // (closing up: at an appropriate speed)
@@ -11566,17 +11638,17 @@ const AI = (() => {
       if (v > 5 && cosRec < 0.2) b.rec = 2;                          // spinning / going backwards fast
       else if (v < 4 && (cosRec < 0.35 || b.stuckT > 1.3)) { b.rec = 3; b.recT = 0; b.recFwd = b.stuckT > 1.3 ? 0 : 1; }
     }
+    if (b.rec && !finished) { b.rj = 1; b.rjT0 = race ? race.t : 0; }   // (a spin / a stop: the safe-rejoin rules until back up to speed)
+    b.rjHoldP = b.rjHold; b.rjHold = false;   // (held still for traffic last step: no beached clock)
     if (b.rec === 2) {
       inp.throttle = 0; inp.brake = 1; inp.steer = 0;
       if (v < 4) { b.rec = cosRec < 0.5 ? 3 : 0; b.recT = 0; b.recFwd = 1; }
       return inp;
     }
-    // beached (gravel) or otherwise going nowhere for a long time: put the car back on track (like the player's R)
-    if (v < 1.5 && !startPh && !finished && phase === 'racing') b.beachT = (b.beachT || 0) + dt; else if (v > 5) b.beachT = 0;
-    if (b.beachT > 8 && typeof Physics !== 'undefined' && Physics.resetToTrack) {
-      Physics.resetToTrack(car, track);
-      b.beachT = 0; b.rec = 0; b.recTot = 0; b.stuckT = 0; b.recSg = 0; b.off = b.offT = car.d - lineAt(A, car.s, b.kw); b.w = b.wT = 0;
-    }
+    // beached (gravel) or otherwise going nowhere for a long time: put the car back on track (like the player's R) - only
+    // into a gap (rjReset: no car about to arrive; at the edge on its side, not mid-track)
+    if (v < 1.5 && !startPh && !finished && phase === 'racing' && !b.rjHoldP) b.beachT = (b.beachT || 0) + dt; else if (v > 5) b.beachT = 0;
+    if (b.beachT > 8 && rjReset(b, car, G, A)) b.beachT = 0;
     if (b.rec === 3) return recover(b, car, G, A, rel, dt);
 
     if (b.adaptive) adaptDrive(b, car, G, dt);
@@ -12025,8 +12097,10 @@ const AI = (() => {
     if (b.rcS) {
       if (b.rcS.m === 3) b.vLim = Math.min(b.vLim, RaceControl.PASS_K3 * track.raceSpeed[idx]);   // (passing the queue / the SC: the straights capped at the race speed)
       else if (b.rcS.m === 4 && !b.rcS.go) b.vLim = Math.min(b.vLim, b.rcS.vp);   // (the restart leader: the SC's pace until it goes)
+      else if (b.rcS.m === 1 && b.rcS.lead) { const S = b.rcS, lim = Math.sqrt(S.v * S.v + 2 * SC_AP * Math.max(0, S.ds - S.gT)); if (lim < b.vLim) { b.vLim = lim; b.vLimA = S.a < -1 ? -S.a : 0; } }   // (catching the SC: closing up on it gently, SC_AP m/s2 - rc5: it may wait slow / stopped for the leader)
     }
     const cars = G.cars, L = A.L, hw = A.hw[idx], qm = inQ(G.race);   // (qualifying: no blue flags; a car on a flying lap is let by)
+    rjObStep(b, car, cars, A, startPh || finished);   // (spun / stopped cars ahead: pathD rounds them)
     // distance to the braking point: the corner list's, or the speed plan's own (last step: where the plan first brakes for
     // the speed actually carried) when that comes first — a chicane merged out of the list (Vortex T1/T2) otherwise looked
     // like 300 m more straight: attacks swung across it and cut T2. No late-braking move into such an unlisted braking zone
@@ -12113,7 +12187,10 @@ const AI = (() => {
         // straight: a lift to drop in behind, not a stamp on the brakes)
         const blue = lapsMe && ds < 70 && !o.offTrack && !(b.ulOK && b.ulCar === o) && o !== b.ulTgt && !lapStop(A, o) && !track.inPitArea(o.s, o.d);
         if (blue) clr = 0;
-        if (clr < 2.35) {
+        // (a car turned round / sideways - spun, recovering: > 0.9 rad off the track direction, never a car on its line -
+        // reaches further across: its half length x sin, user 2026-10-20: cars clipped a stopped car's tail passing it)
+        const oRel = Math.abs(wrapA(o.h - A.th[o.idx >= 0 ? o.idx : 0])), ext = oRel > 0.9 ? Math.abs(Math.sin(oRel)) * (LEN - C.width) / 2 : 0;
+        if (clr < 2.35 + ext) {
           const buf = (startPh ? 2.5 : 1.6) + (1 - b.aggr) * 1.2;
           const aMe = 0.75 * bDec(car, Math.max(v, 20), car.grip * brkW(v)) * P.brk;
           const ao = o.aLong < -1 ? Math.max(aMe, -o.aLong) : aMe;
@@ -12175,14 +12252,35 @@ const AI = (() => {
     // (a kerb on that side: only once the outer wheels are past its outer edge — a kerb line runs its wheels over it by design)
     const ad = Math.abs(car.d), kbS = car.d < 0 ? A.kL[idx] : A.kR[idx];
     const adX = Math.max(b.kw > 1 ? Math.max(hw, Math.abs(lineAt(A, car.s, b.kw))) + 0.6 : 0, kbS ? hw + CFG.kerbWidth - HT + 0.25 : hw + 0.6);
-    if (!onRoad && (ad > adX || b.offTrackT > 0)) {
+    if (!onRoad && (ad > adX || b.offTrackT > 0 || (b.rj && b.rjOff && !b.rjGo))) {   // (b.rjOff: waiting outside the line, safe rejoin - held there)
       if (ad > adX) b.offTrackT = 0.6; else b.offTrackT -= dt;
-      if (b.w < 0.5) { b.absD = car.d; b.w = 1; }
+      // safe rejoin (RJ): a slow car (a real off / a spin, not a run wide at pace) waits just outside the white line until no
+      // car can reach it within RJ.go s, then merges at RJ.rate m/s; once committed it backs off only while still outside
+      // the line (a car about to arrive, RJ.hold s)
+      const slow = !finished && !b.pitIn && !track.inPitArea(car.s, car.d) && (b.rj || v < RJ.slow * A.vr[idx]);
+      if (slow && !b.rj) { b.rj = 1; b.rjT0 = G.race ? G.race.t : 0; b.rjGo = false; }
+      if (b.w < 0.5) { b.absD = car.d; b.w = 1; if (slow) b.off = b.offT = 0; }
       const sd = car.d > 0 ? 1 : -1;
       let traffic = false;
-      if (bh && bhDs > -70 && Math.abs(bh.d - sd * (hw - 2)) < 4 && bh.speed > v + 3) traffic = true;
-      b.absDT = traffic ? sd * (hw + 0.8) : sd * (hw - 2);
-      b.absRate = 1.6; b.free = true; wT = 1; b.wRate = 3;
+      if (slow) {
+        b.rjGo = b.rjGo ? !(ad > hw + 0.4 && rjNeed(b, car, G, A, dt, RJ.hold)) : !rjNeed(b, car, G, A, dt, 0);
+        traffic = !b.rjGo; b.rjSd = sd; b.rjOff = traffic;
+      } else if (bh && bhDs > -70 && Math.abs(bh.d - sd * (hw - 2)) < 4 && bh.speed > v + 3) traffic = true;
+      b.absDT = traffic ? sd * (hw + (slow ? RJ.edge : 0.8)) : sd * (hw - 2);
+      b.absRate = slow && !traffic ? RJ.rate : 1.6; b.free = true; wT = 1; b.wRate = 3;
+      if (slow && traffic) {
+        // along the edge / the run-off: at most RJ.vWait, stopped before the run-off narrows to less than the car needs
+        b.vLim = Math.min(b.vLim, RJ.vWait);
+        const x = 12 + v * v / 6, nd = RJ.edge + C.width / 2 + 0.5;
+        for (let q = 0; q <= x; q += A.step * 2) {
+          const j = Math.round((car.s + q) / A.step) % A.N;
+          if ((sd > 0 ? A.wr[j] : -A.wl[j]) - A.hw[j] < nd) { b.vLim = Math.min(b.vLim, Math.sqrt(8 * Math.max(0, q - 5))); break; }
+        }
+        // (pointing in toward the track close to the line: a crawl while it turns parallel - no drifting over the line)
+        const inw = -sd * Math.sin(wrapA(car.h - A.th[idx]));
+        if (inw > 0.15 && ad - hw - 1 < 1.2 * Math.max(v, 1) * inw) b.vLim = Math.min(b.vLim, 2.5);
+        if (v < 2) b.rjHold = true;
+      }
       // wide paved run-off / escape road (A.apron): the target never further out than the car is (a barrier that pushed it
       // in must not pull it back out); while > 2 m beyond the edge, head for just outside it at a ~15 deg rejoin angle
       // (lateral rate 0.27 v; 1.6 m/s took ~15 s back from 25 m out), then the normal merge (traffic rule above)
@@ -12199,6 +12297,26 @@ const AI = (() => {
       b.atk = null; b.atkEnd = 3;
       b.wT = wT; b.offT = b.off * 0.98;
       return;
+    }
+    // safe rejoin on the asphalt (RJ, after a spin / a stop / an off): slow, it keeps to its side of the racing line (the
+    // edge: RJ.rate m/s across) while a car can reach it within RJ.go s, then merges onto the line at RJ.rate m/s; over
+    // when merged at RJ.pace x the reference speed (or 0.97 x, RJ.max s)
+    if (b.rj) {
+      const vr = A.vr[idx], rt = G.race ? G.race.t : 0;
+      if (onRoad || finished || car.inPitLane || b.pitOut || v > 0.97 * vr || (v > RJ.pace * vr && b.w < 0.1) || rt - (b.rjT0 || 0) > RJ.max) { b.rj = 0; b.rjSd = 0; b.rjW = 0; b.rjOff = false; }
+      else {
+        const ln = lineAt(A, car.s, b.kw);
+        if (!b.rjSd) b.rjSd = car.d > ln + 0.5 ? 1 : car.d < ln - 0.5 ? -1 : ln > 0 ? -1 : 1;
+        const wait = rjNeed(b, car, G, A, dt, b.rjGo ? RJ.hold : 0);
+        b.rjGo = !wait; b.offRate = Math.min(b.offRate, RJ.rate);
+        if (wait) {
+          if (b.w < 0.5) { b.absD = car.d; b.w = 1; b.off = b.offT = 0; }
+          b.absDT = b.rjSd * (hw - EDGE); b.absRate = RJ.rate; wT = 1; b.wRate = 3; b.free = true;
+        } else b.wRate = RJ.rate / Math.max(1, Math.abs(b.absD - ln));
+        b.atk = null; b.atkEnd = 3;
+        b.wT = wT; b.offT = b.off * 0.98;
+        return;
+      }
     }
 
     // pit approach
@@ -12380,11 +12498,11 @@ const AI = (() => {
     b.threatCar = b.threatT ? bh : null;
     // defend: one move to the inside before a braking zone (not in qualifying: two cars on flying laps don't fight - a move
     // only spoils both laps)
-    b.defOn = b.defOn && (b.defC === ci || b.sl === SL.C) && !qm;
+    b.defOn = b.defOn && (b.defC === ci || b.sl === SL.C) && !qm && !(b.rcF & 1);   // (rc5: no defending while overtaking is off - the VSC / SC / red flag: a cover move in the SC queue put a car off)
     if (!b.defOn) b.defCov = false;
     car.aiDefending = b.defOn;   // (read by an attacking AI: a defensive move means backing out unless already level)
     car.aiUnlap = b.ulTgt || (b.ulFast && b.uf.car) || null;   // (read by the lapper: energy() lets a quicker lapped car by)
-    if (bh && !qm && !finished && !b.pitIn && !b.pitOut && !b.yieldOn && !startPh && b.defC !== ci && onStr && toBrk > 30 && toBrk < 260) {
+    if (bh && !qm && !finished && !b.pitIn && !b.pitOut && !b.yieldOn && !startPh && !(b.rcF & 1) && b.defC !== ci && onStr && toBrk > 30 && toBrk < 260) {
       const gapB = (-bhDs - LEN) / Math.max(v, 10), lapping = bh === lapper;
       // (not with a car alongside, not once the car behind is coming out of my tow: moving then would be blocking)
       const bhLat = bh.speed * Math.sin(wrapA(bh.h - A.th[bh.idx >= 0 ? bh.idx : 0])), bhOut = Math.sign(bh.d - car.d) * bhLat > 0.6;
@@ -12416,7 +12534,7 @@ const AI = (() => {
     }
     // (that approach only: never cleared, the hold pulled the car back to that line before the same corner on every later
     // lap - on the cool-down lap too: Dorado T8 weaved in at the edge and went off)
-    if (b.defHold != null && (b.defHold !== ci || finished)) { b.defHold = null; b.defCovH = false; }
+    if (b.defHold != null && (b.defHold !== ci || finished || (b.rcF & 1))) { b.defHold = null; b.defCovH = false; }
     if (b.defHold === ci && !b.defOn && !b.atk && wT === 0 && (onStr || b.defCovH) && toBrk > (b.defCovH ? 0 : 30)) { b.absSide = 0; b.absD = b.absDT = b.defHoldD; wT = 1; b.wRate = Math.max(b.wRate, 2); if (b.w < 0.95) b.w = 1; }
     if (b.defOn && b.defCov && !b.atk && wT === 0) {
       // (P.cover) to the cover lane, held to the braking point (sbsStep then puts the car on the cover line: its own speed
@@ -13666,8 +13784,18 @@ const AI = (() => {
   // ---------- recovery: U-turn forward at full lock, reverse with opposite lock when a wall is close ----------
   function recover(b, car, G, A, rel, dt) {
     const inp = b.inp, track = G.track;
-    b.recT += dt; b.recTot = (b.recTot || 0) + dt;
     const i = car.idx, v = car.speed;
+    // on or next to the asphalt (an arc of the turn could reach the line): no turning / reversing across the track while a
+    // car is about to arrive (RJ.hold s; RJ.go s + up to RJ.turnT s for the turn itself - facing backwards - before a
+    // manoeuvre starts) - held still, a stationary car is the one the others can drive round (user 2026-10-20). The timers
+    // wait too
+    if (Math.abs(car.d) < A.hw[i] + RJ.near && !track.inPitArea(car.s, car.d) && rjNeed(b, car, G, A, dt, b.recMv ? RJ.hold : 0, RJ.turnT * (1 - Math.cos(rel)) / 2)) {
+      b.recMv = false; b.rjHold = true;
+      inp.throttle = 0; inp.brake = car.isPlayer && v < 0.8 ? 0.45 : 1; inp.reverse = false; inp.boost = false;
+      return inp;
+    }
+    b.recMv = true;
+    b.recT += dt; b.recTot = (b.recTot || 0) + dt;
     // circuits with escape roads / wide aprons (A.apron), off the asphalt: turn to a heading ~20 deg toward the track (not
     // along it, then a second turn), barrier distances along the heading from the real corridor (rayFree: the d-based
     // estimate assumed a barrier 1 m beyond a car out on a 30 m apron -> forward / reverse every 0.4 s), done only with
@@ -13700,11 +13828,94 @@ const AI = (() => {
       if (car.vLong > 0.8) { inp.throttle = 0; inp.brake = 1; }   // stop before reversing
       if (b.recT > 0.5 && (b.recT > 2.2 || wallBehind < 2.5 || cr > 0.6 || (b.recT > 1.2 && v < 0.4))) { b.recFwd = 1; b.recT = 0; }
     }
-    if (b.recTot > 9 && typeof Physics !== 'undefined' && Physics.resetToTrack) {
-      Physics.resetToTrack(car, track);
-      b.rec = 0; b.recTot = 0; b.stuckT = 0; b.off = b.offT = car.d - lineAt(A, car.s, b.kw); b.w = b.wT = 0;
-    }
+    if (b.recTot > 9) rjReset(b, car, G, A);
     return inp;
+  }
+
+  // ---------- safe rejoin (user 2026-10-20, HANDOFF §66) ----------
+  // A car that spun / stopped / went off and is slow (b.rj: until back over RJ.pace x the reference speed) rejoins only into
+  // a gap: no car on the track behind able to reach the rejoin point within RJ.go s at its own speed (easing to RJ.go2 after
+  // RJ.wait s of waiting), checked before it turns back toward the line. Off the track: along the edge / the run-off just outside the
+  // white line (RJ.edge m, at most RJ.vWait m/s, stopping before the run-off ends), then a gradual merge (RJ.rate m/s
+  // sideways). On the track: held still while a car is about to arrive (< RJ.hold s once moving), else straight on in the
+  // direction of travel; slow on the asphalt it keeps to its side of the racing line (the edge) until clear, then merges.
+  // Resets (beached, stuck) wait for a gap too and put the car at the edge on its side.
+  const RJ = { go: 3.2, go2: 3.0, wait: 4, dec: 0.25, turnT: 1.5, hold: 1.8, near: 3, slow: 0.6, pace: 0.8, rate: 1.2, edge: 1.5, vWait: 18, max: 25,
+    obV: 8, obA: 200, obM: 1.0, obIn: 6, obOut: 70 };
+  // spun / stopped cars (< RJ.obV m/s) on or by the asphalt from 10 m behind to RJ.obA m ahead -> b.rjOb [s, d, half width
+  // across the track, half length along it, ...] (their heading: a car sideways reaches its half length across; null = none).
+  // pathD (rjDodge) rounds each: its half width + the car's + RJ.obM m clear, on the side with room (the nearer first), full
+  // over its length + RJ.obIn m, eased in over RJ.obOut m before it (user 2026-10-20: cars clipped a stopped car's tail)
+  function rjObStep(b, car, cars, A, off) {
+    let n = 0;
+    const OL = b.rjObL || (b.rjObL = []), L = A.L;
+    if (!off) for (let k = 0; k < cars.length; k++) {
+      const o = cars[k];
+      if (o === car || o.kinematic || o.inPitLane || o.ghosted || (o.speed || 0) >= RJ.obV) continue;
+      let ds = o.s - car.s; if (ds > L / 2) ds -= L; else if (ds < -L / 2) ds += L;
+      if (ds < -10 || ds > RJ.obA) continue;
+      const oi = o.idx >= 0 ? o.idx : 0;
+      if (Math.abs(o.d || 0) > A.hw[oi] + 3) continue;
+      const r = wrapA(o.h - A.th[oi]), sn = Math.abs(Math.sin(r)), cs = Math.abs(Math.cos(r));
+      OL[n++] = o.s; OL[n++] = o.d || 0; OL[n++] = sn * LEN / 2 + cs * C.width / 2; OL[n++] = cs * LEN / 2 + sn * C.width / 2;
+    }
+    OL.length = n;
+    b.rjOb = n ? OL : null;
+  }
+  function rjDodge(b, A, s, d, lo, hi) {
+    const P = b.rjOb, L = A.L, w0 = C.width / 2 + RJ.obM;
+    for (let k = 0; k < P.length; k += 4) {
+      let ds = s - P[k]; if (ds > L / 2) ds -= L; else if (ds < -L / 2) ds += L;
+      const a = Math.abs(ds), l = P[k + 3];
+      if (a > l + RJ.obIn + RJ.obOut || ds > l + RJ.obIn) continue;   // (well past it: back to the path)
+      const q = P[k + 1], c = P[k + 2] + w0;
+      if (Math.abs(d - q) >= c) continue;
+      let t = d < q ? q - c : q + c;
+      if (t < lo || t > hi) { t = d < q ? q + c : q - c; if (t < lo || t > hi) continue; }
+      const w = a <= l + RJ.obIn ? 1 : 1 - (a - l - RJ.obIn) / RJ.obOut, e = w * w * (3 - 2 * w);
+      d += (t - d) * e;
+    }
+    return d < lo ? lo : d > hi ? hi : d;
+  }
+  // the soonest a car on the track behind reaches s (s at its own speed; 0 = alongside), Infinity = none in range
+  function rjEta(car, G, A, s) {
+    let tm = Infinity;
+    for (const o of G.cars) {
+      if (o === car || o.kinematic || o.inPitLane || o.ghosted) continue;
+      const vo = o.speed || 0;
+      if (vo < 3) continue;
+      const oi = o.idx >= 0 ? o.idx : 0;
+      if (Math.abs(o.d || 0) > A.hw[oi] + 2.5) continue;   // (off the track itself)
+      const ds = wrapDS(A, s - o.s);                      // m it is behind s
+      if (ds < -(LEN + 2) || ds > vo * RJ.go + 80) continue;
+      const t = Math.max(0, ds - LEN) / vo;
+      if (t < tm) tm = t;
+    }
+    return tm;
+  }
+  // true = wait (traffic): the gap needed is RJ.go s + extra (a turn's time), after RJ.wait s of waiting down by RJ.dec s per
+  // s to RJ.go2 (a slow stream of cars under a yellow); `held` s once under way (0: the full gap). b.rjW = s waited
+  function rjNeed(b, car, G, A, dt, held, extra = 0) {
+    const race = G.race;
+    if (!race || (race.phase !== 'racing' && !inQ(race)) || car.finished) return false;
+    const need = held > 0 ? held : Math.max(RJ.go2, RJ.go + extra - RJ.dec * Math.max(0, (b.rjW || 0) - RJ.wait));
+    const wait = rjEta(car, G, A, car.s) < need;
+    b.rjW = wait ? (b.rjW || 0) + dt : 0;
+    if (wait) car.aiRjT = race.t;   // (read by Race's stuck check: no reset onto the line while it waits for a gap)
+    return wait;
+  }
+  // put a car that is going nowhere back on the track (Physics.resetToTrack, like the player's R) - only into a gap, then
+  // at the edge on its side (not mid-track); -> true when done
+  function rjReset(b, car, G, A) {
+    if (typeof Physics === 'undefined' || !Physics.resetToTrack) return false;
+    if (rjEta(car, G, A, car.s) < RJ.go2) { b.rjHold = true; return false; }
+    const sd = car.d < 0 ? -1 : 1;
+    Physics.resetToTrack(car, G.track);
+    const i = car.idx >= 0 ? car.idx : G.track.idxAt(car.s);
+    if (Physics.place && !G.track.inPitArea(car.s, sd * (A.hw[i] - 1.5))) Physics.place(car, G.track, car.s, sd * (A.hw[i] - 1.5));
+    b.rec = 0; b.recTot = 0; b.stuckT = 0; b.recSg = 0; b.beachT = 0; b.off = b.offT = car.d - lineAt(A, car.s, b.kw); b.w = b.wT = 0;
+    b.rj = 1; b.rjT0 = G.race ? G.race.t : 0; b.rjGo = false;
+    return true;
   }
 
   // ---------- adaptive difficulty ----------
@@ -14347,7 +14558,7 @@ const AI = (() => {
     const cl = car.collision || 0;
     if (cl > m.cp && cl > 2) m.hit = Math.max(m.hit, cl);
     m.cp = cl;
-    m.stopT = v < MK.stopV ? m.stopT + dt : 0;
+    m.stopT = v < MK.stopV && !b.rjHold ? m.stopT + dt : 0;   // (not while it waits for a gap: safe rejoin)
     if (m.ph === 1 && b.rec) { m.ph = 2; m.t1 = 0; }
     // a crash: once off the track or turned round the driver is a passenger (brakes locked, the wheel straight) until it stops,
     // and is out there (damaged off the track: the gravel, the grass, a barrier, kerbs and bollards); stopped on the racing
@@ -15864,7 +16075,7 @@ const Race = (() => {
       else checkJumpStart(G, race, car);
       progress(G, race, car, dt, racing);
       aeroLockStep(track, car, rc, race);
-      if (racing) { stuckCheck(G, race, car); trackLimitsStep(G, race, car, dt); histStep(race, car, rc); }
+      if (racing) { stuckCheck(G, race, car); trackLimitsStep(G, race, car, dt); rejoinStep(G, race, car, dt); histStep(race, car, rc); }
       rc.pvx = car.vx || 0; rc.pvz = car.vz || 0; rc.pbr = car.brake || 0;   // pre-contact state for the next step's collisions
     }
     if (racing) for (let i = 0; i < cars.length; i++) { const rc = cars[i]._race; if (rc && (rc.tlPost || (rc.gb && rc.gb.length))) advStep(G, race, cars[i], dt); }
@@ -16034,6 +16245,7 @@ const Race = (() => {
       if (!a || !b || !a._race || !b._race || !(e.intensity > 1.5) || (race.phase !== 'racing' && !inQ(race)) || race.attract) continue;
       if (a.ghosted || b.ghosted) continue;   // [rewind agent] a reset ghost (Physics.ghostStart) is never judged, nor its victim
       a._race.touchT = b._race.touchT = race.t;   // (track limits: a car knocked off is not judged)
+      if (race.phase === 'racing' && rjContact(G, race, a, b, e)) continue;   // (an unsafe rejoin: the rejoining car's, judged at its window's end)
       const f = collisionFault(a, b, e.intensity, G.track, e, C || CFG.penalties.standard.col, null, inQ(race));
       if (!f) continue;
       const o = f.car, v = f.victim, rc = o._race;
@@ -16163,6 +16375,111 @@ const Race = (() => {
       if (d < bd) { bd = d; best = c; }
     }
     return best ? 'T' + best.num : '';
+  }
+
+  // ---------- unsafe rejoin (user 2026-10-20: "You can get a penalty for an unsafe rejoin"; HANDOFF §66) ----------
+  // A car is out while it is off the track (all four wheels past the white line), spinning (body slip > RJ.slip rad at
+  // speed) or stopped (< RJ.stop m/s within RJ.fastT s of having been at speed). Back on the asphalt, under control and
+  // driving off (throttle / reverse, not pushed by a hit within RJ.push s) but slow (< RJ.slow x the reference speed) or
+  // still turned round (> RJ.turn rad), RJ.on s on end = rejoining: that opens its
+  // window (until back over RJ.pace x the reference and pointing along the track, at most RJ.win s). Its gap at the
+  // opening = the soonest a car on the track behind reaches it at its own speed: >= RJ.gap s is a clear gap and nothing in
+  // the window is judged. Otherwise, in the window: a car behind it forced to brake (closing, in its lane, the brake not
+  // needed for a corner: pedal / deceleration share of the car's limit >= RJ.b1 / RJ.b2) or to swerve (sideways off its
+  // line >= RJ.w1 / RJ.w2 m/s, away from it), held RJ.hold s, = severity 1 / 2; contact while the rejoining car moves
+  // (none for a car hit while stationary, < RJ.still m/s, or holding on the brakes) = 3, >= RJ.big m/s = 4. That contact is the rejoining car's (the
+  // fault model leaves it). The window's worst, at its end: RJ.lv[level] = [warning from, 5 s from]; after a warning the
+  // next one is 5 s. Races only (not qualifying), AI and humans alike.
+  const RJ = { slip: 0.3, stop: 2, fastT: 20, slow: 0.6, pace: 0.8, turn: 1.2, win: 6, gap: 2.5, push: 1, on: 0.3, b1: 0.4, b2: 0.8, w1: 3, w2: 5.5, hold: 0.2, still: 1, big: 8,
+    lv: { lenient: [3, 4], standard: [2, 3], strict: [1, 2] } };
+  // the soonest a car on the track behind reaches car's position (s), Infinity = none within reach
+  function rjGap(G, car) {
+    const T = G.track, len = CFG.car.length;
+    let tm = Infinity;
+    for (const o of G.cars) {
+      if (o === car || o.kinematic || o.inPitLane || o.dnf || o.ghosted || (o.speed || 0) < 3) continue;
+      if (Math.abs(o.d || 0) > T.halfW[o.idx >= 0 ? o.idx : 0] + 2.5) continue;
+      const ds = T.deltaS(o.s, car.s);
+      if (ds < -(len + 2) || ds > o.speed * 6 + 60) continue;
+      tm = Math.min(tm, Math.max(0, ds - len) / o.speed);
+    }
+    return tm;
+  }
+  function rejoinStep(G, race, car, dt) {
+    const rc = car._race, T = G.track;
+    if (race.phase !== 'racing' || race.attract || car.finished || car.dnf || car.kinematic || car.inPitLane || car.ghosted || !T.halfW || (race.rc && race.rc.rf)) { rc.rjW = null; rc.rjOut = false; return; }
+    const v = car.speed || 0, i = car.idx >= 0 ? car.idx : T.idxAt(car.s), ref = T.raceSpeed[i] || 30;
+    if (v > 15) rc.rjFastT = race.t;
+    const slip = Math.abs(Math.atan2(car.vLat || 0, Math.max(3, Math.abs(car.vLong || 0)))), rel = Math.abs(U.wrapAngle((car.h || 0) - Math.atan2(T.tz[i], T.tx[i])));
+    const out = (v > 4 && slip > RJ.slip) || (v < RJ.stop && rc.rjFastT != null && race.t - rc.rjFastT < RJ.fastT) || wheelsOff(T, car, false);
+    let W = rc.rjW;
+    if (W && (out || race.t - W.t0 > RJ.win || (v > RJ.pace * ref && rel < 0.5))) { rc.rjW = null; if (!W.clear) rjVerdict(G, race, car, W); W = null; }
+    if (out) { rc.rjOut = true; rc.rjOn = 0; return; }
+    // (driving off: on the throttle / in reverse, not just pushed by a contact - a car holding still on the brakes, or shoved
+    // by a hit within RJ.push s, is not rejoining yet)
+    const own = ((car.throttle || 0) >= 0.1 || !!car.reverse) && (car.brake || 0) < 0.5 && !(rc.touchT != null && race.t - rc.touchT < RJ.push);
+    if (!W && rc.rjOut && !own && (v < RJ.slow * ref || rel > RJ.turn)) return;   // (still out until it drives)
+    if (!W && rc.rjOut && (rc.rjOn = (rc.rjOn || 0) + dt) < RJ.on) return;   // (back on for RJ.on s: not a brief touch of the line)
+    if (!W && rc.rjOut && (v < RJ.slow * ref || rel > RJ.turn)) {   // rejoining: the window opens, its gap measured now
+      const g = rjGap(G, car);
+      W = rc.rjW = { t0: race.t, s0: car.s, gap: g, clear: g >= RJ.gap, sev: 0, by: null, fT: 0 };
+    }
+    rc.rjOut = false;
+    if (!W || W.clear) return;
+    // forced to brake / swerve: the cars closing on it from behind (within ~2 s) in its lane - where it is, or where it is
+    // heading by the time they reach it (its sideways speed, up to 1.5 s)
+    let f = 0, fb = null;
+    const wX = (car.vx || 0) * T.nx[i] + (car.vz || 0) * T.nz[i], dX = car.d || 0;
+    for (const o of G.cars) {
+      if (o === car || o.kinematic || o.inPitLane || o.dnf || o.ghosted) continue;
+      const vo = o.speed || 0, ds = T.deltaS(o.s, car.s), od = o.d || 0;
+      if (ds <= 0 || ds > Math.max(30, vo * 2) || vo < v + 4) continue;
+      const tc = Math.min(1.5, Math.max(0, ds - CFG.car.length) / (vo - v)), h0 = histAt(o, race.t - 0.5, 0);   // (h0: before a swerve away)
+      if (Math.min(Math.abs(od - dX), Math.abs(od - dX - wX * tc), h0 ? Math.abs(h0.d - dX - wX * tc) : 99) > 3.2) continue;
+      const j = o.idx >= 0 ? o.idx : T.idxAt(o.s);
+      let vMin = Infinity;   // (a corner ahead it brakes for anyway: its braking is not counted)
+      for (let x = 0; x <= vo * 2; x += 10) vMin = Math.min(vMin, T.raceSpeed[(j + Math.round(x / T.step)) % T.N]);
+      let sv = 0;
+      if (vMin >= vo * 0.92) {
+        const lim = CFG.perf.brakeDecel(vo, o.grip || 1), dec = isRemote(o) ? 0 : -(o.aLong || 0), k = Math.max(o.brake || 0, dec / lim);
+        sv = k >= RJ.b2 ? 2 : k >= RJ.b1 ? 1 : 0;
+      }
+      const k2 = (j + Math.round(10 / T.step)) % T.N, lr = (T.raceLine ? (T.raceLine[k2] - T.raceLine[j]) / 10 : 0) * vo;
+      const w = (o.vx || 0) * T.nx[j] + (o.vz || 0) * T.nz[j] - lr, away = (car.d || 0) > (o.d || 0) ? -w : w;
+      if (away >= RJ.w2) sv = 2; else if (away >= RJ.w1 && sv < 1) sv = 1;
+      if (sv > f) { f = sv; fb = o; }
+    }
+    W.fT = f ? W.fT + dt : 0;
+    if (f && W.fT >= RJ.hold && f > W.sev) { W.sev = f; W.by = fb; }
+  }
+  // a contact in a rejoining car's open window (not a clear gap) with a car behind / alongside it, the rejoining car moving:
+  // its (severity 3 / 4, judged at the window's end) -> true (the fault model leaves it)
+  function rjContact(G, race, a, b, e) {
+    for (let k = 0; k < 2; k++) {
+      const X = k ? b : a, O = k ? a : b, W = X._race && X._race.rjW;
+      if (!W || W.clear || (X.speed || 0) < RJ.still || G.track.deltaS(X.s, O.s) > CFG.car.length * 0.5) continue;
+      if (((X.throttle || 0) < 0.1 && !X.reverse) || (X.brake || 0) >= 0.5) continue;   // (holding still on the brakes / rolling: hit, not rejoining into it)
+      const sv = e.intensity >= RJ.big ? 4 : 3;
+      if (sv > W.sev) { W.sev = sv; W.by = O; }
+      O._race.hitT = race.t; O._race.hitBy = X;
+      return true;
+    }
+    return false;
+  }
+  function rjVerdict(G, race, car, W) {
+    const L = race.penalties && RJ.lv[race.penaltyLevel], rc = car._race;
+    if (!L || W.sev < L[0] || car.finished) return;
+    const turn = turnLabel(G.track, W.s0), where = turn ? ' (' + turn + ')' : '', who = W.by ? W.by.code || 'a car' : 'a car';
+    const why = W.sev >= 3 ? 'Contact with ' + who + ' rejoining' : W.sev === 2 ? who + ' forced to take avoiding action' : who + ' forced to lift';
+    if (W.sev >= L[1] || rc.rjWarn) {
+      car.penalty += 5;
+      emit(G, { type: 'penalty', car, sec: 5, reason: 'Unsafe rejoin' + where, detail: why, kind: 'rejoin', other: W.by, turn, sev: W.sev, gap: W.gap });
+      if (car.isPlayer) note(race, '5 S PENALTY', '#ffd12e', 'Unsafe rejoin' + where + ' · ' + why);
+    } else {
+      rc.rjWarn = (rc.rjWarn | 0) + 1;
+      emit(G, { type: 'rejoinWarn', car, reason: 'Unsafe rejoin' + where, detail: why, other: W.by, turn, sev: W.sev, gap: W.gap });
+      if (car.isPlayer) note(race, 'UNSAFE REJOIN WARNING', '#ffd12e', why + where + ' · NEXT TIME: 5 S');
+    }
   }
 
   // ---------- track limits ----------
@@ -16572,7 +16889,10 @@ const Race = (() => {
   function stuckCheck(G, race, car) {
     const rc = car._race;
     if (rc.dist > rc.progD + 5 || car.kinematic || car.finished || car.dnf || (race.rc && race.rc.rf)) { rc.progD = race.rc && race.rc.rf ? rc.dist : Math.max(rc.progD, rc.dist); rc.progT = race.t; return; }   // (a red flag: lined up / on the grid)
+    if (car.aiRjT != null && race.t - car.aiRjT < 0.5) { rc.progT = race.t; return; }   // (the AI waiting for a gap to rejoin, ai.js RJ: not stuck)
     if ((car.isPlayer && !race.attract) || race.t - rc.progT < STUCK_RESET) return;
+    // (into a gap: not with a car on the track due within 2.5 s - the reset car stands on the racing line)
+    for (const o of G.cars) if (o !== car && !o.kinematic && !o.inPitLane && (o.speed || 0) > 3 && Math.abs(o.d || 0) < G.track.halfW[o.idx >= 0 ? o.idx : 0] + 2) { const ds = G.track.deltaS(o.s, car.s); if (ds > -6 && ds < o.speed * 2.5 + 6) return; }
     rc.progT = race.t; rc.progD = rc.dist;
     if (typeof Physics !== 'undefined' && Physics && Physics.resetToTrack) Physics.resetToTrack(car, G.track);
   }
