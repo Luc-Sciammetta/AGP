@@ -1136,8 +1136,8 @@ function onText(p, raw) {
     case 'ghost': if (sim && sim.onGhost) sim.onGhost(p, m); break;
     case 'getghost': if (sim && sim.getGhost) sim.getGhost(p, m); break;
     case 'emote': if (room && EMO_TXT.has(m.k) && t - (p.emoteT || 0) > 800) { p.emoteT = t; sendAll(room, { t: 'emote', pid: p.id, k: m.k, txt: EMO_TXT.get(m.k) }); } break;
-    case 'honk':   // (honk.js: sound / effect index, relayed to the others in the room, at most ~1 a second a player)
-      if (room && room.sim && Number.isInteger(m.s) && m.s >= 0 && m.s < 16 && Number.isInteger(m.e) && m.e >= 0 && m.e < 8 && t - (p.honkT || 0) >= 450) { p.honkT = t; sendAll(room, { t: 'honk', pid: p.id, s: m.s, e: m.e }, p); }
+    case 'honk':   // (honk.js: sound index, relayed to the others in the room, at most ~1 a second a player; an old client's `e` effect field is accepted and ignored)
+      if (room && room.sim && Number.isInteger(m.s) && m.s >= 0 && m.s < 16 && t - (p.honkT || 0) >= 450) { p.honkT = t; sendAll(room, { t: 'honk', pid: p.id, s: m.s }, p); }
       break;
     case 'devc': onDev(p, m, room, host, sim); break;   // (dev tools: the host's Tab keys; devtools.js)
     case 'leave': if (room) leaveRoom(p, 'left'); send(p, { t: 'left' }); break;

@@ -9062,7 +9062,7 @@ const RaceControl = (() => {
         else { cs.sm = 3; if (!first) { prevB = b; prevId = c.id; } continue; }   // (the cars behind follow it: they don't pass it)
       }
       cs.pb = b;
-      if (!on && rc.sp === 1) { cs.sm = 1; cs.sa = -2; nMode1++; deltaCar(G, race, rc, Lo, H, dt, c, cs, false, 'scd'); continue; }   // (the SC not out yet: everyone on the delta)
+      if (!on && rc.sp === 1) { cs.sm = 1; cs.sa = -2; cs.vN = -1; nMode1++; continue; }   // (the SC not out yet: everyone catching it - no delta, as for m 1; 2026-10-20: it was still judged here, hidden: SC DELTA warnings / 5 s with nothing on the HUD)
       if (rc.sp === 1 && !rc.pick && first && lp && c !== lp && b < WAVE_R && R.dist < lp._race.dist - 30) {   // (before the pick-up: not the leader right behind the SC, waved past)
         cs.sx = N; cs.sxA = 0; cs.sm = 3;
         rc.log.push([+t.toFixed(2), 'wave', -1, c.id]);
