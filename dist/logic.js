@@ -7798,7 +7798,7 @@ const RaceControl = (() => {
       jobs: [], jseq: 0, busy: {},    // phase 2: the job queue (marshals / vehicles), crews' and vehicles' free times
       vs: 0, vsN: 0, vsT0: 0, vsMin: 0, vsEnd: 0, vq: 0, vc: 0, vf: 0, dl: {},   // phase 3: VSC 0 off / 1 on / 2 ending, its count, start, green time; the reference (vscV); clients' deltas
       warnV: {}, warnO: {},           // per car id: VSC delta / obstacle offences
-      sp: 0, scN: 0, scT0: 0, scL: 0, scLp: 0, lapW: 0, inL: 0, fin: 0, pick: 0, scCap: 0, go: 0, goS: -1, rsLap: 0, rsT: -99, clr: 0, clrT: 0, nl: 0, offS: 0,   // phase 4: the SC period (see scStep)
+      sp: 0, scN: 0, scT0: 0, scL: 0, scLp: 0, lapW: 0, inL: 0, fin: 0, pick: 0, scCap: 0, go: 0, goS: -1, rsLap: 0, rsT: -99, clr: 0, clrT: 0, nl: 0, offS: 0, dE: 0,   // phase 4: the SC period (see scStep)
       sc: newVeh(0), mc: newVeh(1), scs: [], warnQ: {}, vrT: 0,   // the safety car, the medical car; [n, lap from, lap to] per SC; queue-gap offences
       q: 0, qr: 0, qrEnd: 0,   // qualifying (qStep): race control in Q1-Q3, its red flag (the session clock stopped)
       rf: 0, rfN: 0, rfT0: 0, rfDrv: 0, rfEnd: 0, rfLap: 0, rfWhy: 0, rfRain: 0, rfX: 0, rfRate: 0, rfOrd: [], rfLd: [], rfNs: 0, rfTy: {}, rfs: [],   // phase 5: the red flag (see red / rfStep)
@@ -7879,7 +7879,7 @@ const RaceControl = (() => {
       if (!V || V.st !== 2) { if (V && V.st) { vehPark(T, Lo, V, false); rc.rev++; } green(G, race, rc, Lo, H); }   // (not out on the track yet: back in its spot, green)
       else if (rc.inL !== 2) {
         if (!rc.inL) { rc.inL = 1; rc.fin = 0; H.emit(G, { type: 'rcSc', on: 2, n: rc.scN, fin: 0 }); }
-        rc.clr = 1; rc.clrT = t; rc.lapW = 2; rc.pick = 1; rc.offS = T.wrapS(V.s + 150); rc.rev++;
+        rc.clr = 1; rc.clrT = t; rc.lapW = 2; rc.pick = 1; rc.offS = T.wrapS(V.s + 150); rc.dE = 1; rc.rev++;   // (rc.dE: a dev-forced end overrides the rc5 SC-in rules - no 'scStay')
       }
     }
     rc.log.push([+t.toFixed(2), 'devEnd', -1, rc.sp]);
@@ -9076,7 +9076,7 @@ const RaceControl = (() => {
           rc.log.push([+t.toFixed(2), 'scHold', -1, 0]);
           if (rc.vs !== 1) vscStart(G, race, rc, Lo, H);
         }
-      } else if (rc.sp === 1 && rc.inL === 1 && !rc.fin) {
+      } else if (rc.sp === 1 && rc.inL === 1 && !rc.fin && !rc.dE) {
         rc.inL = 0; rc.rev++;
         rc.log.push([+t.toFixed(2), 'scStay', -1, 1]);
         H.emit(G, { type: 'rcSc', on: 1, n: rc.scN, again: true, why: WHY[rc.wantWhy] || '', turn: rc.wantZ >= 0 ? Lo.zones[rc.wantZ].turn : '', cid: rc.wantC });
@@ -9111,7 +9111,7 @@ const RaceControl = (() => {
   }
   function scDeploy(G, race, rc, Lo, k) {
     const T = G.track, t = race.t, tr = refLap(T, Infinity);
-    rc.sp = 1; rc.scN++; rc.vsN++; rc.scT0 = t; rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
+    rc.sp = 1; rc.scN++; rc.vsN++; rc.scT0 = t; rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.dE = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
     if (rc.vs) { rc.vs = 0; rc.vsEnd = 0; }   // (a VSC turns into the SC)
     rc.vq = tr / Math.max(20, race.lapTimeEst || tr); rc.sdk = k > 0 && k < 1 ? +k.toFixed(3) : 1; rc.vf = VC_K * rc.vq * rc.sdk; rc.vc = vscCap(T, tr);
     rc.pkT = 0;
@@ -9346,7 +9346,7 @@ const RaceControl = (() => {
         rc.log.push([+t.toFixed(2), 'inLap', -1, rc.fin]);
         H.emit(G, { type: 'rcSc', on: 2, n: N, fin: rc.fin });
       }
-    } else if (rc.inL === 1 && V.s >= rc.offS && V.s < rc.offS + 500 && !rc.fin && cleanUp(G, rc)) {   // (a clean-up out again since the call: it stays out)
+    } else if (rc.inL === 1 && V.s >= rc.offS && V.s < rc.offS + 500 && !rc.fin && !rc.dE && cleanUp(G, rc)) {   // (a clean-up out again since the call: it stays out)
       rc.inL = 0; rc.rev++;
       rc.log.push([+t.toFixed(2), 'scStay', -1, 10 + cleanUp(G, rc)]);
       H.emit(G, { type: 'rcSc', on: 1, n: N, again: true, why: '', turn: '', cid: -1 });
@@ -14704,6 +14704,7 @@ const Race = (() => {
   const TT_RUNUP = 320;                   // m before the line where the time-trial car starts (flying first lap)
   const CAPTURE_AFTER = 70;               // m after the pit entry: a car on pit-lane asphalt is taken over
   const AI_CAPTURE = 55;                  // m before the pit entry: an AI car with wantPit is taken over
+  const PIT_CAP_COS = 0.85, PIT_CAP_R = 0.35, PIT_CAP_SLIP = 0.3;   // an AI car taken at the pit entry: heading within ~32 deg of the track, yaw rate (rad/s), slip angle (§67)
   const ROAD_REL = 3;                     // m: the AI's hand-back after the pit roads (track.pit.roads)
   const ROAD_FADE = 30;                   // m: the fast-lane shift fades out towards an oblique pit-road end (pitGeometry)
   const BOX_BLEND = 22;                   // m: lateral move from the fast lane into / out of the pit box
@@ -17550,17 +17551,38 @@ const Race = (() => {
     let u = track.wrapS(car.s - pit.entryS);
     if (u > L / 2) u -= L;
     // in the lane from the limiter line to just short of its end (never the release line itself): the takeover
-    if (u >= pg.uL0 && u < pg.uL1 - 3 && track.inPitArea(car.s, car.d)) { limiterLine(G, race, car, u); return; }
+    const manual = manualPit(race, car), i = car.idx >= 0 ? car.idx : Math.round(car.s / track.step) % track.N;
+    // (2026-10-20, §67: an AI car is taken only when it drives in under control - a spinning / sliding car is left to its
+    // own recovery (ai.js rec / safe rejoin): the autopilot used to take a car spinning into Montreal's pit entry at its
+    // speed and drive it off sideways. In the limited lane a moving unsettled car is taken once it has slowed / settled.)
+    // (and only on the lane's own frame: where the lane runs on a pit road (Montreal's entry, 16 m in) the path is in road
+    // coordinates (d = side * roadD + e) - a car still on the track there blended to it from its track d was flung ~5 km
+    // sideways at 57 m/s: the wantPit capture reached 70 m past the entry, the road starts 16 m in)
+    if (!laneFrameOk(track, pit, pg, car, u)) return;
+    if (u >= pg.uL0 && u < pg.uL1 - 3 && track.inPitArea(car.s, car.d)) { if (manual || !pitUnsettled(track, car, i, 6)) limiterLine(G, race, car, u); return; }
     if (rc.dist < rc.pitCooldown) return;
-    if (manualPit(race, car)) { playerPitRoad(G, race, car, u); return; }
+    if (manual) { playerPitRoad(G, race, car, u); return; }
     if (u < -AI_CAPTURE || u > CAPTURE_AFTER) return;
-    const i = car.idx >= 0 ? car.idx : Math.round(car.s / track.step) % track.N;
-    if (!((car.vLong != null ? car.vLong : car.speed) > 0.5) || Math.cos(car.h) * track.tx[i] + Math.sin(car.h) * track.tz[i] < 0.5) return;
+    if (!((car.vLong != null ? car.vLong : car.speed) > 0.5) || Math.cos(car.h) * track.tx[i] + Math.sin(car.h) * track.tz[i] < PIT_CAP_COS || pitUnsettled(track, car, i, 0)) return;
+    const b = (G.brains && G.brains.get && G.brains.get(car)) || (car.net && car.net.brain) || null;
+    if (b && (b.rec || (b.rj && (!car.wantPit || (car.offTrack && !track.inPitArea(car.s, car.d)))))) return;   // (recovering: its own rejoin; a stop only from the track / the entry road)
     if (u >= 0 && track.inPitArea(car.s, car.d)) {
       // committed to the lane (an AI car brushing the pit-entry line is not a pit stop)
       if (car.isPlayer || car.wantPit || pit.side * car.d - track.halfW[i] > 2 || u > 30) { startPit(G, race, car, u); return; }
     }
     if (!car.isPlayer && car.wantPit && ((race.phase === 'racing' && race.laps && car.lap < race.laps) || inQ(race))) startPit(G, race, car, u);
+  }
+  // the car's d is in the same frame as the lane path at u (both on a pit road's coordinates, or both on the track's)
+  function laneFrameOk(track, pit, pg, car, u) {
+    if (!pit.roadD || u < 0) return !pit.roadD || Math.abs(car.d || 0) < pit.roadD / 2;
+    const ld = pit.laneD(track.wrapS(pit.entryS + U.clamp(u, 0.05, pg.P - 0.05)));
+    return ld == null || (Math.abs(ld) > pit.roadD / 2) === (Math.abs(car.d || 0) > pit.roadD / 2);
+  }
+  // spinning / sliding (yaw rate, slip angle; or above vMin facing more than ~45 deg off the track): no autopilot takeover
+  function pitUnsettled(track, car, i, vMin) {
+    const vl = car.vLong || 0, slip = Math.abs(Math.atan2(car.vLat || 0, Math.max(3, Math.abs(vl))));
+    if (Math.abs(car.r || 0) > PIT_CAP_R || slip > PIT_CAP_SLIP) return true;
+    return vMin > 0 && car.speed > vMin && Math.cos(car.h) * track.tx[i] + Math.sin(car.h) * track.tz[i] < 0.7;
   }
   // the entry road (pit entry .. limiter line): HUD / engineer flags only, the player drives
   function playerPitRoad(G, race, car, u) {
@@ -20472,6 +20494,7 @@ const NetCore = (() => {
     o.qualiCustom = {}; for (const k in Q_CUSTOM) o.qualiCustom[k] = clamp(Math.round(+qa[k]) || Q_CUSTOM[k], 3, 30);   // (grid 'qfull': Q1 / Q2 / Q3)
     o.trackId = trackIds.includes(s.trackId) ? s.trackId : trackIds.includes(DEF.trackId) ? DEF.trackId : trackIds[0];
     o.laps = clamp(Math.round(+s.laps) || DEF.laps, 1, 120);   // (a 100 % race: up to 93 laps)
+    o.lapPct = [25, 50, 100].includes(+s.lapPct) ? +s.lapPct : 0;   // (the lobby's 25 / 50 / 100 % RACE: laps = that share on the circuit, set by the host's client; 0 = a fixed count)
     const hs = Math.round(+s.humanSlots);
     o.humanSlots = clamp(hs > 0 ? hs : s.aiCount == null ? MAX_CARS : DEF.humanSlots, Math.max(2, humans | 0), MAX_CARS);
     const ai = s.aiCount == null || s.aiCount === '' ? NaN : Math.round(+s.aiCount);
@@ -20505,7 +20528,7 @@ const NetCore = (() => {
   function sessionSettings(base, setup) {
     const S = setup.settings, me = setup.cars.find(c => c.id === setup.you) || setup.cars[0];
     return Object.assign({}, base || {}, {
-      mode: setup.mode === 'timetrial' ? 'timetrial' : 'race', trackId: S.trackId, laps: S.laps, difficulty: S.difficulty, weather: S.weather,
+      mode: setup.mode === 'timetrial' ? 'timetrial' : 'race', trackId: S.trackId, laps: S.laps, lapPct: 0, difficulty: S.difficulty, weather: S.weather,   // (lapPct 0: the server's laps as they are - not main's own % RACE from a single-player setting in base)
       timeOfDay: S.timeOfDay, tyreWear: S.tyreWear, twoCompound: !!S.twoCompound, penalties: S.penalties !== false,
       penaltyLevel: OPT.penaltyLevel.includes(S.penaltyLevel) ? S.penaltyLevel : S.penalties === false ? 'off' : DEF.penaltyLevel,
       grassSlip: grassOf(S.grassSlip),   // (the room's: main puts it in G.world for this car's physics)

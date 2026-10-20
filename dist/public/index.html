@@ -62858,7 +62858,7 @@ const RaceControl = (() => {
       jobs: [], jseq: 0, busy: {},    // phase 2: the job queue (marshals / vehicles), crews' and vehicles' free times
       vs: 0, vsN: 0, vsT0: 0, vsMin: 0, vsEnd: 0, vq: 0, vc: 0, vf: 0, dl: {},   // phase 3: VSC 0 off / 1 on / 2 ending, its count, start, green time; the reference (vscV); clients' deltas
       warnV: {}, warnO: {},           // per car id: VSC delta / obstacle offences
-      sp: 0, scN: 0, scT0: 0, scL: 0, scLp: 0, lapW: 0, inL: 0, fin: 0, pick: 0, scCap: 0, go: 0, goS: -1, rsLap: 0, rsT: -99, clr: 0, clrT: 0, nl: 0, offS: 0,   // phase 4: the SC period (see scStep)
+      sp: 0, scN: 0, scT0: 0, scL: 0, scLp: 0, lapW: 0, inL: 0, fin: 0, pick: 0, scCap: 0, go: 0, goS: -1, rsLap: 0, rsT: -99, clr: 0, clrT: 0, nl: 0, offS: 0, dE: 0,   // phase 4: the SC period (see scStep)
       sc: newVeh(0), mc: newVeh(1), scs: [], warnQ: {}, vrT: 0,   // the safety car, the medical car; [n, lap from, lap to] per SC; queue-gap offences
       q: 0, qr: 0, qrEnd: 0,   // qualifying (qStep): race control in Q1-Q3, its red flag (the session clock stopped)
       rf: 0, rfN: 0, rfT0: 0, rfDrv: 0, rfEnd: 0, rfLap: 0, rfWhy: 0, rfRain: 0, rfX: 0, rfRate: 0, rfOrd: [], rfLd: [], rfNs: 0, rfTy: {}, rfs: [],   // phase 5: the red flag (see red / rfStep)
@@ -62939,7 +62939,7 @@ const RaceControl = (() => {
       if (!V || V.st !== 2) { if (V && V.st) { vehPark(T, Lo, V, false); rc.rev++; } green(G, race, rc, Lo, H); }   // (not out on the track yet: back in its spot, green)
       else if (rc.inL !== 2) {
         if (!rc.inL) { rc.inL = 1; rc.fin = 0; H.emit(G, { type: 'rcSc', on: 2, n: rc.scN, fin: 0 }); }
-        rc.clr = 1; rc.clrT = t; rc.lapW = 2; rc.pick = 1; rc.offS = T.wrapS(V.s + 150); rc.rev++;
+        rc.clr = 1; rc.clrT = t; rc.lapW = 2; rc.pick = 1; rc.offS = T.wrapS(V.s + 150); rc.dE = 1; rc.rev++;   // (rc.dE: a dev-forced end overrides the rc5 SC-in rules - no 'scStay')
       }
     }
     rc.log.push([+t.toFixed(2), 'devEnd', -1, rc.sp]);
@@ -64136,7 +64136,7 @@ const RaceControl = (() => {
           rc.log.push([+t.toFixed(2), 'scHold', -1, 0]);
           if (rc.vs !== 1) vscStart(G, race, rc, Lo, H);
         }
-      } else if (rc.sp === 1 && rc.inL === 1 && !rc.fin) {
+      } else if (rc.sp === 1 && rc.inL === 1 && !rc.fin && !rc.dE) {
         rc.inL = 0; rc.rev++;
         rc.log.push([+t.toFixed(2), 'scStay', -1, 1]);
         H.emit(G, { type: 'rcSc', on: 1, n: rc.scN, again: true, why: WHY[rc.wantWhy] || '', turn: rc.wantZ >= 0 ? Lo.zones[rc.wantZ].turn : '', cid: rc.wantC });
@@ -64171,7 +64171,7 @@ const RaceControl = (() => {
   }
   function scDeploy(G, race, rc, Lo, k) {
     const T = G.track, t = race.t, tr = refLap(T, Infinity);
-    rc.sp = 1; rc.scN++; rc.vsN++; rc.scT0 = t; rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
+    rc.sp = 1; rc.scN++; rc.vsN++; rc.scT0 = t; rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.dE = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
     if (rc.vs) { rc.vs = 0; rc.vsEnd = 0; }   // (a VSC turns into the SC)
     rc.vq = tr / Math.max(20, race.lapTimeEst || tr); rc.sdk = k > 0 && k < 1 ? +k.toFixed(3) : 1; rc.vf = VC_K * rc.vq * rc.sdk; rc.vc = vscCap(T, tr);
     rc.pkT = 0;
@@ -64406,7 +64406,7 @@ const RaceControl = (() => {
         rc.log.push([+t.toFixed(2), 'inLap', -1, rc.fin]);
         H.emit(G, { type: 'rcSc', on: 2, n: N, fin: rc.fin });
       }
-    } else if (rc.inL === 1 && V.s >= rc.offS && V.s < rc.offS + 500 && !rc.fin && cleanUp(G, rc)) {   // (a clean-up out again since the call: it stays out)
+    } else if (rc.inL === 1 && V.s >= rc.offS && V.s < rc.offS + 500 && !rc.fin && !rc.dE && cleanUp(G, rc)) {   // (a clean-up out again since the call: it stays out)
       rc.inL = 0; rc.rev++;
       rc.log.push([+t.toFixed(2), 'scStay', -1, 10 + cleanUp(G, rc)]);
       H.emit(G, { type: 'rcSc', on: 1, n: N, again: true, why: '', turn: '', cid: -1 });
@@ -69764,6 +69764,7 @@ const Race = (() => {
   const TT_RUNUP = 320;                   // m before the line where the time-trial car starts (flying first lap)
   const CAPTURE_AFTER = 70;               // m after the pit entry: a car on pit-lane asphalt is taken over
   const AI_CAPTURE = 55;                  // m before the pit entry: an AI car with wantPit is taken over
+  const PIT_CAP_COS = 0.85, PIT_CAP_R = 0.35, PIT_CAP_SLIP = 0.3;   // an AI car taken at the pit entry: heading within ~32 deg of the track, yaw rate (rad/s), slip angle (§67)
   const ROAD_REL = 3;                     // m: the AI's hand-back after the pit roads (track.pit.roads)
   const ROAD_FADE = 30;                   // m: the fast-lane shift fades out towards an oblique pit-road end (pitGeometry)
   const BOX_BLEND = 22;                   // m: lateral move from the fast lane into / out of the pit box
@@ -72610,17 +72611,38 @@ const Race = (() => {
     let u = track.wrapS(car.s - pit.entryS);
     if (u > L / 2) u -= L;
     // in the lane from the limiter line to just short of its end (never the release line itself): the takeover
-    if (u >= pg.uL0 && u < pg.uL1 - 3 && track.inPitArea(car.s, car.d)) { limiterLine(G, race, car, u); return; }
+    const manual = manualPit(race, car), i = car.idx >= 0 ? car.idx : Math.round(car.s / track.step) % track.N;
+    // (2026-10-20, §67: an AI car is taken only when it drives in under control - a spinning / sliding car is left to its
+    // own recovery (ai.js rec / safe rejoin): the autopilot used to take a car spinning into Montreal's pit entry at its
+    // speed and drive it off sideways. In the limited lane a moving unsettled car is taken once it has slowed / settled.)
+    // (and only on the lane's own frame: where the lane runs on a pit road (Montreal's entry, 16 m in) the path is in road
+    // coordinates (d = side * roadD + e) - a car still on the track there blended to it from its track d was flung ~5 km
+    // sideways at 57 m/s: the wantPit capture reached 70 m past the entry, the road starts 16 m in)
+    if (!laneFrameOk(track, pit, pg, car, u)) return;
+    if (u >= pg.uL0 && u < pg.uL1 - 3 && track.inPitArea(car.s, car.d)) { if (manual || !pitUnsettled(track, car, i, 6)) limiterLine(G, race, car, u); return; }
     if (rc.dist < rc.pitCooldown) return;
-    if (manualPit(race, car)) { playerPitRoad(G, race, car, u); return; }
+    if (manual) { playerPitRoad(G, race, car, u); return; }
     if (u < -AI_CAPTURE || u > CAPTURE_AFTER) return;
-    const i = car.idx >= 0 ? car.idx : Math.round(car.s / track.step) % track.N;
-    if (!((car.vLong != null ? car.vLong : car.speed) > 0.5) || Math.cos(car.h) * track.tx[i] + Math.sin(car.h) * track.tz[i] < 0.5) return;
+    if (!((car.vLong != null ? car.vLong : car.speed) > 0.5) || Math.cos(car.h) * track.tx[i] + Math.sin(car.h) * track.tz[i] < PIT_CAP_COS || pitUnsettled(track, car, i, 0)) return;
+    const b = (G.brains && G.brains.get && G.brains.get(car)) || (car.net && car.net.brain) || null;
+    if (b && (b.rec || (b.rj && (!car.wantPit || (car.offTrack && !track.inPitArea(car.s, car.d)))))) return;   // (recovering: its own rejoin; a stop only from the track / the entry road)
     if (u >= 0 && track.inPitArea(car.s, car.d)) {
       // committed to the lane (an AI car brushing the pit-entry line is not a pit stop)
       if (car.isPlayer || car.wantPit || pit.side * car.d - track.halfW[i] > 2 || u > 30) { startPit(G, race, car, u); return; }
     }
     if (!car.isPlayer && car.wantPit && ((race.phase === 'racing' && race.laps && car.lap < race.laps) || inQ(race))) startPit(G, race, car, u);
+  }
+  // the car's d is in the same frame as the lane path at u (both on a pit road's coordinates, or both on the track's)
+  function laneFrameOk(track, pit, pg, car, u) {
+    if (!pit.roadD || u < 0) return !pit.roadD || Math.abs(car.d || 0) < pit.roadD / 2;
+    const ld = pit.laneD(track.wrapS(pit.entryS + U.clamp(u, 0.05, pg.P - 0.05)));
+    return ld == null || (Math.abs(ld) > pit.roadD / 2) === (Math.abs(car.d || 0) > pit.roadD / 2);
+  }
+  // spinning / sliding (yaw rate, slip angle; or above vMin facing more than ~45 deg off the track): no autopilot takeover
+  function pitUnsettled(track, car, i, vMin) {
+    const vl = car.vLong || 0, slip = Math.abs(Math.atan2(car.vLat || 0, Math.max(3, Math.abs(vl))));
+    if (Math.abs(car.r || 0) > PIT_CAP_R || slip > PIT_CAP_SLIP) return true;
+    return vMin > 0 && car.speed > vMin && Math.cos(car.h) * track.tx[i] + Math.sin(car.h) * track.tz[i] < 0.7;
   }
   // the entry road (pit entry .. limiter line): HUD / engineer flags only, the player drives
   function playerPitRoad(G, race, car, u) {
@@ -75169,7 +75191,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-20 16:43';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-20 19:48';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -76509,7 +76531,7 @@ OTHER PLAYERS' HONKS: SETTINGS › AUDIO.</div>`;
 //  - Pacing. Urgent calls (box, penalties, give the place back, rain now, car stopped, blue flags, track limits, ...)
 //    skip the limit: critical ones go out at once, the others only wait for an urgent call still being spoken (a
 //    routine one is cut off). Routine calls: at most one every ROUTINE_GAP[verbosity] s, never straight after another
-//    message. Lap-start news is one merged message at the line; the "agenda" calls (insights, tyres, weather outlook,
+//    message, and low-priority news waits (or lapses) while the last minute was already busy. Lap-start news is one merged message at the line; the "agenda" calls (insights, tyres, weather outlook,
 //    rules) go only shortly after the line or a sector split. Nothing waits for a straight.
 // Driving insights: live mini-sector timing of every car per numbered corner (track.corners, split midway between
 // corners) with braking point / minimum speed / throttle-on / exit speed / lock-up / wheelspin per run; the player's
@@ -76518,6 +76540,7 @@ const Engineer = (() => {
   const VERB = { essential: 0, normal: 1, chatty: 2 };
   const ROUTINE_GAP = [18, 10, 7];                  // s between two routine messages (start to start), by verbosity
   const BREATH = 2;                                 // s of silence before a routine message
+  const ROLL_WIN = 60, ROLL_MAX = [3, 4, 6];        // low-priority (pri 2) calls wait while ROLL_MAX[verbosity] messages (answers incl.) went out in the last ROLL_WIN s
   const SLOT_WIN = 7;                               // s after the line / a sector split in which agenda calls may go
   const MAX_AGE = [5, 8, 10, 10];                   // default s a queued call stays valid, by priority
   const FACT_WIN = { pos: 45, gap: 35, laps: 60, tyre: 75, box: 90, boxbox: 90, pit: 45, ot: 60, otb: 60, bat: 45, wx: 120 };
@@ -76727,20 +76750,24 @@ const Engineer = (() => {
     const pri = o.pri != null ? o.pri : 2;
     const m = Object.assign({ cat: 'info', vis: true, sub: '' }, o, { pri, t0: t, maxAge: o.maxAge || MAX_AGE[pri] });
     const k = S.q.findIndex(x => x.key === m.key);
+    if (k >= 0 && S.q[k].asked && !m.asked) return null;   // (a routine call never replaces the driver's answer)
     if (k >= 0) S.q.splice(k, 1);   // a newer trigger of the same call replaces the queued one
     S.q.push(m); S.stats.queued++;
     return m;
   }
-  const klass = m => (m.pri === 0 ? 0 : m.urgent ? 1 : 2);
+  const klass = m => (m.asked ? -1 : m.pri === 0 ? 0 : m.urgent ? 1 : 2);   // (the radio key's answer first)
   function ready(m, t) {
     if (m.notBefore && t < m.notBefore) return false;
     if (m.when && !m.when()) return false;                        // (not now, but still true: e.g. after the stop)
+    if (m.asked) return true;                                     // the radio key: answered at once, cuts in on anything
     if (m.pri === 0) return t >= S.critEnd;                       // (only another critical call being spoken holds it)
     if (m.urgent) return t >= S.urgentEnd;                        // (cuts a routine one off)
     if (t < S.speakEnd + BREATH || t < S.routineFree) return false;  // routine: the rate limit, never straight after a message
     if (m.slot && t - S.slotT > SLOT_WIN) return false;           // agenda: shortly after the line / a sector split
+    if (m.pri >= 2 && recentN(t) >= ROLL_MAX[S.verb]) return false;  // (a busy minute: the low-priority news waits, or lapses)
     return true;
   }
+  function recentN(t) { let n = 0; for (let i = S.log.length - 1; i >= 0 && t - S.log[i].t < ROLL_WIN; i--) n++; return n; }
   const sameSay = r => { const x = S.lastSay.get(r.say || r.text); return x != null && S.race.t - x < SAME_SAY; };
   function flush(G) {
     const race = S.race, t = race.t;
@@ -76783,6 +76810,7 @@ const Engineer = (() => {
     if (m.pri === 0) S.critEnd = end;
     if (m.pri === 0 || m.urgent) { S.urgentEnd = end; S.speakEnd = end; }
     else { S.speakEnd = end; S.routineFree = t + ROUTINE_GAP[S.verb]; }
+    if (m.asked) S.routineFree = Math.max(S.routineFree, t + ROUTINE_GAP[S.verb]);   // (the answer takes the next routine call's slot: no extra chatter)
     S.log.push(m);
     if (S.log.length > 400) S.log.splice(0, S.log.length - 400);
   }
@@ -78253,7 +78281,7 @@ const Engineer = (() => {
     if (!S || S.race !== G.race) init(G);
     const P = G.player, race = G.race;
     if (QS()) {   // qualifying: the session position + the cut
-      queue({ key: 'ask', cat: 'lap', pri: 1, verb: 0, urgent: true, maxAge: 3, build: () => {
+      queue({ key: 'ask', cat: 'lap', pri: 1, verb: 0, urgent: true, asked: true, maxAge: 3, build: () => {
         const st = S.race.qs ? qStat(S.race.qs.idx, P) : null;
         if (!st || st.best == null) return msg(['No time yet in ', sessN(S.race.qs ? S.race.qs.idx : 0), '.'], { short: 'NO TIME YET' });
         const c = cutPart(G, st);
@@ -78262,12 +78290,12 @@ const Engineer = (() => {
       return true;
     }
     if (race.mode === 'timetrial' || (race.order || []).length < 2) {
-      queue({ key: 'ask', cat: 'lap', pri: 1, verb: 0, urgent: true, maxAge: 3, build: () => P.bestLap ? msg(['Best lap is ', lapTP(P.bestLap), '.'], { short: 'BEST ' + fmtLap(P.bestLap) }) : msg('No lap time yet.', { short: 'NO TIME YET' }) });
+      queue({ key: 'ask', cat: 'lap', pri: 1, verb: 0, urgent: true, asked: true, maxAge: 3, build: () => P.bestLap ? msg(['Best lap is ', lapTP(P.bestLap), '.'], { short: 'BEST ' + fmtLap(P.bestLap) }) : msg('No lap time yet.', { short: 'NO TIME YET' }) });
       return true;
     }
     const nz = neuKind(race);
     if (nz) {   // (under the SC / VSC / red flag: no gaps to race, the position and what to do)
-      queue({ key: 'askn', cat: 'rc', pri: 1, verb: 0, urgent: true, maxAge: 6, build: () => {
+      queue({ key: 'askn', cat: 'rc', pri: 1, verb: 0, urgent: true, asked: true, maxAge: 6, build: () => {
         const n = neuKind(race), si = n === 'sc' && typeof RaceControl !== 'undefined' && RaceControl.scInfo ? RaceControl.scInfo(G, P) : null;
         if (!n) return null;
         const what = n === 'red' ? 'Red flag' : n === 'vsc' ? 'VSC' : 'Safety car', todo = n === 'red' ? 'Follow the cars into the pit lane.'
@@ -79695,6 +79723,7 @@ const NetCore = (() => {
     o.qualiCustom = {}; for (const k in Q_CUSTOM) o.qualiCustom[k] = clamp(Math.round(+qa[k]) || Q_CUSTOM[k], 3, 30);   // (grid 'qfull': Q1 / Q2 / Q3)
     o.trackId = trackIds.includes(s.trackId) ? s.trackId : trackIds.includes(DEF.trackId) ? DEF.trackId : trackIds[0];
     o.laps = clamp(Math.round(+s.laps) || DEF.laps, 1, 120);   // (a 100 % race: up to 93 laps)
+    o.lapPct = [25, 50, 100].includes(+s.lapPct) ? +s.lapPct : 0;   // (the lobby's 25 / 50 / 100 % RACE: laps = that share on the circuit, set by the host's client; 0 = a fixed count)
     const hs = Math.round(+s.humanSlots);
     o.humanSlots = clamp(hs > 0 ? hs : s.aiCount == null ? MAX_CARS : DEF.humanSlots, Math.max(2, humans | 0), MAX_CARS);
     const ai = s.aiCount == null || s.aiCount === '' ? NaN : Math.round(+s.aiCount);
@@ -79728,7 +79757,7 @@ const NetCore = (() => {
   function sessionSettings(base, setup) {
     const S = setup.settings, me = setup.cars.find(c => c.id === setup.you) || setup.cars[0];
     return Object.assign({}, base || {}, {
-      mode: setup.mode === 'timetrial' ? 'timetrial' : 'race', trackId: S.trackId, laps: S.laps, difficulty: S.difficulty, weather: S.weather,
+      mode: setup.mode === 'timetrial' ? 'timetrial' : 'race', trackId: S.trackId, laps: S.laps, lapPct: 0, difficulty: S.difficulty, weather: S.weather,   // (lapPct 0: the server's laps as they are - not main's own % RACE from a single-player setting in base)
       timeOfDay: S.timeOfDay, tyreWear: S.tyreWear, twoCompound: !!S.twoCompound, penalties: S.penalties !== false,
       penaltyLevel: OPT.penaltyLevel.includes(S.penaltyLevel) ? S.penaltyLevel : S.penalties === false ? 'off' : DEF.penaltyLevel,
       grassSlip: grassOf(S.grassSlip),   // (the room's: main puts it in G.world for this car's physics)
@@ -101639,7 +101668,7 @@ const EngineerUI = (() => {
     const vol = Math.max(0, Math.min(1, +set(G, 'engVoiceVol', 1)));   // (speech tops out at 1: louder = the game ducked more, below)
     if (vol <= 0) return false;
     const hot = m.pri === 0 || !!m.urgent;
-    if (m.pri === 0 || (hot && !curHot)) { cancelAll(ss); pend = null; speakUntil = 0; }
+    if (m.pri === 0 || m.asked || (hot && !curHot)) { cancelAll(ss); pend = null; speakUntil = 0; }   // (the radio key's answer: at once)
     else if (busy(ss)) {
       if (!hot) { pend = { G, m, at: now() }; return true; }
       // (urgent behind urgent: queued right behind it by the browser)
@@ -101746,7 +101775,7 @@ const EngineerUI = (() => {
       if (!visual || m.vis === false) continue;
       // the newest message is the one on screen: it replaces the current callout, unless that is a critical one
       // still fresh (then it waits a moment, or is dropped)
-      if (cur && !cur.out && cur.m.pri === 0 && m.pri > 0 && cur.t < cur.dur) { q = [{ m, voiced, at: now() }]; continue; }
+      if (cur && !cur.out && cur.m.pri === 0 && m.pri > 0 && !m.asked && cur.t < cur.dur) { q = [{ m, voiced, at: now() }]; continue; }
       q = [];
       if (cur) hide(true);
       show(m, voiced);
@@ -102472,13 +102501,21 @@ const Net = (() => {
   const humansIn = () => (C.room ? C.room.players.length : 1);
   const aiOf = st => (st.aiCount != null ? st.aiCount : Math.max(0, (st.fieldSize | 0) - humansIn()));   // (a room from an older client: fieldSize = total)
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 'S');
+  const trackLen = {};   // circuit lengths (m), built once per circuit for the % RACE options
+  const lenOf = id => { if (trackLen[id] == null) { trackLen[id] = 0; try { if (TRACK_DATA[id] && typeof buildTrack === 'function') trackLen[id] = buildTrack(TRACK_DATA[id]).length || 0; } catch (e) { trackLen[id] = 0; } } return trackLen[id]; };
+  const pctLaps = (p, id) => { id = id || (C.room && C.room.settings.trackId); const L = id ? lenOf(id) : 0; return L > 0 ? Math.min(120, U.raceLaps(p, L)) : 0; };
   const PEN = [['off', 'OFF'], ['lenient', 'LENIENT'], ['standard', 'STANDARD'], ['strict', 'STRICT']];
   // grass slipperiness (CFG.grass; Settings > Rules): 5 % steps, 80 % = the standard grass
   const GRASS = Array.from({ length: 21 }, (_, i) => [i / 20, i * 5 + ' %' + (i === 16 ? ' · STANDARD' : i === 0 ? ' · GRIPS LIKE THE TRACK' : '')]);
   const ROWS = [
     { k: 'mode', label: 'MODE', opts: () => [['race', 'RACE'], ['timetrial', 'TIME TRIAL (GHOSTS)']] },
-    { k: 'trackId', label: 'CIRCUIT', opts: () => ((C.room && C.room.tracks) || trackIds()).filter(id => TRACK_DATA[id]).map(id => [id, (TRACK_DATA[id].name || id).toUpperCase()]) },
-    { k: 'laps', label: 'LAPS', race: true, opts: () => NC.OPT.laps.map(n => [n, String(n)]) },
+    { k: 'trackId', label: 'CIRCUIT', opts: () => ((C.room && C.room.tracks) || trackIds()).filter(id => TRACK_DATA[id]).map(id => [id, (TRACK_DATA[id].name || id).toUpperCase()]),
+      set: (st, v) => (st.lapPct ? { trackId: v, laps: pctLaps(st.lapPct, v) || st.laps } : { trackId: v }) },   // (a % RACE: the new circuit's laps)
+    // the fixed counts + 25 / 50 / 100 % RACE (n) as in single player (menu.js): n = that share of the F1 distance on the
+    // room's circuit (U.raceLaps; the room keeps lapPct + laps, the server races laps, at most 120)
+    { k: 'laps', label: 'LAPS', race: true, get: st => (st.lapPct ? 'p' + st.lapPct : st.laps),
+      opts: () => NC.OPT.laps.map(n => [n, String(n)]).concat([25, 50, 100].map(p => { const n = pctLaps(p); return ['p' + p, p + '% RACE' + (n ? ' (' + n + ')' : '')]; })),
+      set: (st, v) => (typeof v === 'string' ? { lapPct: +v.slice(1), laps: pctLaps(+v.slice(1), st.trackId) || st.laps } : { lapPct: 0, laps: v }) },
     { k: 'humanSlots', label: 'HUMAN PLAYERS', opts: () => range(Math.max(2, humansIn()), MAXC) },
     { k: 'aiCount', label: 'AI RACERS', race: true, get: aiOf, opts: () => range(0, MAXC - ((C.room && C.room.settings.humanSlots) || 2)) },
     { k: 'difficulty', label: 'AI DIFFICULTY', race: true, opts: () => [['easy', 'EASY'], ['medium', 'MEDIUM'], ['hard', 'HARD'], ['extreme', 'EXTREME']] },
@@ -104851,6 +104888,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-20 16:43 -->
+<!-- Apex GP build 2026-10-20 19:48 -->
 </body>
 </html>
