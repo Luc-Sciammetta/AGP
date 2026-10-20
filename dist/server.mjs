@@ -33,7 +33,7 @@ const log = (...a) => { if (!QUIET) console.log(new Date().toISOString().slice(1
 const now = () => performance.now();
 
 // ---------------------------------------------------------------- game logic (same code as the browser)
-const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'damage.js', 'racecontrol.js', 'ai.js', 'race.js', 'quali.js', 'ghost.js', 'netcore.js'];
+const LOGIC = ['util.js', 'names.js', 'config.js', 'livery.js', 'tracks_data.js', 'track.js', 'weather.js', 'physics.js', 'damage.js', 'racecontrol.js', 'ai.js', 'race.js', 'devtools.js', 'quali.js', 'ghost.js', 'netcore.js'];
 function loadLogic() {
   const bundle = path.join(HERE, 'logic.js');
   let src;
@@ -42,11 +42,11 @@ function loadLogic() {
     const dir = ARG.src || process.env.AGP_SRC || path.join(HERE, '..', 'src');
     src = LOGIC.map(f => `// ===== ${f}\n` + fs.readFileSync(path.join(dir, f), 'utf8')).join('\n;\n');
   }
-  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'Damage', 'RaceControl', 'AI', 'Race', 'Quali', 'Ghost', 'NetCore'];
+  const names = ['U', 'NAMES', 'CFG', 'SURF', 'COMPOUNDS', 'TEAMS', 'Livery', 'DIFFICULTY', 'POINTS', 'TRACK_DATA', 'buildTrack', 'Weather', 'Physics', 'createCar', 'Damage', 'RaceControl', 'AI', 'Race', 'DevTools', 'Quali', 'Ghost', 'NetCore'];
   return new Function(src + '\n;return {' + names.map(n => `${n}: typeof ${n} !== 'undefined' ? ${n} : undefined`).join(',') + '};')();
 }
 const L = loadLogic();
-const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, Damage, RaceControl, AI, Race, Quali, Ghost, NetCore: N } = L;   // (RaceControl: the info block's r.rc - it was never bound here, clients got no flags)
+const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrack, Weather, Physics, Damage, RaceControl, AI, Race, DevTools, Quali, Ghost, NetCore: N } = L;   // (RaceControl: the info block's r.rc - it was never bound here, clients got no flags)
 // a player's custom livery (src/livery.js): sanitised here (hex colours, name / code lengths, a known pattern), shown to
 // everyone (room players, race entry list, time-trial roster / leaderboard); the car keeps its team slot (p.team)
 const LV = L.Livery, cleanLivery = o => (o && LV ? LV.clean(o) : null);
@@ -56,7 +56,7 @@ const getTrack = id => trackCache[id] || (trackCache[id] = buildTrack(TRACK_DATA
 const STEP = 1 / CFG.physicsHz, STEPMS = 1000 / CFG.physicsHz;
 const IDLE = { throttle: 0, brake: 1, steer: 0, boost: false, aeroPress: false, hold: true };
 const MAX_ROOMS = +(process.env.AGP_MAX_ROOMS || 200), MAX_IN_ROOM = 20, RECONNECT_S = 60, LOAD_TIMEOUT = 15000, AFK_MS = 3000;
-const AI_NEAR = 20;   // m: an AI car this close to another drives at 60 Hz on the server, else 30 Hz (RaceSim.step)
+const AI_NEAR = 20, AI_CLOSE = 8;   // m: an AI car this close to another drives at 30 Hz / 60 Hz on the server, else 20 Hz (RaceSim.aiInput)
 const QGRID_WAIT = 12000;   // qualifying over: ms the lights wait for every racer's 'loaded' (the grid built, the result read)
 const EMO_TXT = new Map(N.EMOTES);   // quick emotes: key -> text (NetCore.EMOTES, the same list the page shows)
 // fast relay: a human car's state goes to the drivers near it the moment it arrives (the 30 Hz snapshot carries the AI
@@ -251,6 +251,7 @@ function createRoom(host, settings, me) {
   log(`room ${code} created by #${host.id} ${dname(host)}`);
 }
 function joinRoom(room, p, me) {
+  if (room.kicked && room.kicked.has(p.token)) { send(p, { t: 'error', code: 'kicked', msg: 'The host removed you from room ' + N.fmtCode(room.code) }); return false; }   // (dev tools: kicked)
   const cap = Math.min(MAX_IN_ROOM, room.settings.humanSlots || MAX_IN_ROOM);
   if (room.players.length >= cap && !room.players.includes(p)) { send(p, { t: 'error', code: 'full', msg: `Room ${N.fmtCode(room.code)} is full: ${room.players.length} of ${cap} drivers`, cap }); return false; }
   if (p.room && p.room !== room) leaveRoom(p, 'switch');
@@ -300,6 +301,13 @@ function suitCompound(race, c) {
   const need = w >= x.W ? 'W' : w >= x.I ? 'I' : null;
   return need || (isWet(c) ? 'M' : c);
 }
+
+// a player's car epochs run on from session to session (and phase to phase): a STATE packet from an earlier race or
+// qualifying never matches the car's epoch now. Every race started its cars at epoch 1: the last race's cool-down lap, still
+// streaming behind the next race's loading screen, became the new race's car (its pose far along the track, its worn
+// tyres) and the new session's states were dropped (seq from 1 again: 'older'); no report for 3 s at lights out -> the AI
+// drove the car from there, and the player's car jumped to it with those tyres (2026-10-20). Epoch 0 is never used
+const nextEpoch = p => (p.ep = ((p.ep | 0) % 255) + 1);
 
 // one-car SNAP to every racer within NEAR of `car` (car: {id, x, z}; rep = its fresh state sample)
 const _relay = Buffer.allocUnsafe(N.SNAP_HEAD + N.SNAP_CAR), _relayDv = new DataView(_relay.buffer, _relay.byteOffset, _relay.byteLength);
@@ -363,7 +371,7 @@ class RaceSim {
         car.driver = { first: dn.first, last: dn.last, code: makeCode(nm.last, nm.first), number: p.number };   // (the tower code comes from the player's name, livery or not)
         if (p.livery && LV) car.team = LV.team(p.livery);   // (same car: perf 1 = the AI's neutral pace when it drives a dropped player)
         car.code = car.driver.code; car.name = dn.last; car.number = p.number; car.firstName = dn.first; car.lastName = dn.last;
-        car.net = { p, dname: dname(p), typed: nm, epoch: 1, auth: 'client', why: null, rep: null, prev: null, recvT: now(), afk: false, lobby: false, brain: null, bad: 0, stale: 0, n: 0, rep0: null, ex: 0, ez: 0, eh: 0 };
+        car.net = { p, dname: dname(p), typed: nm, epoch: nextEpoch(p), auth: 'client', why: null, rep: null, prev: null, recvT: now(), afk: false, lobby: false, brain: null, bad: 0, stale: 0, n: 0, rep0: null, ex: 0, ez: 0, eh: 0 };
         car.pitManual = true;   // (Race: the player drives the pit entry road; the autopilot takes the car at the limiter line)
         car.strategy = { auto: false, stops: [], plan: '', pending: null }; car.wantPit = false; car.pitSpeedingChance = 0;
         const c = N.COMP.includes(p.compound) ? p.compound : suitCompound(race, 'M');   // (a picked tyre exactly; AUTO 'A': the one the conditions call for)
@@ -527,6 +535,22 @@ class RaceSim {
     const L = G.cars.filter(c => !c.net && !c.dnf && !c.finished && !c.inPitLane && !(c._race && c._race.pit)).sort((a, b) => onT(a) - onT(b));
     for (const c of L.slice(0, Math.min(3, m.n | 0))) Race.retire(G, race, c, 'Engine');
   }
+  // dev tools (devtools.js; the host's Tab keys, onDev checked the host): applied here (authoritative), everyone told ('devn'); a
+  // human's car: its client does the own-car part (loc). Battery / repair / yellow without a car: the host's own car
+  onDev(p, m) {
+    const G = this.G, race = this.race, op = m.op, O = DevTools && DevTools.OPS[op];
+    if (!O || O[3] || op === 'kick') return send(p, { t: 'devr', op, why: 'not a tool' });
+    let car = m.id != null && m.id >= 0 ? G.cars.find(c => c.id === (m.id | 0)) || null : null;
+    if (m.id != null && m.id >= 0 && !car) return send(p, { t: 'devr', op, why: 'no such car' });
+    if (!car && (O[2] === 1 || op === 'yel')) car = this.byPid.get(p.id) || null;
+    const r = DevTools.apply(G, op, car, { who: 'Host', srv: true });
+    if (!r.ok) return send(p, { t: 'devr', op, why: r.why });
+    if (op === 'last') this.rKey = '';   // (the race block with the new lap count goes out now)
+    const W = op === 'wx' ? (race.phase === 'quali' && race.qs && race.qs.W) || race.wx || G.weather : null;
+    sendAll(this.room, { t: 'devn', op, id: car ? car.id : -1, txt: r.txt, loc: r.loc || undefined, k: r.k });
+    if (W) sendAll(this.room, { t: 'wx', x: W.x || 0, wet: W.wet, rain: W.rain, trend: W.trend || 0 });
+    log(`room ${this.room.code}: dev ${op}${car ? ' #' + car.id : ''} (host #${p.id})`);
+  }
   onPitc(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c)) { car.nextCompound = m.c; car.wxStop = true; } }
   // ---- control hand-over (epochs): the client ignores / the server rejects everything from an older epoch
   ctl(car, stT) {   // stT: the time of the car's state (its last physics step) when handing it back
@@ -570,11 +594,14 @@ class RaceSim {
   }
   // One physics step (120 Hz: every car's physics, the human cars' reported poses, contact). The control - the autopilots'
   // inputs (held for the pair's second step, a one-shot aero press dropped) and Race.update (timing, race control, the SC,
-  // penalties: crossing times are interpolated) - runs every second step (60 Hz); the AI's driving at 60 Hz while another
-  // car is within AI_NEAR m, else every fourth step (30 Hz, staggered by car id; its last input held). Measured (Node,
-  // 10-12 AI cars, Montreal / Singapore / Harbour / Vortex / Jeddah): best laps within 0.1 % of 120 Hz, no extra
-  // contacts or offs; the server's cost per AI car about a third (a 0.1-CPU host runs a 6-car race: before, it dropped
-  // steps and every car stuttered). Deterministic: the rate follows the race state only
+  // penalties: crossing times are interpolated) - runs every second step (60 Hz); the AI's driving (aiInput) at 60 Hz
+  // with another car within AI_CLOSE m, 30 Hz within AI_NEAR m, else 20 Hz (staggered by car id; its last input held), its
+  // dt the time since its last call. Deterministic: the rate follows the race state only
+  // (2026-10-20: was 60 Hz within 20 m, else 30 Hz, and every 30 Hz call was given half its dt - k - _aiK >= 4 counted as
+  // 'fresh': the AI's own clocks ran slow and the multiplayer AI was ~0.6 % a lap quicker than single player's 120 Hz AI.
+  // Node, the server's stepping, 10 AI cars: 4 tracks x 2 seeds x 3 laps, 120 Hz 97.371 s avg best / 295.22 s winner,
+  // old 96.761 / 293.68, now 97.418 / 295.28; 6 tracks x 3 seeds x 2 laps contacts 12 (old rate, right dt) -> 5; AI.drive
+  // calls -30 %)
   heldInput(car, inp, k) {
     const h = car._hin || (car._hin = { throttle: 0, brake: 0, steer: 0, boost: false, aeroPress: false, hold: false, kb: undefined, reverse: false });
     h.throttle = inp.throttle || 0; h.brake = inp.brake || 0; h.steer = inp.steer || 0; h.boost = !!inp.boost; h.aeroPress = !!inp.aeroPress;
@@ -582,12 +609,17 @@ class RaceSim {
     return inp;
   }
   heldNext(car, k) { const h = car._hin; if (!h || car._hinS !== k - 1) return null; h.aeroPress = false; return h; }
-  // the AI's input for control step k: a fresh one when due (near another car, its 30 Hz turn, nothing held), else its last
+  // the AI's input for control step k: a fresh one when due (its 20 Hz turn, its 30 Hz turn with a car near, every control
+  // step with one close, nothing held / a gap: after the pit lane, a hand-over), else its last
   aiInput(car, brain, k) {
-    const cars = this.G.cars;
-    const fresh = car._aiK == null || k < car._aiK || k - car._aiK >= 4 || !car._ain;   // (k < _aiK: the steps restarted, at the lights)
-    let due = fresh || ((k >> 1) + car.id) % 2 === 0;
-    if (!due) for (let j = 0; j < cars.length; j++) { const o = cars[j]; if (o !== car && (o.x - car.x) * (o.x - car.x) + (o.z - car.z) * (o.z - car.z) < AI_NEAR * AI_NEAR) { due = true; break; } }
+    const cars = this.G.cars, q = (k >> 1) + car.id;
+    const fresh = car._aiK == null || k < car._aiK || k - car._aiK > 6 || !car._ain;   // (k < _aiK: the steps restarted, at the lights)
+    let due = fresh || q % 3 === 0;
+    if (!due) {
+      let m = 0;
+      for (let j = 0; j < cars.length; j++) { const o = cars[j]; if (o === car) continue; const dx = o.x - car.x, dz = o.z - car.z, d2 = dx * dx + dz * dz; if (d2 < AI_CLOSE * AI_CLOSE) { m = 2; break; } if (d2 < AI_NEAR * AI_NEAR) m = 1; }
+      due = m === 2 || (m === 1 && q % 2 === 0);
+    }
     if (!due) { const h = car._ain; h.aeroPress = false; return h; }
     const inp = AI.drive(brain, car, this.G, (fresh ? 2 : k - car._aiK) * STEP);
     car._aiK = k;
@@ -605,9 +637,9 @@ class RaceSim {
         // (race control on: a retired car stays where it stopped and its job moves it - the server has it from then on, 'rc')
         // (a red flag: the server has every car until the restart's lights go out - the AI drives it in, race control lines it up)
         const want = race.rc && race.rc.on && race.rc.rf && !car.dnf ? 'rc' : car.dnf && car.retired && race.rc && race.rc.on ? 'rc' : car.kinematic ? 'pit' : !on || n.afk ? 'ai' : null;
-        if (want && n.auth === 'client') { n.auth = 'server'; n.why = want; n.epoch = (n.epoch % 255) + 1; this.ctl(car); }
+        if (want && n.auth === 'client') { n.auth = 'server'; n.why = want; n.epoch = nextEpoch(n.p); this.ctl(car); }
         else if (want && n.why !== want) { n.why = want; this.ctl(car); }
-        else if (!want && n.auth === 'server') { n.auth = 'client'; n.why = null; n.epoch = (n.epoch % 255) + 1; n.rep = null; n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; if (race.qs) car.wantPit = false; this.ctl(car, tNow - STEPMS); }
+        else if (!want && n.auth === 'server') { n.auth = 'client'; n.why = null; n.epoch = nextEpoch(n.p); n.rep = null; n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; if (race.qs) car.wantPit = false; this.ctl(car, tNow - STEPMS); }
         if (n.auth === 'client') { this.netPose(car, n, tNow, dt); continue; }
         if (car.kinematic) continue;
         if (race.phase === 'quali' && race.qs) car.wantPit = true;   // (qualifying: away / offline on track -> the AI drives it to its garage)
@@ -692,6 +724,11 @@ class RaceSim {
       this.q.grid = { t: 'qgrid', cars: G.cars.map(c => ({ id: c.id, grid: c.grid, compound: c.tyre.compound })), pen: qs.pen, warn: qs.warn, imp: qs.imp,
         final: (qs.final || []).map(r => ({ id: r.id, pos: r.pos, grid: r.grid, q: r.q.map(r3), pen: r.pen, why: r.why })) };
       sendAll(this.room, this.q.grid);
+      // a human still driving (the in-lap) is on the grid now: a new epoch and the grid pose (after the grid message, so the
+      // client has placed its car there itself), else its in-lap states - in flight, or sent until its client has the
+      // grid - were this car's pose on the grid and every grid state after them a 'jump' (refused): the AI took the car
+      // at lights out from the in-lap pose, with the qualifying tyres' wear (2026-10-20)
+      for (const c of G.cars) { const n = c.net; if (!n || n.auth !== 'client') continue; n.epoch = nextEpoch(n.p); n.rep = n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; this.ctl(c, tNow); }
       this.q.gridT = tNow;
       log(`room ${this.room.code}: qualifying over, pole ${G.race.order[0] ? G.race.order[0].code : '?'}`);
     }
@@ -1100,11 +1137,36 @@ function onText(p, raw) {
     case 'getghost': if (sim && sim.getGhost) sim.getGhost(p, m); break;
     case 'emote': if (room && EMO_TXT.has(m.k) && t - (p.emoteT || 0) > 800) { p.emoteT = t; sendAll(room, { t: 'emote', pid: p.id, k: m.k, txt: EMO_TXT.get(m.k) }); } break;
     case 'honk':   // (honk.js: sound / effect index, relayed to the others in the room, at most ~1 a second a player)
-      if (room && room.sim && Number.isInteger(m.s) && m.s >= 0 && m.s < 16 && Number.isInteger(m.e) && m.e >= 0 && m.e < 8 && t - (p.honkT || 0) >= 900) { p.honkT = t; sendAll(room, { t: 'honk', pid: p.id, s: m.s, e: m.e }, p); }
+      if (room && room.sim && Number.isInteger(m.s) && m.s >= 0 && m.s < 16 && Number.isInteger(m.e) && m.e >= 0 && m.e < 8 && t - (p.honkT || 0) >= 450) { p.honkT = t; sendAll(room, { t: 'honk', pid: p.id, s: m.s, e: m.e }, p); }
       break;
+    case 'devc': onDev(p, m, room, host, sim); break;   // (dev tools: the host's Tab keys; devtools.js)
     case 'leave': if (room) leaveRoom(p, 'left'); send(p, { t: 'left' }); break;
     default: break;
   }
+}
+
+// dev tools (the dev overlay's Tab keys, devtools.js): host only; kick here (any phase: the lobby too), the rest RaceSim.onDev
+function onDev(p, m, room, host, sim) {
+  const t = now(), op = typeof m.op === 'string' ? m.op : '';
+  if (!room) return;
+  if (!host) return send(p, { t: 'devr', op, why: 'host only' });
+  if (t - (p.devT || 0) < 150) return send(p, { t: 'devr', op, why: 'too fast' });
+  p.devT = t;
+  if (op === 'kick') {
+    let q = null;
+    if (m.pid != null) q = room.players.find(x => x.id === (m.pid | 0)) || null;
+    else if (m.id != null && sim && sim.G) { const c = sim.G.cars.find(x => x.id === (m.id | 0)); q = c && c.net ? room.players.find(x => x === c.net.p) || null : null; }
+    if (!q) return send(p, { t: 'devr', op, why: 'not a player' });
+    if (q === p) return send(p, { t: 'devr', op, why: "can't kick yourself" });
+    const nm = dname(q);
+    (room.kicked || (room.kicked = new Set())).add(q.token);
+    send(q, { t: 'devn', op, you: 1, txt: 'The host removed you from the room' });
+    leaveRoom(q, 'kicked');
+    sendAll(room, { t: 'devn', op, id: -1, pid: q.id, txt: 'Host kicked ' + nm });
+    return;
+  }
+  if (!sim || !sim.onDev) return send(p, { t: 'devr', op, why: 'no race' });
+  sim.onDev(p, m);
 }
 
 function onConnection(ws) {
