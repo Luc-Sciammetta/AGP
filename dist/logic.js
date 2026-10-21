@@ -7418,9 +7418,10 @@ const RaceControl = (() => {
   // zone end = an offence; VSC ENDING lasts END_T + up to END_R s; a stop under it: VSC_PIT x the race's pit loss is lost,
   // the rest of the time lost in the lane may be made up after it (the cap lifted). The AI: its target delta (0.2-0.65 s) and
   // the gain VG of its speed on the delta error
-  // a VSC runs >= VSC_MIN..+VSC_MR s from its deploy to VSC ENDING, and never ends while a crew / vehicle is still out (a job
-  // before its clear-up time: the marshals back behind the wall) - user 2026-10-18 (real VSCs: ~1-3 min; some were 22 s)
-  const VSC_MIN = 75, VSC_MR = 30;
+  // a VSC goes to VSC ENDING as soon as its reason is cleared (the level dropped, no crew / vehicle still out: a job before
+  // its clear-up time = the marshals back behind the wall), even under a lap - user 2026-10-21 (the 75-105 s minimum removed;
+  // VSC_MIN / VSC_MR = 0 keep rc.vsMin in the packs)
+  const VSC_MIN = 0, VSC_MR = 0;
   const VSC_K = 1.35, VC_K = 0.85, D0 = 1.0, DCAP = 1.5, DTOL = 0.2, END_T = 10, END_R = 5, VSC_PIT = 0.5, VG = 0.6;
   // obstacles: marshals / vehicles within OB_EDGE m of the asphalt; passing one within OB_LAT m (car centre to its side)
   // faster than OB_V m/s (100 km/h) = an offence (humans); half widths / lengths by kind (marshal, tractor, crane, sweeper)
@@ -15167,7 +15168,20 @@ const Race = (() => {
   // with no stop left, an extra one when a fresh set gains more over the laps left (up to 15) than the cheaper stop costs.
   // Some stay out for track position (a stop 3+ laps off: 20 %); easy / medium / adaptive miss it 45 / 30 / 20 % of the
   // time unless the car ahead is boxing for it (they copy it); hard / extreme never miss it. car.vscBox = the VSC's number
+  const SCX = { re: true };   // (tests: re false = the cheap-stop re-plan off, the A / B of misc9/probe.mjs)
   const VSC_LAPS = 12, VSC_MISS = { easy: 0.45, medium: 0.3, adaptive: 0.2 };
+  // s a stop at the end of lap e (k x the pit loss) and the quickest fresh plan for the laps left gain over the plan as it
+  // stands: the current set to its next stop (`next`, observed wear), the full stop there, the quickest plan after it
+  function cheapGain(race, car, next, e, k, L) {
+    const left = race.laps - e, used = car.compoundsUsed, a0 = Math.max(0, next.lap - e), r = wearPerLap(race, car, L);
+    const box = planOptions(race, left, null, used)[0];
+    if (!box) return -Infinity;
+    const u2 = used.indexOf(next.compound) < 0 ? used.concat(next.compound) : used, rest = left - a0 > 0 ? planOptions(race, left - a0, next.compound, u2)[0] : null;
+    if (left - a0 > 0 && !rest) return Infinity;   // (the plan as it stands no longer covers the race)
+    let stay = (rest ? rest.t : 0) + race.pitLossEst;
+    for (let i = 0; i < a0; i++) stay += lapS(race, car.tyre.compound, car.tyre.wear + (0.5 + i) * r);
+    return stay - (box.t + k * race.pitLossEst);
+  }
   function vscPit(G, race, car, k) {
     const st = car.strategy, R = car._race;
     if (car.isPlayer || car.net || car.wantPit || car.finished || car.dnf || car.kinematic || !R || R.pit || car.giveBack || !st || st.auto === false || !race.laps || !race.wearScale) return false;
@@ -15179,8 +15193,17 @@ const Race = (() => {
     let c = null;
     if (next && tyreSuits(race, next.compound, car)) {
       const dl = next.lap - e;
-      if (dl > VSC_LAPS || (dl >= 3 && rr() < 0.2) || (dl > 0 && !moveFits(race, car, next, e))) return false;
-      c = next.compound; st.pending = next;
+      if (dl >= 3 && rr() < 0.2) return false;   // (track position: a split strategy)
+      if (dl > VSC_LAPS || (dl > 0 && !moveFits(race, car, next, e))) {
+        // (user 2026-10-21: the planned stop can't just come forward - a fresh plan from this stop that needs no more stops
+        // than are left (this one counted) still makes the cheap stop pay: box, replan() re-plans the rest after it)
+        if (!SCX.re || !(race.rc && race.rc.sp)) return false;   // (the safety car only: under the VSC the A / B showed no gain, 3 cars -2.5 s)
+        const left = race.laps - e, pl = left >= 3 ? choosePlan(race, st, left, null, car.compoundsUsed, e, 'best') : null;
+        if (!pl || !tyreSuits(race, pl.seq[0], car)) return false;
+        const g = cheapGain(race, car, next, e, k, L);
+        if (!(g > 2 + 2 * rr())) return false;   // (it pays by 2 s+ (the model counts no places lost to the cars that stay out); 2-4 s: some box, some stay out - split strategies)
+        c = pl.seq[0]; st.pending = null; car.vscRe = 1;
+      } else { c = next.compound; st.pending = next; }
     } else {
       const left = race.laps - e;
       if (left < 3) return false;
@@ -16117,6 +16140,13 @@ const Race = (() => {
   function rfTyre(G, race, car) {
     if (car.isPlayer || car.net) return car.tyre.compound;
     const st = car.strategy, next = st && st.auto !== false ? nextStop(st) : null, w = wetCompound(race, car);
+    // (user 2026-10-21: the free change under the red flag - the quickest plan for the laps left from fresh tyres, any
+    // compound (the two-compound rule counted); its plan from the restart replaces the old one)
+    if (!w && st && st.auto !== false && st.key != null && race.laps && race.wearScale > 0 && !(race.wx && (race.wx.wet || 0) > 0.03)) {
+      const L = G.track.length, n = Math.max(1, Math.round(remainingLaps(race, car, L))), off = race.laps - n;
+      const pl = choosePlan(race, st, n, null, car.compoundsUsed, off, 'best');
+      if (pl && tyreSuits(race, pl.seq[0], car)) { setPlan(st, pl.seq[0], pl); st.rfPlan = st.plan; return pl.seq[0]; }
+    }
     if (next && tyreSuits(race, next.compound, car)) { next.done = true; return next.compound; }
     if (w) return w;
     return tyreSuits(race, car.tyre.compound, car) ? car.tyre.compound : pickCompound(race, car, G.track.length, false) || car.tyre.compound;
@@ -18212,7 +18242,7 @@ const Race = (() => {
     classify: G => (G.race && G.race.mode !== 'timetrial' ? classify(G, false) : null),   // provisional results
     lapsToCliff: (G, c) => lapsToCliff(G.race, c),
     _strat: { quickest: (race, n) => planOptions(race, n, null, [])[0] || null, options: (race, n) => planOptions(race, n, null, []),
-      gain: (G, car, c, n) => freshGain(G.race, car, c, G.track.length, n) },   // (tests: the model's quickest plan / every plan, quickest first, over n laps / a fresh set c's gain over car's over n laps)
+      gain: (G, car, c, n) => freshGain(G.race, car, c, G.track.length, n), scx: SCX },   // (tests: the model's quickest plan / every plan, quickest first, over n laps / a fresh set c's gain over car's over n laps)
     // an AI car's stops for the race as now planned (made + still planned, a stop under way included); null: no Race plan
     plannedStops: car => { const st = car && car.strategy; if (!st || st.auto === false || !st.stops) return null; const left = st.stops.filter(x => !x.done).length; return (car.pitStops | 0) + left + (car.wantPit && !st.pending ? 1 : 0); },
     // dynamic weather: the engineer's current view for the player {pit, c1, j, gain} (null = no call)

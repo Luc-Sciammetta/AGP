@@ -167,7 +167,8 @@ html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
    the weather under it, then the pit-lane limit sign (the pit column); top centre ONE column under the mirror (.agp-top): the
    race-control row (.agp-rcrow: one card - SC / VSC / red flag / a local flag - with the delta or the SC gap strip on its right)
    then the notification stack (.agp-ntf: the engineer's callout + banners, 2 cards at most, the rest wait: hud.js flash);
-   centre at 29em the braking cue (none under the SC / VSC / red flag, at a standstill, in the pit way); bottom centre the pit panel
+   the braking cue (2026-10-21, user: it sat in the line of sight to the cars ahead) low, just above the cluster's pills (11.2em; none
+   under the red flag, at a standstill, in the pit way; kept under the SC / VSC); bottom centre the pit panel
    (tyres), the status pills (BOX THIS LAP, PIT LIMITER, ...), the cluster; bottom left the turn / PIT LANE tag with the pit timer
    (lane / stop time) above it; bottom right the minimap; the race-control feed (other cars' news) under the tower, beside it from 13 cars. */
 .agp-top { position: absolute; top: 9.8em; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: .5em; pointer-events: none; }
@@ -211,11 +212,15 @@ html.agp-touch .agp-hud .agp-pit { top: 13.4em; bottom: auto; left: 14.1em; }
 .agp-bn-pos .agp-bn-sub { margin: 0; font-size: 1em; }
 
 /* ---------------------------------------------------------------- braking guide */
-/* compact cue above the car: side bars fill in towards the centre as the braking point nears (yellow), then the card goes
+/* compact cue just above the cluster (bottom centre; 2026-10-21: was mid-screen in the line of sight to the cars ahead): side bars fill in towards the centre as the braking point nears (yellow), then the card goes
    red at the key-press point; target gear + km/h for the corner. Colours = the racing line's green / yellow / red. */
-.agp-bcue { --c: #ffd21f; position: absolute; left: 50%; top: calc(29em / 1.22); transform: translateX(-50%); display: none; align-items: center; gap: .45em; font-size: 1.22em;
+.agp-bcue { --c: #ffd21f; position: absolute; left: 50%; bottom: calc(11.2em / 1.22); transform: translateX(-50%); display: none; align-items: center; gap: .45em; font-size: 1.22em;
   pointer-events: none; filter: drop-shadow(0 .25em .6em rgba(0, 0, 0, .45)); }
 .agp-bcue[data-s] { display: flex; }
+/* the cue's slot is the one of the STRAIGHT MODE AVAILABLE text cue (the cluster's .agp-cue): that yields while the braking cue shows (the aero pill keeps blinking) */
+.agp-bcue[data-s] ~ .agp-cluster .agp-cue { visibility: hidden; }
+/* a phone: the cluster is 0.88 x and 0.6em from the bottom (mobile.js) -> its top is at 8.7em */
+html.agp-touch .agp-hud .agp-bcue { bottom: calc(9.4em / 1.22); }
 .agp-bcue[data-s="brake"], .agp-bcue[data-s="late"] { --c: #ff2e26; }
 .agp-bcue-side { display: flex; gap: .2em; }
 .agp-bcue-side i { width: .62em; height: 1.55em; border-radius: .12em; background: rgba(255, 255, 255, .16); transform: skewX(-18deg); transition: background .08s; }
@@ -62478,9 +62483,10 @@ const RaceControl = (() => {
   // zone end = an offence; VSC ENDING lasts END_T + up to END_R s; a stop under it: VSC_PIT x the race's pit loss is lost,
   // the rest of the time lost in the lane may be made up after it (the cap lifted). The AI: its target delta (0.2-0.65 s) and
   // the gain VG of its speed on the delta error
-  // a VSC runs >= VSC_MIN..+VSC_MR s from its deploy to VSC ENDING, and never ends while a crew / vehicle is still out (a job
-  // before its clear-up time: the marshals back behind the wall) - user 2026-10-18 (real VSCs: ~1-3 min; some were 22 s)
-  const VSC_MIN = 75, VSC_MR = 30;
+  // a VSC goes to VSC ENDING as soon as its reason is cleared (the level dropped, no crew / vehicle still out: a job before
+  // its clear-up time = the marshals back behind the wall), even under a lap - user 2026-10-21 (the 75-105 s minimum removed;
+  // VSC_MIN / VSC_MR = 0 keep rc.vsMin in the packs)
+  const VSC_MIN = 0, VSC_MR = 0;
   const VSC_K = 1.35, VC_K = 0.85, D0 = 1.0, DCAP = 1.5, DTOL = 0.2, END_T = 10, END_R = 5, VSC_PIT = 0.5, VG = 0.6;
   // obstacles: marshals / vehicles within OB_EDGE m of the asphalt; passing one within OB_LAT m (car centre to its side)
   // faster than OB_V m/s (100 km/h) = an offence (humans); half widths / lengths by kind (marshal, tractor, crane, sweeper)
@@ -70227,7 +70233,20 @@ const Race = (() => {
   // with no stop left, an extra one when a fresh set gains more over the laps left (up to 15) than the cheaper stop costs.
   // Some stay out for track position (a stop 3+ laps off: 20 %); easy / medium / adaptive miss it 45 / 30 / 20 % of the
   // time unless the car ahead is boxing for it (they copy it); hard / extreme never miss it. car.vscBox = the VSC's number
+  const SCX = { re: true };   // (tests: re false = the cheap-stop re-plan off, the A / B of misc9/probe.mjs)
   const VSC_LAPS = 12, VSC_MISS = { easy: 0.45, medium: 0.3, adaptive: 0.2 };
+  // s a stop at the end of lap e (k x the pit loss) and the quickest fresh plan for the laps left gain over the plan as it
+  // stands: the current set to its next stop (`next`, observed wear), the full stop there, the quickest plan after it
+  function cheapGain(race, car, next, e, k, L) {
+    const left = race.laps - e, used = car.compoundsUsed, a0 = Math.max(0, next.lap - e), r = wearPerLap(race, car, L);
+    const box = planOptions(race, left, null, used)[0];
+    if (!box) return -Infinity;
+    const u2 = used.indexOf(next.compound) < 0 ? used.concat(next.compound) : used, rest = left - a0 > 0 ? planOptions(race, left - a0, next.compound, u2)[0] : null;
+    if (left - a0 > 0 && !rest) return Infinity;   // (the plan as it stands no longer covers the race)
+    let stay = (rest ? rest.t : 0) + race.pitLossEst;
+    for (let i = 0; i < a0; i++) stay += lapS(race, car.tyre.compound, car.tyre.wear + (0.5 + i) * r);
+    return stay - (box.t + k * race.pitLossEst);
+  }
   function vscPit(G, race, car, k) {
     const st = car.strategy, R = car._race;
     if (car.isPlayer || car.net || car.wantPit || car.finished || car.dnf || car.kinematic || !R || R.pit || car.giveBack || !st || st.auto === false || !race.laps || !race.wearScale) return false;
@@ -70239,8 +70258,17 @@ const Race = (() => {
     let c = null;
     if (next && tyreSuits(race, next.compound, car)) {
       const dl = next.lap - e;
-      if (dl > VSC_LAPS || (dl >= 3 && rr() < 0.2) || (dl > 0 && !moveFits(race, car, next, e))) return false;
-      c = next.compound; st.pending = next;
+      if (dl >= 3 && rr() < 0.2) return false;   // (track position: a split strategy)
+      if (dl > VSC_LAPS || (dl > 0 && !moveFits(race, car, next, e))) {
+        // (user 2026-10-21: the planned stop can't just come forward - a fresh plan from this stop that needs no more stops
+        // than are left (this one counted) still makes the cheap stop pay: box, replan() re-plans the rest after it)
+        if (!SCX.re || !(race.rc && race.rc.sp)) return false;   // (the safety car only: under the VSC the A / B showed no gain, 3 cars -2.5 s)
+        const left = race.laps - e, pl = left >= 3 ? choosePlan(race, st, left, null, car.compoundsUsed, e, 'best') : null;
+        if (!pl || !tyreSuits(race, pl.seq[0], car)) return false;
+        const g = cheapGain(race, car, next, e, k, L);
+        if (!(g > 2 + 2 * rr())) return false;   // (it pays by 2 s+ (the model counts no places lost to the cars that stay out); 2-4 s: some box, some stay out - split strategies)
+        c = pl.seq[0]; st.pending = null; car.vscRe = 1;
+      } else { c = next.compound; st.pending = next; }
     } else {
       const left = race.laps - e;
       if (left < 3) return false;
@@ -71177,6 +71205,13 @@ const Race = (() => {
   function rfTyre(G, race, car) {
     if (car.isPlayer || car.net) return car.tyre.compound;
     const st = car.strategy, next = st && st.auto !== false ? nextStop(st) : null, w = wetCompound(race, car);
+    // (user 2026-10-21: the free change under the red flag - the quickest plan for the laps left from fresh tyres, any
+    // compound (the two-compound rule counted); its plan from the restart replaces the old one)
+    if (!w && st && st.auto !== false && st.key != null && race.laps && race.wearScale > 0 && !(race.wx && (race.wx.wet || 0) > 0.03)) {
+      const L = G.track.length, n = Math.max(1, Math.round(remainingLaps(race, car, L))), off = race.laps - n;
+      const pl = choosePlan(race, st, n, null, car.compoundsUsed, off, 'best');
+      if (pl && tyreSuits(race, pl.seq[0], car)) { setPlan(st, pl.seq[0], pl); st.rfPlan = st.plan; return pl.seq[0]; }
+    }
     if (next && tyreSuits(race, next.compound, car)) { next.done = true; return next.compound; }
     if (w) return w;
     return tyreSuits(race, car.tyre.compound, car) ? car.tyre.compound : pickCompound(race, car, G.track.length, false) || car.tyre.compound;
@@ -73272,7 +73307,7 @@ const Race = (() => {
     classify: G => (G.race && G.race.mode !== 'timetrial' ? classify(G, false) : null),   // provisional results
     lapsToCliff: (G, c) => lapsToCliff(G.race, c),
     _strat: { quickest: (race, n) => planOptions(race, n, null, [])[0] || null, options: (race, n) => planOptions(race, n, null, []),
-      gain: (G, car, c, n) => freshGain(G.race, car, c, G.track.length, n) },   // (tests: the model's quickest plan / every plan, quickest first, over n laps / a fresh set c's gain over car's over n laps)
+      gain: (G, car, c, n) => freshGain(G.race, car, c, G.track.length, n), scx: SCX },   // (tests: the model's quickest plan / every plan, quickest first, over n laps / a fresh set c's gain over car's over n laps)
     // an AI car's stops for the race as now planned (made + still planned, a stop under way included); null: no Race plan
     plannedStops: car => { const st = car && car.strategy; if (!st || st.auto === false || !st.stops) return null; const left = st.stops.filter(x => !x.done).length; return (car.pitStops | 0) + left + (car.wantPit && !st.pending ? 1 : 0); },
     // dynamic weather: the engineer's current view for the player {pit, c1, j, gain} (null = no call)
@@ -75191,7 +75226,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-20 19:48';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-21 14:03';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -93559,25 +93594,29 @@ const HUD = (() => {
     E.vscP.style.transform = 'scaleX(' + (f > 0 ? f : 0).toFixed(3) + ')';
     E.vscN.style.transform = 'scaleX(' + (f < 0 ? -f : 0).toFixed(3) + ')';
   }
-  // race control's marshals / vehicles out on a job, on the minimaps: marshals small orange dots, vehicles orange squares
-  // (xy(x, z) -> sets RCX / RCY; false = outside)
-  const RCA_L = [], RCXY = { x: 0, y: 0 };
+  // race control's vehicles out, on the minimaps (2026-10-21, user: no marshals): triangles pointing the way they head - the safety
+  // car gray, the medical car red, the tractor / crane / sweeper / any other recovery vehicle on a job orange
+  // (xy(x, z) -> sets RCXY.x / .y (+ .r: the rotation of the map: a world heading h points at the screen angle h + r); false = outside)
+  const RCA_L = [], RCXY = { x: 0, y: 0, r: 0 };
+  function rcTri(g, u, h, col) {
+    const th = h + RCXY.r, c = Math.cos(th), s = Math.sin(th), x = RCXY.x, y = RCXY.y;   // (tip 4u ahead, the base 2.6u behind, 5.6u wide)
+    g.beginPath(); g.moveTo(x + 4 * u * c, y + 4 * u * s);
+    g.lineTo(x - 2.6 * u * c + 2.8 * u * s, y - 2.6 * u * s - 2.8 * u * c);
+    g.lineTo(x - 2.6 * u * c - 2.8 * u * s, y - 2.6 * u * s + 2.8 * u * c);
+    g.closePath(); g.fillStyle = col; g.fill(); g.stroke();
+  }
   function rcActs(g, G, u, xy) {
     const rc = G.race && G.race.rc;
-    if (rc && rc.on && typeof RaceControl !== 'undefined' && RaceControl.vehicles) for (const v of RaceControl.vehicles(G)) {   // (the safety car amber, the medical car white: diamonds)
-      if (!v.on || !xy(v.x, v.z)) continue;
-      const r = 2.3 * u;
-      g.beginPath(); g.moveTo(RCXY.x, RCXY.y - r); g.lineTo(RCXY.x + r, RCXY.y); g.lineTo(RCXY.x, RCXY.y + r); g.lineTo(RCXY.x - r, RCXY.y); g.closePath();
-      g.fillStyle = v.k ? '#ffffff' : '#ffb21f'; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 0.6 * u; g.fill(); g.stroke();
-    }
-    if (!rc || !rc.jobs || !rc.jobs.length || typeof RaceControl === 'undefined' || !RaceControl.actors) return;
-    g.fillStyle = '#ff9a1f'; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 0.45 * u;
-    for (const a of RaceControl.actors(G, RCA_L)) {
-      if (a.k > 0 && !a.on) continue;   // (vehicles parked behind the wall: no)
+    if (!rc || !rc.on || typeof RaceControl === 'undefined') return;
+    g.lineJoin = 'round'; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 0.6 * u;
+    if (rc.jobs && rc.jobs.length && RaceControl.actors) for (const a of RaceControl.actors(G, RCA_L)) {
+      if (a.k < 1 || !a.on) continue;   // (no marshals; vehicles parked behind the wall: no)
       if (!xy(a.x, a.z)) continue;
-      g.beginPath();
-      if (a.k > 0) g.rect(RCXY.x - 1.5 * u, RCXY.y - 1.5 * u, 3 * u, 3 * u); else g.arc(RCXY.x, RCXY.y, 0.95 * u, 0, 6.2832);
-      g.fill(); g.stroke();
+      rcTri(g, u, a.h || 0, '#ff9a1f');
+    }
+    if (RaceControl.vehicles) for (const v of RaceControl.vehicles(G)) {   // (the safety car gray, the medical car red: on top, it parks beside a tractor)
+      if (!v.on || !xy(v.x, v.z)) continue;
+      rcTri(g, u, v.h || 0, v.k ? '#ff2a1a' : '#aeb4be');
     }
   }
   // the flagged zones on the full minimap: yellow (double: thicker), slippery red, slow car white
@@ -94267,7 +94306,7 @@ const HUD = (() => {
     const cars = G.cars || [], me = G.player;
     const qFly = !!(G.race && G.race.qs && G.race.phase === 'quali');   // (flying-lap cars get a purple ring)
     rcMap(g, G, u, sc, ox, oz);   // (race control: flagged zones under the dots)
-    rcActs(g, G, u, (x, z) => { RCXY.x = ox + x * sc; RCXY.y = oz + z * sc; return true; });   // (its marshals / vehicles out)
+    rcActs(g, G, u, (x, z) => { RCXY.x = ox + x * sc; RCXY.y = oz + z * sc; RCXY.r = 0; return true; });   // (its vehicles out)
     looseWheels(g, G, u, o => ox + o.x * sc, o => oz + o.z * sc, null);
     g.lineWidth = 0.55 * u; g.strokeStyle = 'rgba(0,0,0,0.85)';
     for (let i = cars.length - 1; i >= 0; i--) {   // two-tone dots: team colour centre, second colour ring
@@ -94493,7 +94532,7 @@ const HUD = (() => {
       g.beginPath(); g.arc(X, Y, 1.22 * u, 0, TAU);
       g.fillStyle = teamColor(c.team); g.fill();
     }
-    rcActs(g, G, u, (x, z) => { const X = a * x - b * z + e, Y = b * x + a * z + f; if ((X - X0) * (X - X0) + (Y - Y0) * (Y - Y0) > lim) return false; RCXY.x = X; RCXY.y = Y; return true; });   // (race control's marshals / vehicles)
+    rcActs(g, G, u, (x, z) => { const X = a * x - b * z + e, Y = b * x + a * z + f; if ((X - X0) * (X - X0) + (Y - Y0) * (Y - Y0) > lim) return false; RCXY.x = X; RCXY.y = Y; RCXY.r = rot; return true; });   // (race control's vehicles)
     const gh = G.ghost;   // time trial: the ghost
     if (gh && gh.visible !== false && isNum(gh.x) && isNum(gh.z)) {
       const x = lx(gh), z = lz(gh), X = a * x - b * z + e, Y = b * x + a * z + f;
@@ -100033,7 +100072,7 @@ const Menu = (() => {
     store();
   }
 
-  return { init, showMain, showSetup, showPause, showResults, showEntryList, showGrid, showChampFinal, showGarage, hide, visible, settings: () => clone(S), setupBox, remember,
+  return { init, showMain, showSetup, showPause, showResults, showEntryList, showGrid, showChampFinal, showGarage, hide, visible, settings: () => clone(S), setupBox, remember, liveryBg: swPat,   // (swPat: the livery-card background, also the lobby's LIVERY tab)
     showQualiGarage, showQualiResult,   // Q1 / Q2 / Q3: the garage (ctl: the single-player default, or net.js'), a session's result
     showRaceControl,   // a DNF in a single-player race: the race control screen (ctl: { speed(k?), skip() })
     showRedFlag,   // the red flag's suspension screen (ctl: { tyre(c?), resume(), mp })
@@ -101937,19 +101976,22 @@ const Net = (() => {
         try { sessionStorage.setItem(SS, m.token); } catch (e) {}
         ping(); setTimeout(ping, 120); setTimeout(ping, 300);
         if (C.want) { const w = C.want; C.want = null; w(); }
+        if (!C.room) send({ t: 'rooms' });   // (the OPEN ROOMS list)
         render();
         return true;
       case 'pong': NC.clockSample(C.clock, m.c, m.s, t); break;
       case 'room': {
         const prev = C.room;
         C.room = m; setOff();
-        if (!prev || prev.code !== m.code) { leaveArm = 0; C.err = ''; C.errCode = ''; setupsSent = ''; }   // (a new room: no stale confirm / errors)
+        if (!prev || prev.code !== m.code) { leaveArm = 0; C.err = ''; C.errCode = ''; setupsSent = ''; pinFor = ''; tab = 'ov'; numErr = ''; }   // (a new room: no stale confirm / errors)
         sendSetups();
-        if (prev && prev.phase !== 'lobby' && m.phase === 'lobby' && !S && scr) render();
         render();
         break;
       }
+      case 'rooms': roomList = Array.isArray(m.rooms) ? m.rooms : []; if (pinFor && !roomList.some(r => r.rid === pinFor)) pinFor = ''; render(); break;   // (the server's OPEN ROOMS list)
       case 'error':
+        if (m.code === 'number') { numErr = String(m.msg || 'That number is taken').toUpperCase(); render(); break; }   // (CAR NUMBER refused: shown by the field)
+        if (m.code === 'noroom' && !C.room) send({ t: 'rooms' });
         C.err = m.msg || 'Error'; C.errCode = m.code || '';
         if (C.room) { const e0 = C.err; clearTimeout(C.errT); C.errT = setTimeout(() => { if (C.err === e0 && C.room) { C.err = ''; render(); } }, 6000); }   // (a lobby message fades after 6 s)
         if (m.code === 'noroom' || m.code === 'version') C.room = null;
@@ -102011,7 +102053,7 @@ const Net = (() => {
   function whenOpen(fn) { if (C.state === 'open') fn(); else { C.want = fn; if (C.state === 'off') connect(C.url || defaultUrl()); } }
   // host a room: roomSettings.humanSlots = human places (the room is full at that many drivers); AI racers are set in the
   // lobby (aiCount; default: the single-player field size minus the humans). fieldSize alone (tests / links) = the old total.
-  function host(roomSettings) {
+  function host(roomSettings, lock) {
     const s = settings(), h = Object.assign({}, cfg.host || {});
     const hs = roomSettings && roomSettings.humanSlots ? roomSettings.humanSlots : hostSlots();
     const legacy = roomSettings && roomSettings.fieldSize && roomSettings.aiCount == null;
@@ -102023,7 +102065,7 @@ const Net = (() => {
       { humanSlots: hs }, legacy ? { aiCount: null } : { aiCount: ai }, roomSettings || {});
     base.penalties = base.penaltyLevel !== 'off';
     leaveArm = 0; C.err = ''; C.errCode = '';
-    whenOpen(() => send({ t: 'host', settings: base, me: meMsg() }));
+    whenOpen(() => send({ t: 'host', settings: base, me: meMsg(), lock: lock || undefined }));   // (lock: { on, code? } = a locked room: joining needs its code)
   }
   function join(code) {
     code = NC.cleanCode(code);
@@ -102491,10 +102533,11 @@ const Net = (() => {
   }
 
   // ---------------------------------------------------------------- lobby UI
-  // MULTIPLAYER screen (scr 'connect'): your name (+ how it shows), HOST A ROOM (how many human players) / JOIN A ROOM (the
-  // 6-digit code), the server address folded into one line when it is the page's own server (or the one that answered
-  // last time), the connection as a dot. Room screen (scr 'room'): the code, drivers + open places, your car (team,
-  // number, tyre, CAR SETUP: private, saved per circuit), the host's settings (human places, AI racers, penalty level, …).
+  // MULTIPLAYER screen (scr 'connect'): a room browser - your name, CREATE ROOM (human places, open / locked + its code),
+  // JOIN WITH A CODE, the server's OPEN ROOMS list; the server address folded into one line when it is the page's own
+  // server (or the one that answered last time), the connection as a dot. Room screen (scr 'room', 2026-10-21): tabs RACE
+  // OVERVIEW (drivers | track + layout, wings & tyres | weather, the host's rules) and LIVERY (team / custom livery, the
+  // typed car number); the host also TRACK / FIELD / RULES / WEATHER; E = the emote list.
   const trackIds = () => Object.keys(TRACK_DATA).filter(id => !TRACK_DATA[id].draft);
   const MAXC = NC.MAX_CARS || 20;
   const range = (a, b) => { const o = []; for (let i = a; i <= b; i++) o.push([i, String(i)]); return o; };
@@ -102539,7 +102582,8 @@ const Net = (() => {
     return Object.keys(P).map(k => [k, k.toUpperCase() + ' · ' + P[k].join(' ') + ' MIN']).concat([['custom', 'CUSTOM']]); })();
   const COMPS = [['A', 'AUTO'], ['S', 'SOFT'], ['M', 'MEDIUM'], ['H', 'HARD'], ['I', 'INTER'], ['W', 'WET']];   // A = AUTO: the tyre the conditions call for
   // AUTO resolved as the server does it (Weather.startChoice; dynamic weather: from the forecast when the race starts)
-  const autoTyre = w => { if (w === 'dynamic' || w === 'custom' || typeof Weather === 'undefined' || !Weather.startChoice) return null; try { return Weather.startChoice(Weather.create({ mode: w || 'dry' }), { slick: 'M' }); } catch (e) { return null; } };
+  const autoMemo = {};   // (per weather mode: the lobby asks on every update)
+  const autoTyre = w => { if (w === 'dynamic' || w === 'custom' || typeof Weather === 'undefined' || !Weather.startChoice) return null; if (w in autoMemo) return autoMemo[w]; try { return (autoMemo[w] = Weather.startChoice(Weather.create({ mode: w || 'dry' }), { slick: 'M' })); } catch (e) { return null; } };
   const TYRES = { S: 'SOFTS', M: 'MEDIUMS', H: 'HARDS', I: 'INTERS', W: 'WETS' };
   const tyreLabel = (c, w) => (c === 'A' || !c ? 'AUTO · ' + (autoTyre(w) ? TYRES[autoTyre(w)] : 'FROM THE FORECAST') : (COMPS.find(x => x[0] === c) || COMPS[0])[1]);
   // START TYRE is fitted exactly as picked (race and time trial): a note when it doesn't suit the room's weather
@@ -102551,6 +102595,18 @@ const Net = (() => {
   const codeOf = n => { const p = splitName(n); return typeof NAMES !== 'undefined' && NAMES.code ? NAMES.code(p.last, p.first) : p.last.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 3); };
   const namePv = n => `SHOWS AS <span>${nameHTML(NC.cleanName(n))}</span> · TOWER <b>${esc(codeOf(NC.cleanName(n)))}</b>`;
   const shortUrl = u => String(u || '').replace(/^wss?:\/\//i, '').replace(/\/+$/, '').replace(/:8787$/, '');
+  // The lobby draws into regions ([data-reg]): a screen's skeleton is built once (per screen / tab / host), then only the
+  // regions whose HTML changed are rewritten (a ping update rewrites the drivers list, nothing else), and no region is
+  // rewritten while a mouse button / finger is down on the lobby (the click lands on the element it started on); one
+  // delegated click handler on the root. Local changes (a tab, a setting, your car) are drawn at once, before the server's
+  // room message confirms them.
+  let tab = 'ov', held = 0, pendR = false, emoOpen = false, numErr = '', lockOn = false, pinFor = '', roomList = null, browseT = 0, skelKey = '';
+  const regC = {};
+  const TABS = [['ov', 'RACE OVERVIEW'], ['lv', 'LIVERY']], HTABS = [['track', 'TRACK'], ['field', 'FIELD'], ['rules', 'RULES'], ['wx', 'WEATHER']];
+  const ROW_TAB = { mode: 'track', trackId: 'track', laps: 'track', humanSlots: 'field', aiCount: 'field', difficulty: 'field', grid: 'field', qualiLen: 'field', qualiQ1: 'field', qualiQ2: 'field', qualiQ3: 'field',
+    contact: 'rules', penaltyLevel: 'rules', tyreWear: 'rules', grassSlip: 'rules', damage: 'rules', weather: 'wx', timeOfDay: 'wx', qualiDay: 'wx' };
+  const RULE_KEYS = ['laps', 'humanSlots', 'aiCount', 'difficulty', 'grid', 'qualiLen', 'contact', 'penaltyLevel', 'tyreWear', 'grassSlip', 'damage'];
+  const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-label="locked"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.2c.7 0 1.3.6 1.3 1.3v9.4c0 .7-.6 1.3-1.3 1.3H5.8c-.7 0-1.3-.6-1.3-1.3v-9.4c0-.7.6-1.3 1.3-1.3zm2.6 0h4.8V7a2.4 2.4 0 0 0-4.8 0z"/></svg>';
   function build() {
     if (root) return;
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -102560,30 +102616,51 @@ const Net = (() => {
     E.box = root.querySelector('[data-r="box"]');
     E.emoFeed = document.createElement('div'); E.emoFeed.className = 'agp-net-emofeed'; root.appendChild(E.emoFeed);   // (outside the re-rendered box)
     root.addEventListener('click', onClick);
+    root.addEventListener('pointerdown', e => { if (e.button === 0) held = nowMs(); }, true);
+    const up = () => { const h = held; if (h) setTimeout(() => { if (held !== h) return; held = 0; if (pendR) { pendR = false; render(); } }, 0); };   // (after the click has been handled; not a newer press)
+    addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true);
     root.addEventListener('keydown', e => {
       const r = e.target.dataset.r, enter = e.code === 'Enter' || e.code === 'NumpadEnter';
       if (r === 'code' && enter) { e.preventDefault(); doJoin(); }
+      if (r === 'pin' && enter) { e.preventDefault(); joinRid(pinFor, e.target.value); }
+      if (r === 'num' && enter) { e.preventDefault(); setNumber(e.target.value); }
       if (r === 'url' && enter) { e.preventDefault(); e.target.blur(); connect(e.target.value); }
       if (r === 'name' && enter) { e.preventDefault(); e.target.blur(); }
     });
     root.addEventListener('input', e => {
-      if (e.target.dataset.r === 'code') { const v = NC.cleanCode(e.target.value); e.target.value = v.length > 3 ? v.slice(0, 3) + ' ' + v.slice(3) : v; }
-      if (e.target.dataset.r === 'name') { const pv = E.box.querySelector('[data-r="namepv"]'); if (pv) pv.innerHTML = namePv(e.target.value); }
+      const r = e.target.dataset.r;
+      if (r === 'code' || r === 'pin' || r === 'hcode') { const v = NC.cleanCode(e.target.value); e.target.value = v.length > 3 ? v.slice(0, 3) + ' ' + v.slice(3) : v; }
+      if (r === 'num') e.target.value = e.target.value.replace(/\D/g, '').slice(0, 2);
+      if (r === 'name') { const pv = E.box.querySelector('[data-r="namepv"]'); if (pv) pv.innerHTML = namePv(e.target.value); }
     });
     root.addEventListener('change', e => {
       if (e.target.dataset.r === 'name') { cfg.name = NC.cleanName(e.target.value); e.target.value = cfg.name; save(); if (C.room) setMe({ name: cfg.name }); }
       if (e.target.dataset.r === 'url') { cfg.url = e.target.value.trim(); save(); }
+      if (e.target.dataset.r === 'num') setNumber(e.target.value);
     });
     addEventListener('keydown', e => {
       if (!scr && Q.scr && e.code === 'Escape' && !e.repeat && S && api && !api.G.paused && api.Game.setPaused) { e.preventDefault(); api.Game.setPaused(true); return; }   // (qualifying garage / result: the pause menu)
-      if (!scr || e.code !== 'Escape' || e.repeat) return;
-      if (e.target && e.target.tagName === 'INPUT') { e.target.blur(); return; }
+      if (!scr || e.repeat) return;
+      const typing = e.target && e.target.tagName === 'INPUT';
+      // EMOTES: E opens the list, 1-9 / 0 (or a click) sends one, E / ESC closes it
+      if (scr === 'room' && !typing && (e.code === 'KeyE' || emoOpen && /^(Digit|Numpad)\d$/.test(e.code))) {
+        e.preventDefault(); e.stopPropagation();
+        if (e.code === 'KeyE') emoOpen = !emoOpen;
+        else { const d = +e.code.slice(-1), em = EMOTES[d === 0 ? 9 : d - 1]; if (em) emote(em[0]); emoOpen = false; }
+        render(); return;
+      }
+      if (e.code !== 'Escape') return;
+      if (typing) { e.target.blur(); return; }
       e.preventDefault(); e.stopPropagation();
+      if (emoOpen) { emoOpen = false; render(); return; }
+      if (pinFor) { pinFor = ''; render(); return; }
       if (scr === 'room') { if (confirmLeave()) { leave(); render(); } } else closeLobby();
     }, true);
+    // OPEN ROOMS: asked for while the join screen is up (the server answers with its list)
+    browseT = setInterval(() => { if (scr === 'connect' && C.state === 'open' && !C.room && !document.hidden) send({ t: 'rooms' }); }, 2500);
   }
   // LEAVE ROOM asks once more ("PRESS AGAIN TO LEAVE" on the button for 2.5 s); cleared on leaving / hosting / joining
-  let leaveArm = 0, armT = 0, srvOpen = false, lastHTML = '';
+  let leaveArm = 0, armT = 0, srvOpen = false;
   const armed = () => leaveArm > 0 && nowMs() - leaveArm < 2500;
   function confirmLeave() {
     if (armed()) { leaveArm = 0; return true; }
@@ -102592,7 +102669,15 @@ const Net = (() => {
     return false;
   }
   function doJoin() { const inp = E.box.querySelector('[data-r="code"]'); join(inp ? inp.value : ''); }
+  function joinRid(rid, code) {
+    if (!rid) return;
+    leaveArm = 0; C.err = ''; C.errCode = '';
+    const c = code != null ? NC.cleanCode(code) : '';
+    if (code != null && c.length !== 6) { C.err = 'Room codes have 6 digits'; C.errCode = 'badcode'; render(); return; }
+    whenOpen(() => send({ t: 'join', rid, code: c || undefined, me: meMsg() }));
+  }
   function onClick(e) {
+    held = 0; pendR = false;   // (the press is over: what it changes, and anything held back, is drawn now)
     if (setupClick(e)) return;
     const a = e.target.closest('[data-a]');
     if (!a) return;
@@ -102606,19 +102691,39 @@ const Net = (() => {
       case 'srvopen': srvOpen = true; render(); { const i = E.box.querySelector('[data-r="url"]'); if (i) { i.focus(); i.select(); } } break;
       case 'srvclose': srvOpen = false; render(); break;
       case 'hum': cfg.host = Object.assign({}, cfg.host, { humanSlots: Math.max(2, Math.min(MAXC, hostSlots() + (+a.dataset.d || 1))) }); save(); render(); break;
-      case 'host': viaUrl(() => host({ humanSlots: hostSlots() })); break;
+      case 'lock': lockOn = v === '1'; render(); { const i = lockOn && E.box.querySelector('[data-r="hcode"]'); if (i) i.focus(); } break;
+      case 'host': {
+        const hc = E.box.querySelector('[data-r="hcode"]'), c = lockOn && hc ? NC.cleanCode(hc.value) : '';
+        if (c && c.length !== 6) { C.err = 'Room codes have 6 digits (or leave it empty for a random one)'; C.errCode = 'hcode'; render(); break; }
+        viaUrl(() => host({ humanSlots: hostSlots() }, lockOn ? { on: 1, code: c || undefined } : null)); break;
+      }
       case 'join': viaUrl(() => doJoin()); break;
+      case 'refresh': send({ t: 'rooms' }); break;
+      case 'rjoin': {
+        const r = roomList && roomList.find(x => x.rid === v);
+        if (!r) break;
+        if (r.locked) { pinFor = v; C.err = ''; C.errCode = ''; render(); const i = E.box.querySelector('[data-r="pin"]'); if (i) i.focus(); }
+        else viaUrl(() => joinRid(v));
+        break;
+      }
+      case 'rpin': { const i = E.box.querySelector('[data-r="pin"]'); joinRid(pinFor, i ? i.value : ''); break; }
+      case 'rpinx': pinFor = ''; C.err = ''; C.errCode = ''; render(); break;
       case 'back': closeLobby(); break;
       case 'leave': if (confirmLeave()) leave(); break;
-      case 'ready': setReady(!(meP() && meP().ready)); break;
+      case 'ready': { const p = meP(); if (p) { p.ready = !p.ready; setReady(p.ready); render(); } break; }
       case 'start': start(e.shiftKey || a.dataset.force === '1'); break;
       case 'force': start(true); break;
       case 'ttjoin': send({ t: 'ttjoin' }); break;
       case 'end': send({ t: 'back' }); break;
-      case 'emote': emote(v); break;
-      case 'copy': try { navigator.clipboard.writeText(C.room.code); a.textContent = 'COPIED'; setTimeout(() => { lastHTML = ''; render(); }, 900); } catch (x) {} break;
+      case 'tab': tab = v; emoOpen = false; render(); break;
+      case 'emo': emoOpen = !emoOpen; render(); break;
+      case 'emote': emote(v); emoOpen = false; render(); break;
+      case 'copy': try { navigator.clipboard.writeText(C.room.code); a.textContent = 'COPIED'; setTimeout(() => { delete regC.top; render(); }, 900); } catch (x) {} break;
       case 'set': { const row = ROWS.find(r => r.k === a.dataset.k); if (row) cycleSetting(row, +a.dataset.d || 1); break; }
       case 'me': cycleMe(a.dataset.k, +a.dataset.d || 1); break;
+      case 'tyre': { const p = meP(); if (p && /^[ASMHIW]$/.test(v) && p.compound !== v) { p.compound = v; setMe({ compound: v }); render(); } break; }   // (drawn now, the room message confirms)
+      case 'team': pickLivery(v); break;
+      case 'num': { const i = E.box.querySelector('[data-r="num"]'); if (i) setNumber(i.value); break; }
       default: break;
     }
   }
@@ -102632,24 +102737,29 @@ const Net = (() => {
     if (row.k === 'penaltyLevel') o.penalties = nv !== 'off';   // (older clients / the race read the on-off switch too)
     if (row.k === 'humanSlots' && st.aiCount == null) o.aiCount = aiOf(st);
     setRoomSettings(o);
+    Object.assign(st, o); render();   // (drawn now; the server's room message confirms / corrects it)
   }
   function cycleMe(k, d) {
-    const p = meP(); if (!p || C.room.phase !== 'lobby' && k === 'team') return;
-    if (k === 'team') {
-      // the free teams, then your custom liveries (they keep your team slot: the server keeps the box / entry)
-      const taken = new Set(C.room.players.filter(q => q.id !== p.id).map(q => q.team)), L = LVM();
-      const opts = TEAMS.map((_, i) => i).filter(i => !taken.has(i) || i === p.team).concat(L ? L.list().map(x => 'lv:' + x.id) : []);
-      const cur = p.livery && p.livery.id && L && L.get(p.livery.id) ? 'lv:' + p.livery.id : p.livery ? 'lv:?' : p.team;
-      let i = opts.indexOf(cur); if (i < 0) i = d > 0 ? -1 : 0;
-      const v = opts[(i + d + opts.length) % opts.length];
-      if (typeof v === 'string') setMe({ livery: L.get(v.slice(3)) });   // (the number stays yours: Settings' race number)
-      else setMe({ team: v, livery: null });
-    } else if (k === 'number') {   // (your race number: Settings' too, so it is the same in every mode)
-      const n = ((p.number - 1 + d + 99) % 99) + 1, s = settings();
-      setMe({ number: n }); s.playerNumber = n;
+    const p = meP(); if (!p) return;
+    if (k === 'compound') { const i = COMPS.findIndex(c => c[0] === p.compound); p.compound = COMPS[(i + d + COMPS.length) % COMPS.length][0]; setMe({ compound: p.compound }); render(); }
+  }
+  // LIVERY tab: a team (not one another driver has) or one of your custom liveries (it keeps your team slot)
+  function pickLivery(v) {
+    const p = meP(), L = LVM(); if (!p || C.room.phase !== 'lobby') return;
+    if (String(v).indexOf('lv:') === 0) { const lv = L && L.get(v.slice(3)); if (!lv) return; p.livery = lv; setMe({ livery: lv }); }   // (the number stays yours)
+    else { const i = v | 0; if (C.room.players.some(q => q.id !== p.id && q.team === i)) return; p.team = i; p.livery = null; setMe({ team: i, livery: null }); }
+    render();
+  }
+  // CAR NUMBER: typed; 1-99, not one another driver in the room has (the server checks it too: error code 'number')
+  function setNumber(raw) {
+    const p = meP(); if (!p) return;
+    const n = parseInt(String(raw).trim(), 10), q = C.room.players.find(x => x.id !== p.id && x.number === n);
+    numErr = !(n >= 1 && n <= 99) ? 'TYPE A NUMBER FROM 1 TO 99' : q ? `#${n} IS TAKEN BY ${String(q.name).toUpperCase()}` : '';
+    if (!numErr && n !== p.number) {
+      p.number = n; setMe({ number: n }); settings().playerNumber = n;   // (Settings' race number too: the same in every mode)
       if (typeof Menu !== 'undefined' && Menu.remember) Menu.remember({ playerNumber: n });
     }
-    else if (k === 'compound') { const i = COMPS.findIndex(c => c[0] === p.compound); setMe({ compound: COMPS[(i + d + COMPS.length) % COMPS.length][0] }); }
+    render();
   }
   // CAR SETUP in the lobby: Menu's compact pre-race box (same model, same effects), saved per circuit in settings.setups;
   // one element kept across re-renders (its lap-time readouts are worked out only when the setup / circuit changes)
@@ -102685,21 +102795,35 @@ const Net = (() => {
     showLobby();
     if (C.state === 'off' && !framed) connect(C.url || defaultUrl());
   }
-  function showLobby() { build(); root.classList.remove('agp-off'); scr = C.room ? 'room' : 'connect'; lastHTML = ''; sendSetups(); render(); }
-  function hideLobby() { if (root) root.classList.add('agp-off'); scr = null; }
+  function showLobby() { build(); root.classList.remove('agp-off'); scr = C.room ? 'room' : 'connect'; skelKey = ''; sendSetups(); render(); if (!C.room && C.state === 'open') send({ t: 'rooms' }); }
+  function hideLobby() { if (root) root.classList.add('agp-off'); scr = null; emoOpen = false; }
   function closeLobby() {
     hideLobby();
     if (api && typeof Menu !== 'undefined' && !S) Menu.showMain(api.G.settings);
   }
   function render() {
     if (!root || !scr) return;
-    // keep what is being typed (and the caret) across a re-render
+    if (held && nowMs() - held < 1500) { pendR = true; return; }   // (a button is being pressed: drawn when it comes up)
+    // keep what is being typed (and the caret) across a skeleton rebuild
     const keep = {}, act = document.activeElement, fr = act && act.dataset && root.contains(act) ? act.dataset.r : null, sel = fr ? [act.selectionStart, act.selectionEnd] : null;
     E.box.querySelectorAll('input[data-r]').forEach(i => { keep[i.dataset.r] = i.value; });
-    if (!render1()) return;
-    for (const k in keep) { const i = E.box.querySelector(`input[data-r="${k}"]`); if (i) i.value = keep[k]; }
-    const pv = E.box.querySelector('[data-r="namepv"]'); if (pv && keep.name != null) pv.innerHTML = namePv(keep.name);
-    if (fr) { const i = E.box.querySelector(`input[data-r="${fr}"]`); if (i) { i.focus(); try { i.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+    if (render1()) { const pv = E.box.querySelector('[data-r="namepv"]'); if (pv && keep.name != null) pv.innerHTML = namePv(keep.name); }
+    for (const k in keep) { const i = E.box.querySelector(`input[data-r="${k}"]`); if (i && !i.value && keep[k]) i.value = keep[k]; }   // (an input in a rewritten region)
+    if (fr) { const i = E.box.querySelector(`input[data-r="${fr}"]`); if (i && document.activeElement !== i) { i.focus(); try { i.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+    const ni = E.box.querySelector('[data-r="num"]'), me = meP();   // (the number field shows your number unless you are typing / it was refused)
+    if (ni && me && document.activeElement !== ni && !numErr && ni.value !== String(me.number)) ni.value = me.number;
+  }
+  // a region's HTML, written only when it changed
+  function reg(name, html) {
+    if (regC[name] === html) return;
+    const el = E.box.querySelector(`[data-reg="${name}"]`); if (!el) return;
+    regC[name] = html; el.innerHTML = html;
+  }
+  function skel(key, html) {
+    if (skelKey === key) return false;
+    skelKey = key; for (const k in regC) delete regC[k];
+    E.box.innerHTML = html;
+    return true;
   }
   // connection: a dot + ONLINE / CONNECTING… / CAN'T REACH SERVER
   function connHTML() {
@@ -102720,87 +102844,179 @@ const Net = (() => {
   }
   const backHTML = (act, label) => `<b class="agp-net-back${act === 'leave' && armed() ? ' is-armed' : ''}" data-a="${act}" role="button"><i class="agp-chev l"></i>${act === 'leave' && armed() ? 'PRESS AGAIN TO LEAVE' : label}</b>`;
   const titleHTML = t => `<div class="agp-net-title"><span>APEX<b>GP</b></span><b>${t}</b></div>`;
-  function render1() {
-    scr = C.room ? 'room' : 'connect';
-    const note = framed ? `<div class="agp-net-note"><b>MULTIPLAYER NEEDS THE GAME FILE.</b> This copy is running inside an embedded page (for example a Claude share link), whose sandbox blocks network connections. Download the game (or open it from your multiplayer server's address) and play it in a normal browser tab to race online.</div>` : '';
-    const errBox = (cls = '') => (C.err ? `<div class="agp-net-err${cls}${C.errCode === 'full' ? ' is-full' : ''}"><b>${esc(C.errCode === 'full' ? 'ROOM FULL' : C.errCode === 'noroom' ? 'NO SUCH ROOM' : '!')}</b><span>${esc(C.err)}${C.errCode === 'full' ? ' · ask the host to add a place (HUMAN PLAYERS in the lobby)' : ''}</span></div>` : '');
-    let html;
-    if (scr === 'connect') {
-      const srv = serverHTML(), up = srv.includes('is-open'), joinErr = /^(full|noroom|code)$/.test(C.errCode || ''), hs = hostSlots();
-      html = `<header class="agp-net-top">${backHTML('back', 'BACK')}${titleHTML('MULTIPLAYER')}${connHTML()}</header>${note}
-        <div class="agp-net-main">
-          ${up ? srv : ''}
-          <div class="agp-net-namebox"><label>YOUR NAME</label><input data-r="name" maxlength="16" spellcheck="false" autocomplete="off" value="${esc(myName())}"><div class="agp-net-namepv" data-r="namepv">${namePv(myName())}</div></div>
-          <div class="agp-net-choice">
-            <section class="agp-net-card is-host"><h3>HOST A ROOM</h3><p>MAKE A ROOM AND SHARE ITS 6-DIGIT CODE</p>
-              <div class="agp-net-step"><span>HUMAN PLAYERS</span><i data-a="hum" data-d="-1" role="button">‹</i><b data-r="hum">${hs}</b><i data-a="hum" data-d="1" role="button">›</i></div>
-              <small>INCLUDING YOU · ADD AI RACERS IN THE LOBBY · UP TO ${MAXC} CARS</small>
-              <b class="agp-net-go" data-a="host" role="button"><span>CREATE ROOM</span><i></i></b></section>
-            <section class="agp-net-card is-join"><h3>JOIN A ROOM</h3><p>TYPE THE CODE FROM THE HOST</p>
-              <input data-r="code" class="agp-net-codein" inputmode="numeric" placeholder="000 000" maxlength="7" spellcheck="false" autocomplete="off">
-              ${joinErr ? errBox(' is-in') : ''}
-              <b class="agp-net-go" data-a="join" role="button"><span>JOIN</span><i></i></b></section>
-          </div>${joinErr ? '' : errBox()}
-          ${up ? '' : srv}
-        </div>
-        <footer class="agp-net-keys"><span><kbd>ESC</kbd> BACK</span><span><kbd>ENTER</kbd> JOIN WITH THE CODE</span></footer>`;
-    } else {
-      const R = C.room, me = meP(), host = isHost(), lobbyPh = R.phase === 'lobby', st = R.settings, race = st.mode !== 'timetrial';
-      const slots = st.humanSlots || MAXC, n = R.players.length;
-      const players = R.players.map(p => {
-        // offline (connection lost) / away (tab in the background mid-session; not when back here in the lobby): the
-        // crossed-out wifi icon by the name; a ping over WEAK_MS: the weak-signal icon
-        const tm = teamOfP(p), away = p.conn && p.away && !p.lobby, off = !p.conn || away, weak = !off && (p.ping | 0) > WEAK_MS;
-        return `<div class="agp-net-pl${p.id === R.you ? ' is-me' : ''}${off ? ' is-off' : ''}" data-pid="${p.id}"><i style="background:${tcol(tm)}"></i><em>${p.number}</em><b>${nameHTML(p.name)}${off ? (away ? SIG_AWAY : SIG_OFF) : weak ? SIG_WEAK : ''}${p.host ? ' <small>HOST</small>' : ''}${p.id === R.you ? ' <small class="is-you">YOU</small>' : ''}</b>` +
-          `<span class="agp-net-tm">${esc(tm.name.toUpperCase())}</span><span class="agp-net-ty" style="--tc:${(typeof COMPOUNDS !== 'undefined' && COMPOUNDS[p.compound] ? COMPOUNDS[p.compound].color : '#ccc')}">${p.compound}</span>` +
-          `<span class="agp-net-rd${off ? ' is-off' : p.ready || p.host ? ' is-on' : ''}">${!p.conn ? 'OFFLINE' : away ? 'AWAY' : p.inRace ? 'RACING' : p.host ? 'HOST' : p.ready ? 'READY' : 'NOT READY'}</span><span class="agp-net-ping${weak ? ' is-weak' : ''}">${p.conn ? (p.ping | 0) + ' ms' : '—'}</span></div>`;
-      }).join('');
-      const free = Math.max(0, slots - n), shown = Math.min(free, free > 3 ? 2 : 3);
+  const errHTML = (cls = '') => (C.err ? `<div class="agp-net-err${cls}${C.errCode === 'full' ? ' is-full' : ''}"><b>${esc(C.errCode === 'full' ? 'ROOM FULL' : C.errCode === 'noroom' ? 'NO SUCH ROOM' : C.errCode === 'badcode' ? 'WRONG CODE' : '!')}</b><span>${esc(C.err)}${C.errCode === 'full' ? ' · ask the host to add a place (HUMAN PLAYERS in the lobby)' : ''}</span></div>` : '');
+  const trName = id => ((TRACK_DATA[id] && TRACK_DATA[id].name) || id || '').toUpperCase();
+  // the circuit's layout as an SVG (track.outline: centreline points), made once per circuit
+  const trkSvg = {};
+  function trackSVG(id) {
+    if (trkSvg[id] != null) return trkSvg[id];
+    let s = '';
+    try {
+      const t = TRACK_DATA[id] && typeof buildTrack === 'function' ? buildTrack(TRACK_DATA[id]) : null;
+      if (t) { trackLen[id] = t.length || 0; trkSvg['n:' + id] = t.corners ? t.corners.length : 0; }
+      const pts = t && t.outline ? t.outline(12) : null;
+      if (pts && pts.length > 2) {
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+        const k = 200 / Math.max(x1 - x0, y1 - y0, 1), pad = 10, X = x => ((x - x0) * k + pad).toFixed(1), Y = y => ((y - y0) * k + pad).toFixed(1);
+        const d = pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]) + ' ' + Y(p[1])).join('') + 'Z';
+        s = `<svg class="agp-net-map" viewBox="0 0 ${Math.ceil((x1 - x0) * k + 2 * pad)} ${Math.ceil((y1 - y0) * k + 2 * pad)}" preserveAspectRatio="xMidYMid meet"><path class="o" d="${d}"/><path class="i" d="${d}"/>` +
+          `<circle cx="${X(pts[0][0])}" cy="${Y(pts[0][1])}" r="4.5"/></svg>`;
+      }
+    } catch (e) { s = ''; }
+    return (trkSvg[id] = s);
+  }
+  const optLabel = (r, st) => { const cur = r.get ? r.get(st) : st[r.k], o = r.opts().find(x => x[0] === cur); return o ? o[1] : String(cur == null ? '—' : cur).toUpperCase(); };
+  const rowOn = (r, st) => (st.mode !== 'timetrial' || !r.race) && (!r.show || r.show(st));
+  function trackHTML(st) {
+    const id = st.trackId, d = TRACK_DATA[id] || {}, svg = trackSVG(id), L = trackLen[id] || 0, n = trkSvg['n:' + id] | 0, race = st.mode !== 'timetrial';
+    const lapsTxt = race ? optLabel(ROWS.find(r => r.k === 'laps'), st).replace(/ \(\d+\)$/, '') + (st.lapPct ? ' · ' + st.laps + ' LAPS' : ' LAPS') : 'TIME TRIAL';
+    return `<h4>TRACK <span>${race ? 'RACE' : 'TIME TRIAL · GHOSTS'}</span></h4><div class="agp-net-trk"><b>${esc(trName(id))}</b>` +
+      `<span>${esc(String(d.country || '').toUpperCase())}${L ? ` · ${(L / 1000).toFixed(2)} KM` : ''}${n ? ` · ${n} TURNS` : ''} · ${esc(lapsTxt)}</span>${svg}</div>`;
+  }
+  const WXI = { dry: 'sun', damp: 'cloud', wet: 'rain', dynamic: 'partly' };
+  const WXD = { dry: ['DRY', 'A DRY TRACK FROM START TO FINISH'], damp: ['DAMP', 'A DAMP TRACK: LESS GRIP, IT DRIES AS YOU RACE'], wet: ['WET', 'RAIN ALL RACE: INTERS OR WETS'],
+    dynamic: ['DYNAMIC', 'CHANGEABLE: RAIN CAN COME AND GO · THE FULL FORECAST IS SET WHEN THE SESSION STARTS'] };
+  function wxHTML(st) {
+    const w = WXD[st.weather] ? st.weather : 'dry', night = st.timeOfDay === 'night';
+    const ic = typeof Weather !== 'undefined' && Weather.iconSVG ? Weather.iconSVG(WXI[w], night) : '';
+    return `<h4>WEATHER FORECAST</h4><div class="agp-net-wx"><i>${ic}</i><div><b>${WXD[w][0]} · ${esc(String(st.timeOfDay || 'day').toUpperCase())}</b><span>${WXD[w][1]}</span>` +
+      `${st.grid === 'qfull' && w === 'dynamic' ? `<span>QUALIFYING ${st.qualiDay === 'before' ? 'THE DAY BEFORE' : 'ON THE SAME DAY'}</span>` : ''}</div></div>`;
+  }
+  // START TYRE as the local pre-race screen's chips (menu.js .agp-tp-chip): AUTO = the tyre the room's weather calls for
+  // (Weather.startChoice), badged and picked by default ('A': the server fits it); dynamic weather: an AUTO chip (from the
+  // forecast at the start). One click picks another; the AUTO-badged one goes back to AUTO.
+  function tyreChips(cur, w) {
+    const ids = ['S', 'M', 'H', 'I', 'W'].filter(c => typeof COMPOUNDS === 'undefined' || COMPOUNDS[c]), au = autoTyre(w), col = c => (typeof COMPOUNDS !== 'undefined' && COMPOUNDS[c] ? COMPOUNDS[c].color : '#9aa0aa');
+    const nm = c => ((typeof COMPOUNDS !== 'undefined' && COMPOUNDS[c] && COMPOUNDS[c].name) || TYRES[c] || c).toUpperCase(), sel = c => (cur === c || (cur === 'A' || !cur) && c === au);
+    const chip = c => `<div class="agp-tp-chip${sel(c) ? ' is-sel' : ''}" data-a="tyre" data-v="${c === au ? 'A' : c}" role="button"><i class="agp-ring" style="--tc:${col(c)}">${c}</i><b>${nm(c)}</b>${c === au ? '<em class="agp-tp-auto">AUTO</em>' : ''}</div>`;
+    return `<div class="agp-net-tyres"><span>START TYRE</span><div class="agp-tp-chips">${au ? '' : `<div class="agp-tp-chip${cur === 'A' || !cur ? ' is-sel' : ''}" data-a="tyre" data-v="A" role="button"><i class="agp-ring">A</i><b>AUTO</b><em class="agp-tp-auto">FROM THE FORECAST</em></div>`}${ids.map(chip).join('')}</div></div>`;
+  }
+  function rulesHTML(st) {
+    return RULE_KEYS.map(k => ROWS.find(r => r.k === k)).filter(r => r && rowOn(r, st))
+      .map(r => `<div class="agp-net-rc"><span>${r.label}</span><b>${esc(optLabel(r, st))}</b></div>`).join('');
+  }
+  function playersHTML(R) {
+    return R.players.map(p => {
+      // offline (connection lost) / away (tab in the background mid-session; not when back here in the lobby): the
+      // crossed-out wifi icon by the name; a ping over WEAK_MS: the weak-signal icon
+      const tm = teamOfP(p), away = p.conn && p.away && !p.lobby, off = !p.conn || away, weak = !off && (p.ping | 0) > WEAK_MS;
+      return `<div class="agp-net-pl${p.id === R.you ? ' is-me' : ''}${off ? ' is-off' : ''}" data-pid="${p.id}"><i style="background:${tcol(tm)}"></i><em>${p.number}</em><b>${nameHTML(p.name)}${off ? (away ? SIG_AWAY : SIG_OFF) : weak ? SIG_WEAK : ''}${p.host ? ' <small>HOST</small>' : ''}${p.id === R.you ? ' <small class="is-you">YOU</small>' : ''}</b>` +
+        `<span class="agp-net-tm">${esc(tm.name.toUpperCase())}</span><span class="agp-net-ty" style="--tc:${(typeof COMPOUNDS !== 'undefined' && COMPOUNDS[p.compound] ? COMPOUNDS[p.compound].color : '#ccc')}">${p.compound}</span>` +
+        `<span class="agp-net-rd${off ? ' is-off' : p.ready || p.host ? ' is-on' : ''}">${!p.conn ? 'OFFLINE' : away ? 'AWAY' : p.inRace ? 'RACING' : p.host ? 'HOST' : p.ready ? 'READY' : 'NOT READY'}</span><span class="agp-net-ping${weak ? ' is-weak' : ''}">${p.conn ? (p.ping | 0) + ' ms' : '—'}</span></div>`;
+    }).join('') + (() => {
+      const free = Math.max(0, (R.settings.humanSlots || MAXC) - R.players.length), shown = Math.min(free, free > 3 ? 2 : 3);
       let open = '';
       for (let i = 0; i < shown; i++) open += '<div class="agp-net-pl is-open"><i></i><em></em><b>OPEN PLACE</b><span class="agp-net-tm">WAITING FOR A DRIVER</span></div>';
       if (free > shown) open += `<div class="agp-net-pl is-open"><i></i><em></em><b>+ ${free - shown} MORE OPEN PLACES</b></div>`;
-      const rows = ROWS.filter(r => (race || !r.race) && (!r.show || r.show(st))).map(r => {
-        const cur = r.get ? r.get(st) : st[r.k], o = r.opts().find(x => x[0] === cur), ed = host && lobbyPh;
-        return `<div class="agp-net-row${ed ? ' is-edit' : ''}"><span>${r.label}</span>${ed ? `<i data-a="set" data-k="${r.k}" data-d="-1" role="button">‹</i>` : ''}<b${ed ? ` data-a="set" data-k="${r.k}" data-d="1"` : ''}>${esc(o ? o[1] : String(cur).toUpperCase())}</b>${ed ? `<i data-a="set" data-k="${r.k}" data-d="1" role="button">›</i>` : ''}</div>`;
-      }).join('');
-      const ai = aiOf(st), grid = Math.max(2, Math.min(MAXC, n + ai));
-      const sum = race ? `<div class="agp-net-sum">GRID <b>${plural(n, 'HUMAN')} + ${ai} AI = ${plural(grid, 'CAR')}</b>${slots > n ? ` · ${Math.min(MAXC, slots + ai)} WITH EVERY PLACE FILLED` : ''}</div>` : '';
-      const tm = me ? teamOfP(me) : null;
-      const mine = me ? `<div class="agp-net-mine">
-          <div class="agp-net-row is-edit"><span>TEAM</span><i data-a="me" data-k="team" data-d="-1">‹</i><b data-a="me" data-k="team" data-d="1"><em class="agp-net-sw" style="background:linear-gradient(90deg,${tm.primary} 60%,${tm.secondary} 60%)"></em>${esc(tm.name.toUpperCase())}</b><i data-a="me" data-k="team" data-d="1">›</i></div>
-          <div class="agp-net-row is-edit"><span>NUMBER</span><i data-a="me" data-k="number" data-d="-1">‹</i><b data-a="me" data-k="number" data-d="1">#${me.number}</b><i data-a="me" data-k="number" data-d="1">›</i></div>
-          <div class="agp-net-row is-edit"><span>START TYRE</span><i data-a="me" data-k="compound" data-d="-1">‹</i><b data-a="me" data-k="compound" data-d="1">${tyreLabel(me.compound, st.weather)}</b><i data-a="me" data-k="compound" data-d="1">›</i></div>
-          ${tyreWarn(me.compound, st.weather)}
-        </div>` : '';
-      const setup = MB() ? '<div class="agp-net-setslot" data-r="setupSlot"></div><p class="agp-net-priv">ONLY YOU SEE YOUR SETUP · SAVED FOR THIS CIRCUIT</p>' : '';
-      const waiting = R.players.filter(p => !p.host && p.conn && !p.ready).length;
-      let acts, phase;
-      if (lobbyPh) {
-        acts = host ? `${waiting ? `<b class="agp-net-btn is-ghost" data-a="force" role="button">START ANYWAY (${waiting} NOT READY)</b>` : ''}<b class="agp-net-go is-big" data-a="start" role="button"${waiting ? ' data-force="0"' : ''}><span>${race ? 'START RACE' : 'START TIME TRIAL'}</span><i></i></b>`
-          : `<b class="agp-net-go is-big${me && me.ready ? ' is-on' : ''}" data-a="ready" role="button"><span>${me && me.ready ? 'READY ✓' : 'READY UP'}</span><i></i></b>`;
-        phase = host ? (waiting ? `WAITING FOR ${plural(waiting, 'DRIVER')} TO READY UP` : n > 1 ? 'EVERYONE IS READY' : 'SHARE THE CODE · YOU CAN ALSO RACE THE AI ALONE')
-          : me && me.ready ? 'READY · THE HOST STARTS THE SESSION' : 'PICK YOUR CAR, THEN READY UP';
-      } else if (R.phase === 'tt') { acts = `${host ? '<b class="agp-net-btn is-ghost" data-a="end" role="button">END SESSION FOR ALL</b>' : ''}<b class="agp-net-go is-big" data-a="ttjoin" role="button"><span>JOIN THE SESSION</span><i></i></b>`; phase = 'TIME TRIAL RUNNING'; }
-      else { acts = host ? '<b class="agp-net-btn is-ghost" data-a="end" role="button">STOP THE RACE</b>' : ''; phase = `<em>${R.race && R.race.q ? 'QUALIFYING IN PROGRESS · ' + esc(R.race.q) : 'RACE IN PROGRESS' + (R.race ? ` · LAP ${R.race.lap} / ${R.race.laps}` : '')} — YOU'LL JOIN THE NEXT ONE</em>`; }
-      html = `<header class="agp-net-top">${backHTML('leave', 'LEAVE ROOM')}${titleHTML('LOBBY')}
-          <div class="agp-net-codebox"><span>ROOM CODE</span><b class="agp-net-code">${NC.fmtCode(R.code)}</b><em data-a="copy" role="button">COPY</em></div>${connHTML()}</header>${note}
-        <div class="agp-net-cols">
-          <section class="agp-net-col is-drivers"><h4>DRIVERS <span>${n} / ${slots}</span></h4>
-            <div class="agp-net-pl is-head"><i></i><em>#</em><b>DRIVER</b><span>TEAM</span><span>TYRE</span><span>STATUS</span><span>PING</span></div>
-            <div class="agp-net-pls">${players}${open}</div></section>
-          <section class="agp-net-col is-car"><h4>YOUR CAR</h4>${mine}${setup}</section>
-          <section class="agp-net-col is-set"><h4>ROOM SETTINGS <span>${host ? 'YOU ARE THE HOST' : 'SET BY THE HOST'}</span></h4>${rows}${sum}
-            <h4>QUICK EMOTES</h4><div class="agp-net-emo">${EMOTES.map(([k, l]) => `<b class="agp-net-btn is-small" data-a="emote" data-v="${k}" role="button">${l}</b>`).join('')}</div></section>
-        </div>${errBox()}
-        <footer class="agp-net-foot"><span class="agp-net-phase">${phase}</span><div class="agp-net-acts2">${acts}</div></footer>`;
-    }
+      return open;
+    })();
+  }
+  function liveryHTML(me) {
+    const R = C.room, L = LVM(), bg = (typeof Menu !== 'undefined' && Menu.liveryBg) || (() => ''), n = me.number, lob = R.phase === 'lobby';
+    const by = new Map(R.players.filter(q => q.id !== me.id).map(q => [q.team, q])), curLv = me.livery && me.livery.id, head = (t, sub) => `<div class="agp-sw-head"><b>${t}</b><span>${sub}</span></div>`;
+    const lv = L ? L.list() : [];
+    const card = (v, P, S2, A, pat, name, sub, sel, off) => `<div class="agp-sw${sel ? ' is-sel' : ''}${off ? ' is-taken' : ''}" data-a="team" data-v="${esc(v)}" style="--p:${P};--s:${S2};--a:${A}">` +
+      `<i class="agp-sw-liv" style="${bg(pat, P, S2, A)}"><em>${n}</em></i><b>${esc(name.toUpperCase())}</b><span>${sub}</span></div>`;
+    return (lob ? '' : '<p class="agp-net-priv">THE LIVERY IS FIXED WHILE A SESSION RUNS</p>') +
+      (lv.length ? head('YOUR LIVERIES', 'MADE IN THE LIVERY CREATOR · YOUR TEAM PLACE STAYS YOURS') + lv.map(d => card('lv:' + d.id, d.primary, d.secondary, d.accent, d.design, d.name, curLv === d.id ? 'YOUR CAR' : 'CUSTOM', curLv === d.id, false)).join('') : '') +
+      head('TEAMS', 'ONE DRIVER PER TEAM') +
+      TEAMS.map((t, i) => { const q = by.get(i), sel = !curLv && me.team === i; return card(i, t.primary, t.secondary, t.accent, t.id, t.name, q ? 'TAKEN · ' + esc(String(q.name).toUpperCase()) : sel ? 'YOUR CAR' : 'FREE', sel, !!q); }).join('');
+  }
+  const OV_SKEL = `<div class="agp-net-ov">
+      <section class="agp-net-panel is-drv"><h4>WHO'S IN THE RACE <span data-reg="cnt"></span></h4>
+        <div class="agp-net-pl is-head"><i></i><em>#</em><b>DRIVER</b><span>TEAM</span><span>TYRE</span><span>STATUS</span><span>PING</span></div>
+        <div class="agp-net-pls" data-reg="drivers"></div><div data-reg="gsum"></div></section>
+      <section class="agp-net-panel is-trk" data-reg="track"></section>
+      <section class="agp-net-panel is-car"><h4>WINGS &amp; TYRES <span>ONLY YOU SEE YOUR SETUP · SAVED FOR THIS CIRCUIT</span></h4><div data-reg="mine"></div><div class="agp-net-setslot" data-r="setupSlot"></div></section>
+      <section class="agp-net-panel is-wx" data-reg="wx"></section>
+      <section class="agp-net-rules"><h4>RULES <span data-reg="rby"></span></h4><div class="agp-net-rcs" data-reg="rules"></div></section></div>`;
+  const LV_SKEL = `<div class="agp-net-lv"><div class="agp-net-numbox"><label>CAR NUMBER</label><input data-r="num" class="agp-net-numin" inputmode="numeric" maxlength="2" autocomplete="off" spellcheck="false">` +
+    `<b class="agp-net-btn" data-a="num" role="button">SET</b><span class="agp-net-numerr" data-reg="numerr"></span><small>1 - 99 · NO TWO DRIVERS IN THE ROOM SHARE A NUMBER</small></div><div class="agp-net-lvg" data-reg="lvgrid"></div></div>`;
+  const HOST_SKEL = `<div class="agp-net-hp"><section class="agp-net-panel"><h4 data-reg="htitle"></h4><div data-reg="hrows"></div></section><section class="agp-net-panel is-side" data-reg="hside"></section></div>`;
+  function render1() {
+    scr = C.room ? 'room' : 'connect';
     E.box.dataset.scr = scr;
-    if (html === lastHTML) return false;   // (ping-only updates that change nothing on screen)
-    lastHTML = html;
-    E.box.innerHTML = html;
-    const slot = scr === 'room' && E.box.querySelector('[data-r="setupSlot"]'), el = slot && setupEl();
-    if (el) { slot.appendChild(el); paintSetup(); }
-    return true;
+    const note = framed ? `<div class="agp-net-note"><b>MULTIPLAYER NEEDS THE GAME FILE.</b> This copy is running inside an embedded page (for example a Claude share link), whose sandbox blocks network connections. Download the game (or open it from your multiplayer server's address) and play it in a normal browser tab to race online.</div>` : '';
+    if (scr === 'connect') return renderBrowse(note);
+    const R = C.room, me = meP(), host = isHost(), lobbyPh = R.phase === 'lobby', st = R.settings, race = st.mode !== 'timetrial';
+    if (!host && HTABS.some(t => t[0] === tab)) tab = 'ov';
+    if (!me && tab === 'lv') tab = 'ov';
+    const built = skel('room|' + tab + '|' + host, `<header class="agp-net-top" data-reg="top"></header>${note}<nav class="agp-net-tabs" data-reg="tabs"></nav>
+      <div class="agp-net-page is-${tab}">${tab === 'ov' ? OV_SKEL : tab === 'lv' ? LV_SKEL : HOST_SKEL}</div><div data-reg="err"></div>
+      <footer class="agp-net-foot" data-reg="foot"></footer><div class="agp-net-emow" data-reg="emo"></div>`);
+    const slots = st.humanSlots || MAXC, n = R.players.length;
+    reg('top', `${backHTML('leave', 'LEAVE ROOM')}${titleHTML('LOBBY')}<div class="agp-net-codebox">${R.locked ? `<i class="agp-net-lk" title="Locked: joining needs the code">${LOCK_SVG}</i>` : ''}<span>ROOM CODE</span><b class="agp-net-code">${NC.fmtCode(R.code)}</b><em data-a="copy" role="button">COPY</em></div>${connHTML()}`);
+    reg('tabs', TABS.map(([k, l]) => `<b class="agp-net-tab${tab === k ? ' is-on' : ''}" data-a="tab" data-v="${k}" role="tab">${l}</b>`).join('') +
+      (host ? `<i class="agp-net-tabsep">HOST${lobbyPh ? '' : ' · LOCKED WHILE A SESSION RUNS'}</i>` + HTABS.map(([k, l]) => `<b class="agp-net-tab is-host${tab === k ? ' is-on' : ''}" data-a="tab" data-v="${k}" role="tab">${l}</b>`).join('') : ''));
+    if (tab === 'ov') {
+      reg('cnt', `${n} / ${slots}`);
+      reg('drivers', playersHTML(R));
+      const ai = aiOf(st), grid = Math.max(2, Math.min(MAXC, n + ai));
+      reg('gsum', race ? `<div class="agp-net-sum">GRID <b>${plural(n, 'HUMAN')} + ${ai} AI = ${plural(grid, 'CAR')}</b>${slots > n ? ` · ${Math.min(MAXC, slots + ai)} WITH EVERY PLACE FILLED` : ''}</div>` : '');
+      reg('track', trackHTML(st));
+      reg('mine', me ? tyreChips(me.compound, st.weather) + tyreWarn(me.compound, st.weather) : '');
+      reg('wx', wxHTML(st));
+      reg('rby', host ? 'YOU ARE THE HOST · CHANGE THEM IN THE HOST TABS' : 'SET BY THE HOST');
+      reg('rules', rulesHTML(st));
+      const slot = E.box.querySelector('[data-r="setupSlot"]'), el = slot && setupEl();
+      if (el && el.parentNode !== slot) slot.appendChild(el);
+      if (el) paintSetup();
+    } else if (tab === 'lv') {
+      reg('numerr', numErr ? esc(numErr) : '');
+      reg('lvgrid', me ? liveryHTML(me) : '');
+    } else {
+      const ed = host && lobbyPh, rows = ROWS.filter(r => ROW_TAB[r.k] === tab && rowOn(r, st));
+      reg('htitle', `${(HTABS.find(t => t[0] === tab) || ['', ''])[1]} <span>${ed ? 'CLICK OR USE ‹ › TO CHANGE' : 'LOCKED WHILE A SESSION RUNS'}</span>`);
+      reg('hrows', rows.map(r => `<div class="agp-net-row${ed ? ' is-edit' : ''}"><span>${r.label}</span>${ed ? `<i data-a="set" data-k="${r.k}" data-d="-1" role="button">‹</i>` : ''}<b${ed ? ` data-a="set" data-k="${r.k}" data-d="1"` : ''}>${esc(optLabel(r, st))}</b>${ed ? `<i data-a="set" data-k="${r.k}" data-d="1" role="button">›</i>` : ''}</div>`).join(''));
+      reg('hside', tab === 'track' ? trackHTML(st) : tab === 'wx' ? wxHTML(st) : `<h4>RULES OVERVIEW</h4><div class="agp-net-rcs is-col">${rulesHTML(st)}</div>`);
+    }
+    reg('err', errHTML());
+    const waiting = R.players.filter(p => !p.host && p.conn && !p.ready).length;
+    let acts, phase;
+    if (lobbyPh) {
+      acts = host ? `${waiting ? `<b class="agp-net-btn is-ghost" data-a="force" role="button">START ANYWAY (${waiting} NOT READY)</b>` : ''}<b class="agp-net-go is-big" data-a="start" role="button"${waiting ? ' data-force="0"' : ''}><span>${race ? 'START RACE' : 'START TIME TRIAL'}</span><i></i></b>`
+        : `<b class="agp-net-go is-big${me && me.ready ? ' is-on' : ''}" data-a="ready" role="button"><span>${me && me.ready ? 'READY ✓' : 'READY UP'}</span><i></i></b>`;
+      phase = host ? (waiting ? `WAITING FOR ${plural(waiting, 'DRIVER')} TO READY UP` : n > 1 ? 'EVERYONE IS READY' : 'SHARE THE CODE · YOU CAN ALSO RACE THE AI ALONE')
+        : me && me.ready ? 'READY · THE HOST STARTS THE SESSION' : 'PICK YOUR CAR, THEN READY UP';
+    } else if (R.phase === 'tt') { acts = `${host ? '<b class="agp-net-btn is-ghost" data-a="end" role="button">END SESSION FOR ALL</b>' : ''}<b class="agp-net-go is-big" data-a="ttjoin" role="button"><span>JOIN THE SESSION</span><i></i></b>`; phase = 'TIME TRIAL RUNNING'; }
+    else { acts = host ? '<b class="agp-net-btn is-ghost" data-a="end" role="button">STOP THE RACE</b>' : ''; phase = `<em>${R.race && R.race.q ? 'QUALIFYING IN PROGRESS · ' + esc(R.race.q) : 'RACE IN PROGRESS' + (R.race ? ` · LAP ${R.race.lap} / ${R.race.laps}` : '')} — YOU'LL JOIN THE NEXT ONE</em>`; }
+    reg('foot', `<span class="agp-net-phase">${phase}</span><div class="agp-net-acts2"><b class="agp-net-btn is-ghost${emoOpen ? ' is-on' : ''}" data-a="emo" role="button"><kbd>E</kbd> EMOTES</b>${acts}</div>`);
+    reg('emo', emoOpen ? `<div class="agp-net-emop"><h5>EMOTES <span>PRESS A NUMBER OR CLICK · E / ESC CLOSES</span></h5><div>${EMOTES.map(([k, l], i) => `<b data-a="emote" data-v="${k}" role="button">${i < 10 ? `<kbd>${(i + 1) % 10}</kbd>` : '<kbd class="is-no"></kbd>'}${l}</b>`).join('')}</div></div>` : '');
+    return built;
+  }
+  // MULTIPLAYER screen: your name, CREATE ROOM (human places, open / locked + its code), the OPEN ROOMS list from the server
+  // (host, circuit, drivers / places, lobby / racing, a lock when it needs the code: a click joins, a locked one asks for
+  // the code), JOIN WITH A CODE; the server address folded into one line when it is the page's own server
+  function renderBrowse(note) {
+    const built = skel('connect', `<header class="agp-net-top">${backHTML('back', 'BACK')}${titleHTML('MULTIPLAYER')}<div data-reg="conn" style="margin-left:auto"></div></header>${note}
+      <div class="agp-net-brw"><div class="agp-net-bl"><div data-reg="srv"></div>
+        <div class="agp-net-namebox"><label>YOUR NAME</label><input data-r="name" maxlength="16" spellcheck="false" autocomplete="off" value="${esc(myName())}"><div class="agp-net-namepv" data-r="namepv">${namePv(myName())}</div></div>
+        <section class="agp-net-card is-host" data-reg="create"></section>
+        <section class="agp-net-card is-join"><h3>JOIN WITH A CODE</h3><p>A LOCKED ROOM, OR ONE THE HOST TOLD YOU ABOUT</p><div class="agp-net-jrow"><input data-r="code" class="agp-net-codein" inputmode="numeric" placeholder="000 000" maxlength="7" spellcheck="false" autocomplete="off"><b class="agp-net-go" data-a="join" role="button"><span>JOIN</span><i></i></b></div></section></div>
+        <section class="agp-net-panel agp-net-rooms"><h4>OPEN ROOMS <span data-reg="rcnt"></span><b class="agp-net-btn is-small" data-a="refresh" role="button">REFRESH</b></h4>
+          <div class="agp-net-rm is-head"><i></i><b>HOST</b><span>CIRCUIT</span><span>DRIVERS</span><span>STATUS</span></div><div class="agp-net-rml" data-reg="rooms"></div></section></div>
+      <div data-reg="err"></div>
+      <footer class="agp-net-keys"><span><kbd>ESC</kbd> BACK</span><span>CLICK A ROOM TO JOIN · <i class="agp-net-lk">${LOCK_SVG}</i> = NEEDS ITS CODE</span></footer>`);
+    reg('conn', connHTML());
+    const srv = serverHTML();
+    reg('srv', srv);
+    const hs = hostSlots();
+    reg('create', `<h3>CREATE ROOM</h3><p>YOU HOST: PICK THE CIRCUIT AND RULES IN THE LOBBY</p>
+      <div class="agp-net-step"><span>HUMAN PLAYERS</span><i data-a="hum" data-d="-1" role="button">‹</i><b data-r="hum">${hs}</b><i data-a="hum" data-d="1" role="button">›</i></div>
+      <div class="agp-net-seg"><span>ACCESS</span><b class="${lockOn ? '' : 'is-on'}" data-a="lock" data-v="0" role="button">OPEN</b><b class="${lockOn ? 'is-on' : ''}" data-a="lock" data-v="1" role="button"><i class="agp-net-lk">${LOCK_SVG}</i>LOCKED</b></div>
+      ${lockOn ? '<div class="agp-net-step is-code"><span>ROOM CODE</span><input data-r="hcode" inputmode="numeric" placeholder="RANDOM" maxlength="7" spellcheck="false" autocomplete="off"></div><small>ONLY DRIVERS WITH THE CODE CAN JOIN · EMPTY = A RANDOM CODE</small>' : `<small>ANYONE CAN JOIN FROM THE LIST · UP TO ${MAXC} CARS WITH AI</small>`}
+      <b class="agp-net-go" data-a="host" role="button"><span>CREATE ROOM</span><i></i></b>`);
+    const L = roomList || [];
+    reg('rcnt', roomList ? String(L.length) : '');
+    reg('rooms', !roomList ? `<p class="agp-net-rme">${C.state === 'open' ? 'LOADING THE ROOM LIST…' : 'CONNECT TO SEE THE OPEN ROOMS'}</p>` : !L.length ? '<p class="agp-net-rme">NO OPEN ROOMS RIGHT NOW · CREATE ONE</p>' :
+      L.map(r => {
+        const full = r.n >= r.cap, ph = r.phase === 'lobby' ? ['is-lobby', 'IN LOBBY'] : r.phase === 'tt' ? ['is-race', 'TIME TRIAL'] : ['is-race', 'RACING'];
+        return `<div class="agp-net-rm${r.locked ? ' is-lock' : ''}${full ? ' is-full' : ''}${pinFor === r.rid ? ' is-pin' : ''}" data-a="rjoin" data-v="${esc(r.rid)}" role="button"><i class="agp-net-lk">${r.locked ? LOCK_SVG : ''}</i><b>${nameHTML(r.host || '?')}</b><span>${esc(trName(r.track))}${r.mode === 'timetrial' ? ' · TT' : ''}</span><span>${r.n} / ${r.cap}</span><span class="agp-net-ph ${ph[0]}">${full ? 'FULL' : ph[1]}</span></div>` +
+          (pinFor === r.rid ? `<div class="agp-net-rpin"><span>CODE FOR THIS ROOM</span><input data-r="pin" class="agp-net-codein" inputmode="numeric" placeholder="000 000" maxlength="7" spellcheck="false" autocomplete="off"><b class="agp-net-btn" data-a="rpin" role="button">JOIN</b><em data-a="rpinx" role="button">CANCEL</em>${C.errCode === 'badcode' ? errHTML(' is-in') : ''}</div>` : '');
+      }).join(''));
+    reg('err', C.errCode === 'badcode' && pinFor ? '' : errHTML());
+    return built;
   }
 
   // ---------------------------------------------------------------- boot
@@ -102987,6 +103203,91 @@ const Net = (() => {
 @media (max-width:720px){.agp-net{font-size:9px}.agp-net-box{padding:1em 1.2em}.agp-net-top{flex-wrap:wrap;gap:.9em}.agp-net-codebox{margin-left:0}
   .agp-net-cols{display:flex;flex-direction:column}.agp-net-choice{grid-template-columns:1fr}.agp-net-namebox{grid-template-columns:1fr}.agp-net-namepv{grid-column:1}
   .agp-net-foot{flex-wrap:wrap;margin:1em -1.2em -1em;padding:.8em 1.2em 1em}.agp-net-keys{display:none}}
+/* ---- lobby v2 (2026-10-21): tabs, RACE OVERVIEW (drivers | track, wings & tyres | weather, rules), LIVERY, host tabs; room browser */
+.agp-net-tabs{flex:none;display:flex;align-items:center;gap:.4em;margin:-.6em 0 1.1em;flex-wrap:wrap}
+.agp-net-tab{display:flex;align-items:center;height:2.6em;padding:0 1.3em;border-radius:.25em;background:rgba(31,35,46,.95);color:#c1c7d2;font:700 .85em/1 var(--agp-fd);letter-spacing:.16em;cursor:pointer;white-space:nowrap;box-shadow:inset 0 -.18em 0 transparent}
+.agp-net-tab:hover{background:#2c313f;color:#fff}
+.agp-net-tab.is-on{background:#fff;color:var(--agp-ink);box-shadow:inset 0 -.18em 0 var(--agp-red)}
+.agp-net-tabsep{margin:0 .3em 0 1.4em;font:700 .66em/1 var(--agp-fd);letter-spacing:.2em;color:var(--agp-red)}
+.agp-net-page{flex:1;min-height:0;display:flex;flex-direction:column}
+.agp-net-panel{min-width:0;min-height:0;display:flex;flex-direction:column;padding:1em 1.2em;border-radius:.35em;background:rgba(18,21,29,.86);overflow:auto;scrollbar-width:thin}
+.agp-net-panel>h4,.agp-net-rules>h4{flex:none;display:flex;align-items:baseline;gap:.7em;margin:0 0 .75em;font:700 .78em/1 var(--agp-fd);letter-spacing:.24em;color:var(--agp-dim)}
+.agp-net-panel>h4>span,.agp-net-rules>h4>span{color:#fff;letter-spacing:.12em;font-size:.9em}
+.agp-net-panel>h4 .agp-net-btn{margin-left:auto}
+.agp-net-ov{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto auto;gap:1em 1.4em}
+.agp-net-ov .agp-net-pl{grid-template-columns:.34em 2.3em minmax(0,1fr) minmax(0,7em) 2.4em 5.6em 3.2em}
+.agp-net-panel.is-car .agp-net-setslot{min-height:0}
+.agp-net-tyres{display:flex;align-items:center;flex-wrap:wrap;gap:.5em .9em;margin-bottom:.6em;padding:.4em .5em .4em .9em;border-radius:.25em;background:rgba(21,24,32,.9)}
+.agp-net-tyres>span{font:700 .78em/1 var(--agp-fd);letter-spacing:.16em;color:#c1c7d2}
+.agp-net-tyres .agp-tp-chips{display:flex;flex-wrap:wrap;gap:.3em}
+.agp-net-rules{grid-column:1 / 3}
+.agp-net-rcs{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5em,1fr));gap:.3em}
+.agp-net-rcs.is-col{grid-template-columns:1fr 1fr}
+.agp-net-rc{display:flex;flex-direction:column;gap:.45em;padding:.65em .8em;border-radius:.2em;background:rgba(18,21,29,.86);border-top:.18em solid rgba(225,6,0,.7);min-width:0}
+.agp-net-rc>span{font:700 .62em/1 var(--agp-fd);letter-spacing:.16em;color:var(--agp-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agp-net-rc>b{font:700 .9em/1.1 var(--agp-fd);letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agp-net-trk{flex:1;min-height:0;display:flex;flex-direction:column;gap:.45em}
+.agp-net-trk>b{font:italic 900 2em/1 var(--agp-ft);letter-spacing:.01em}
+.agp-net-trk>span{font:700 .72em/1.3 var(--agp-fd);letter-spacing:.14em;color:var(--agp-dim)}
+.agp-net-map{flex:1;min-height:6em;width:100%;margin-top:.4em}
+.agp-net-map .o{fill:none;stroke:rgba(255,255,255,.14);stroke-width:9;stroke-linejoin:round}
+.agp-net-map .i{fill:none;stroke:#fff;stroke-width:3.2;stroke-linejoin:round}
+.agp-net-map circle{fill:var(--agp-red)}
+.agp-net-wx{display:flex;align-items:center;gap:1em}
+.agp-net-wx>i{flex:none;width:3.4em;height:3.4em}.agp-net-wx>i svg{width:100%;height:100%}
+.agp-net-wx>div{display:flex;flex-direction:column;gap:.45em}
+.agp-net-wx b{font:italic 900 1.35em/1 var(--agp-ft)}
+.agp-net-wx span{font:700 .7em/1.35 var(--agp-fd);letter-spacing:.12em;color:#aab2bf}
+.agp-net-lv{flex:1;min-height:0;display:flex;flex-direction:column;gap:1em}
+.agp-net-numbox{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:.6em 1em;padding:1em 1.4em;border-radius:.35em;background:rgba(18,21,29,.86)}
+.agp-net-numbox>label{font:700 .8em/1 var(--agp-fd);letter-spacing:.2em;color:var(--agp-dim)}
+.agp-net-numin{width:3.2em;height:1.6em!important;font:italic 900 1.8em/1 var(--agp-ft)!important;text-align:center;font-variant-numeric:tabular-nums}
+.agp-net-numerr{font:700 .78em/1.2 var(--agp-fd);letter-spacing:.12em;color:#ff8a80}
+.agp-net-numbox>small{margin-left:auto;font:700 .66em/1.3 var(--agp-fd);letter-spacing:.14em;color:#8e96a5}
+.agp-net-lvg{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;display:grid;grid-template-columns:repeat(auto-fill,minmax(9.5em,1fr));align-content:start;gap:.5em}
+.agp-net-lvg .agp-sw{cursor:pointer}.agp-net-lvg .agp-sw.is-taken{opacity:.38;cursor:not-allowed}
+.agp-net-hp{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:1.4em}
+.agp-net-hp .agp-net-row{grid-template-columns:minmax(0,12em) 1.9em minmax(0,1fr) 1.9em}
+.agp-net-emow{position:absolute;right:3.4em;bottom:6.2em;z-index:4}
+.agp-net-emop{width:34em;padding:1em 1.1em;border-radius:.35em;background:rgba(14,16,22,.97);box-shadow:0 .6em 2em rgba(0,0,0,.5),inset 0 0 0 .1em rgba(255,255,255,.1)}
+.agp-net-emop>h5{margin:0 0 .8em;font:700 .78em/1 var(--agp-fd);letter-spacing:.2em;color:#fff}.agp-net-emop>h5>span{margin-left:.6em;color:var(--agp-dim);font-size:.85em}
+.agp-net-emop>div{display:grid;grid-template-columns:1fr 1fr;gap:.3em}
+.agp-net-emop b{display:flex;align-items:center;gap:.6em;height:2.3em;padding:0 .6em;border-radius:.2em;background:rgba(255,255,255,.06);font:700 .8em/1 var(--agp-fd);letter-spacing:.1em;cursor:pointer}
+.agp-net-emop b:hover{background:#fff;color:var(--agp-ink)}.agp-net-emop kbd.is-no{visibility:hidden}
+.agp-net-btn.is-on{background:#fff;color:var(--agp-ink)}
+.agp-net-lk{display:inline-flex;width:1.1em;height:1.1em;vertical-align:-.15em;color:var(--agp-yellow)}.agp-net-lk svg{width:100%;height:100%}
+.agp-net-codebox>.agp-net-lk{align-self:center;width:1.3em;height:1.3em}
+.agp-net-brw{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:1.4em;width:100%;max-width:110em;margin:0 auto}
+.agp-net-bl{display:flex;flex-direction:column;gap:1em;min-height:0;overflow:auto;scrollbar-width:thin}
+.agp-net-bl .agp-net-card{gap:.75em;padding:1.2em 1.4em 1.3em}.agp-net-bl .agp-net-card>h3{font-size:1.8em}
+.agp-net-jrow{display:flex;gap:1em;align-items:center}.agp-net-jrow .agp-net-codein{flex:1;font-size:2.2em!important}.agp-net-jrow .agp-net-go{align-self:center}
+.agp-net-seg{display:flex;align-items:center;gap:.3em;height:3em;padding:0 .5em 0 1em;border-radius:.25em;background:rgba(255,255,255,.05)}
+.agp-net-seg>span{flex:1;font:700 .85em/1 var(--agp-fd);letter-spacing:.16em;color:#c1c7d2}
+.agp-net-seg>b{display:flex;align-items:center;gap:.4em;height:2.1em;padding:0 1em;border-radius:.2em;font:700 .8em/1 var(--agp-fd);letter-spacing:.14em;cursor:pointer;background:rgba(255,255,255,.07);color:#c1c7d2}
+.agp-net-seg>b:hover{background:#2c313f;color:#fff}.agp-net-seg>b.is-on{background:#fff;color:var(--agp-ink)}.agp-net-seg>b.is-on .agp-net-lk{color:var(--agp-ink)}
+.agp-net-step.is-code input{width:7em;height:1.6em;font:italic 900 1.5em/1 var(--agp-ft);letter-spacing:.12em;text-align:center}
+.agp-net-rooms{min-height:0}
+.agp-net-rml{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:.25em}
+.agp-net-rm{display:grid;grid-template-columns:1.6em minmax(0,1fr) minmax(0,1.1fr) 5em 7.5em;align-items:center;gap:.8em;min-height:3.1em;padding:0 1em 0 .8em;border-radius:.2em;background:rgba(255,255,255,.05);cursor:pointer}
+.agp-net-rm:hover{background:rgba(255,255,255,.12)}
+.agp-net-rm>b{font:700 1.1em/1 var(--agp-ft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.agp-net-rm>b span{font-weight:400}
+.agp-net-rm>span{font:700 .8em/1 var(--agp-fd);letter-spacing:.1em;color:#c1c7d2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agp-net-rm>.agp-net-lk{width:1.3em;height:1.3em}
+.agp-net-ph{text-align:right}.agp-net-ph.is-lobby{color:var(--agp-green)!important}.agp-net-ph.is-race{color:var(--agp-yellow)!important}
+.agp-net-rm.is-full{opacity:.5}.agp-net-rm.is-pin{background:rgba(255,212,0,.12);box-shadow:inset 0 0 0 .1em rgba(255,212,0,.5)}
+.agp-net-rm.is-head{min-height:1.6em;background:none;cursor:default;font:700 .66em/1 var(--agp-fd);letter-spacing:.16em;color:#8e96a5}
+.agp-net-rm.is-head>*{font:inherit;color:inherit}.agp-net-rm.is-head>span:last-child{text-align:right}
+.agp-net-rpin{display:flex;align-items:center;flex-wrap:wrap;gap:.8em;padding:.7em 1em;margin-bottom:.3em;border-radius:.2em;background:rgba(255,212,0,.07)}
+.agp-net-rpin>span{font:700 .74em/1 var(--agp-fd);letter-spacing:.16em;color:#ffe27a}
+.agp-net-rpin .agp-net-codein{width:7.5em;font-size:1.6em!important}
+.agp-net-rpin>em{font:700 .72em/1 var(--agp-fd);letter-spacing:.14em;color:#c1c7d2;cursor:pointer;border-bottom:.12em solid rgba(255,255,255,.3)}
+.agp-net-rpin>.agp-net-err{flex-basis:100%}
+.agp-net-rme{margin:1.2em 0;text-align:center;font:700 .8em/1.4 var(--agp-fd);letter-spacing:.16em;color:var(--agp-dim)}
+[data-reg="err"]:not(:empty){flex:none;margin-top:1em}
+@media (max-width:1100px),(max-height:560px){.agp-net-ov,.agp-net-hp,.agp-net-brw{flex:none;grid-template-columns:minmax(0,1fr);grid-template-rows:none}.agp-net-rules{grid-column:1}
+  .agp-net-panel,.agp-net-lvg,.agp-net-rml,.agp-net-bl{overflow:visible}.agp-net-page{flex:none}.agp-net-emow{right:1.2em}}
+@media (max-width:720px){.agp-net-ov .agp-net-pl{grid-template-columns:.34em 2.3em minmax(0,1fr) 2.4em 5.6em}.agp-net-ov .agp-net-pl>.agp-net-tm,.agp-net-ov .agp-net-pl>.agp-net-ping{display:none}
+  .agp-net-emop{width:min(34em,90vw)}.agp-net-rm{grid-template-columns:1.6em minmax(0,1fr) 4em 6em}.agp-net-rm>span:nth-of-type(1){display:none}}
 .agp-net-emofeed{position:absolute;left:50%;bottom:6vh;transform:translateX(-50%);padding:6px 14px;background:rgba(8,10,16,.8);border-radius:4px;font-size:13px;font-weight:700;letter-spacing:1px;color:#27d7f5;opacity:0;pointer-events:none}
 .agp-net-emofeed.on{animation:agpNetFade 2.6s ease forwards}
 @keyframes agpNetFade{0%{opacity:0;transform:translateY(4px)}10%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
@@ -103033,6 +103334,7 @@ const Net = (() => {
     get state() { return { conn: C.state, url: C.url, id: C.id, ping: C.clock.ping, off: C.clock.off, room: C.room, err: C.err, cerr: C.cerr, bytesIn: C.bytesIn, bytesOut: C.bytesOut, secs: (nowMs() - C.t0) / 1000, cpu: C.cpu }; },
     resetStats() { C.bytesIn = C.bytesOut = 0; C.t0 = nowMs(); C.cpu = { frame: 0, post: 0, msg: 0, tick: 0, frames: 0 }; },
     get session() { return S; }, get inQuit() { return inQuit; },
+    joinRid, get lobby() { return { tab, rooms: roomList, numErr, emo: emoOpen, pin: pinFor }; },   // (tests: the room browser / lobby tabs)
     dropForTest() { if (C.ws) C.ws.close(); },   // (tests: a dropped connection; the client reconnects by itself)
   };
 })();
@@ -103318,7 +103620,7 @@ const DevInfo = (() => {
       if (on && tabDn) {
         if (e.code === 'Backslash') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) { page++; refresh(true); } return; }
         const op = typeof DevTools !== 'undefined' ? DevTools.KEY[e.code === 'Slash' && e.shiftKey ? 'Slash' : e.code] : null;
-        if (op) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) toolKey(op); return; }
+        if (op && !mpAny()) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) toolKey(op); return; }   // (multiplayer: no dev tools, the key is the game's)
       }
       if (e.code !== 'Backslash' || e.repeat || e.shiftKey) return;
       toggle();
@@ -103363,6 +103665,7 @@ const DevInfo = (() => {
     return false;
   }
   const mpRoom = () => (netOn() && M.net.state.room) || null;
+  const mpAny = () => !!(M && M.net && (M.net.session || (M.net.state && M.net.state.room)));   // (dev tools: single player only, 2026-10-21)
   function run(op, car, pid) {
     if (op === 'list') { showList = !showList; refresh(true); return; }
     if (op === 'spec') {   // (local camera only)
@@ -103370,20 +103673,7 @@ const DevInfo = (() => {
       else { G.specCar = car; dlog('spectating ' + codeOf(car) + ' (Tab+V + your car to go back)'); }
       return;
     }
-    const room = mpRoom(), S = M.net && M.net.session;
-    if (room && (op === 'kick' || S)) {   // multiplayer: host only, the server applies it
-      if (room.host !== M.net.state.id) { dlog(opName(op) + ': host only in multiplayer'); return; }
-      if (op === 'kick') {
-        const p = pid != null ? pid : car && car.netPid != null ? car.netPid : null;
-        if (p == null && !(car && car.netHuman)) { dlog('kick: ' + (car ? codeOf(car) + ' is not a player' : 'pick a player')); return; }
-        M.net.devCmd('kick', car ? car.id : null, p);
-      } else {
-        if (S.mode !== 'race') { dlog(opName(op) + ': no multiplayer race'); return; }
-        M.net.devCmd(op, car ? car.id : null);
-      }
-      dlog('sent: ' + opName(op) + (car ? ' ' + codeOf(car) : ''));
-      return;
-    }
+    if (mpAny()) { dlog(opName(op) + ': dev tools are single player only'); return; }
     if (op === 'kick') { dlog('kick: multiplayer only'); return; }
     let r;
     try { r = DevTools.apply(G, op, car, { who: 'You' }); } catch (e) { r = { ok: false, why: 'error ' + (e && e.message) }; }
@@ -103496,7 +103786,7 @@ const DevInfo = (() => {
     if (armed) L.push('TOOL Tab+' + DevTools.OPS[armed][0] + ' ' + opName(armed) + ': click a car in the timing tower');
     if (showList && typeof DevTools !== 'undefined') {
       const O = DevTools.OPS, ks = Object.keys(O), mp = mpRoom();
-      L.push('TOOLS (hold Tab' + (mp ? '; multiplayer: host only, the server applies them' : '') + ')');
+      L.push('TOOLS (hold Tab' + (mp ? '; OFF in multiplayer: single player only' : '') + ')');
       const it = k => 'Tab+' + O[k][0] + (O[k][2] === 2 ? ' + click' : O[k][2] === 1 ? ' (+ click)' : '') + '  ' + O[k][1];
       for (let i = 0; i < ks.length; i += 2) L.push('  ' + padR(it(ks[i]), 48) + (ks[i + 1] ? it(ks[i + 1]) : ''));
       for (const d of devLog.slice(-8)) L.push('  ' + (d.t >= 0 ? f(d.t, 1) + ' s ' : '') + d.txt);
@@ -104888,6 +105178,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-20 19:48 -->
+<!-- Apex GP build 2026-10-21 14:03 -->
 </body>
 </html>

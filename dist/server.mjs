@@ -192,11 +192,19 @@ function applyMe(room, p, me) {
 function roomMsg(room, p) {
   const sim = room.sim;
   return {
-    t: 'room', code: room.code, phase: room.phase, host: room.host ? room.host.id : null, you: p.id, settings: room.settings, tracks: TRACK_IDS,
+    t: 'room', code: room.code, locked: !!room.locked, phase: room.phase, host: room.host ? room.host.id : null, you: p.id, settings: room.settings, tracks: TRACK_IDS,
     players: room.players.map(q => { const a = awayOf(room, q); return { id: q.id, name: dname(q), team: q.team, livery: q.livery || undefined, number: q.number, compound: q.compound, ready: q.ready, ping: q.ping | 0,
       conn: connected(q), away: a > 0, lobby: a === 2, host: q === room.host, inRace: !!(sim && sim.has(q)) }; }),   // (name: as shown, numbered when shared)
     race: sim && sim.brief ? sim.brief() : null,
   };
+}
+// the OPEN ROOMS list (the join screen asks for it every few seconds): host, circuit, drivers / places, phase, locked;
+// rid joins an open room (a locked one also needs its code); the code itself is never listed
+function roomList() {
+  const o = [];
+  for (const r of rooms.values()) if (r.players.length) o.push({ rid: r.rid, host: r.host ? dname(r.host) : '', track: r.settings.trackId, mode: r.settings.mode,
+    n: r.players.length, cap: Math.min(MAX_IN_ROOM, r.settings.humanSlots || MAX_IN_ROOM), phase: r.phase, locked: !!r.locked });
+  return o.sort((a, b) => (a.phase === 'lobby' ? 0 : 1) - (b.phase === 'lobby' ? 0 : 1) || b.n - a.n);
 }
 function sendRoom(room) { room.dirty = false; room.urgent = false; room.sentT = now(); for (const p of room.players) send(p, roomMsg(room, p)); }
 
@@ -240,11 +248,20 @@ function warmSoon(room, ms = 1500) {
   room.warmT = setTimeout(() => { if (rooms.has(room.code) && !room.sim) warmTrack(room.settings && room.settings.trackId, room.settings && room.settings.damage, () => rooms.has(room.code)); }, ms);
 }
 setTimeout(() => warmTrack(N.DEF.trackId), 2000);   // (boot: the default circuit and the race code)
-function createRoom(host, settings, me) {
+// lock = { on, code? }: a locked room is listed with a lock and joined only with its code (the host's own 6 digits, or a
+// random one); an open room is joined from the list (its rid) without one. The 6-digit code always works on its own.
+function createRoom(host, settings, me, lock) {
   if (rooms.size >= MAX_ROOMS) return send(host, { t: 'error', msg: 'Server is full, try again later' });
-  const code = newCode();
+  const locked = !!(lock && typeof lock === 'object' && lock.on);
+  let code = null;
+  if (locked && lock.code != null && String(lock.code) !== '') {
+    code = N.cleanCode(String(lock.code));
+    if (code.length !== 6) return send(host, { t: 'error', code: 'hcode', msg: 'Room codes have 6 digits' });
+    if (rooms.has(code)) return send(host, { t: 'error', code: 'hcode', msg: 'That code is in use: pick another one' });
+  }
+  code = code || newCode();
   if (!code) return send(host, { t: 'error', msg: 'No free room code' });
-  const room = { code, host, players: [], settings: N.roomSettings(settings, TRACK_IDS, 1), phase: 'lobby', sim: null, dirty: true, urgent: true, sentT: 0, created: Date.now() };
+  const room = { code, rid: crypto.randomBytes(6).toString('hex'), locked, host, players: [], settings: N.roomSettings(settings, TRACK_IDS, 1), phase: 'lobby', sim: null, dirty: true, urgent: true, sentT: 0, created: Date.now() };
   rooms.set(code, room);
   joinRoom(room, host, me);
   warmSoon(room, 0);
@@ -1082,15 +1099,27 @@ function onText(p, raw) {
   const room = p.room, host = room && room.host === p, sim = room && room.sim;
   switch (m.t) {
     case 'ping': send(p, { t: 'pong', c: m.c, s: now() }); if (m.p != null) { const v = Math.round(+m.p) || 0; if (Math.abs(v - (p.ping | 0)) >= 3 && room) room.dirty = true; p.ping = v; } break;   // (ping: non-urgent room update)
-    case 'host': if (m.me && m.me.name) p.name = N.cleanName(m.me.name); createRoom(p, m.settings, m.me); break;
+    case 'host': if (m.me && m.me.name) p.name = N.cleanName(m.me.name); createRoom(p, m.settings, m.me, m.lock); break;
+    case 'rooms': if (t - (p.listT || 0) > 300) { p.listT = t; send(p, { t: 'rooms', rooms: roomList() }); } break;
     case 'join': {
-      const r = rooms.get(N.cleanCode(m.code));
-      if (!r) return send(p, { t: 'error', msg: 'No room with code ' + N.fmtCode(N.cleanCode(m.code)), code: 'noroom' });
+      let r = null;
+      if (m.rid != null) {   // (from the OPEN ROOMS list; a locked room: with its code)
+        for (const x of rooms.values()) if (x.rid === String(m.rid)) { r = x; break; }
+        if (!r) return send(p, { t: 'error', msg: 'That room has closed', code: 'noroom' });
+        if (r.locked && !r.players.includes(p) && N.cleanCode(String(m.code || '')) !== r.code) return send(p, { t: 'error', msg: 'Wrong code for this room', code: 'badcode' });
+      } else r = rooms.get(N.cleanCode(String(m.code || '')));
+      if (!r) return send(p, { t: 'error', msg: 'No room with code ' + N.fmtCode(N.cleanCode(String(m.code || ''))), code: 'noroom' });
       if (m.me && m.me.name) p.name = N.cleanName(m.me.name);
       if (joinRoom(r, p, m.me)) log(`#${p.id} ${dname(p)} joined room ${r.code} (${r.players.length})`);
       break;
     }
-    case 'me': if (room) { applyMe(room, p, m); room.urgent = true; } break;
+    case 'me': if (room) {
+      if (m.number != null) {   // (CAR NUMBER: 1-99, not one another driver in the room has: refused, the number stays)
+        const n = +m.number, q = room.players.find(x => x !== p && x.number === n);
+        if (!(n >= 1 && n <= 99 && n === Math.floor(n)) || q) { send(p, { t: 'error', code: 'number', msg: q ? `#${n} is taken by ${dname(q)}` : 'Car numbers go from 1 to 99' }); m.number = null; }
+      }
+      applyMe(room, p, m); room.urgent = true;
+    } break;
     case 'settings': if (host && room.phase === 'lobby' && m.settings && typeof m.settings === 'object') {
       const upd = Object.assign({}, m.settings);
       if ('penalties' in upd && !('penaltyLevel' in upd)) upd.penaltyLevel = upd.penalties === false ? 'off' : room.settings.penaltyLevel !== 'off' ? room.settings.penaltyLevel : 'standard';   // (older clients: on / off)
@@ -1139,34 +1168,10 @@ function onText(p, raw) {
     case 'honk':   // (honk.js: sound index, relayed to the others in the room, at most ~1 a second a player; an old client's `e` effect field is accepted and ignored)
       if (room && room.sim && Number.isInteger(m.s) && m.s >= 0 && m.s < 16 && t - (p.honkT || 0) >= 450) { p.honkT = t; sendAll(room, { t: 'honk', pid: p.id, s: m.s }, p); }
       break;
-    case 'devc': onDev(p, m, room, host, sim); break;   // (dev tools: the host's Tab keys; devtools.js)
+    case 'devc': break;   // (dev tools are single player only: a multiplayer server ignores them, 2026-10-21)
     case 'leave': if (room) leaveRoom(p, 'left'); send(p, { t: 'left' }); break;
     default: break;
   }
-}
-
-// dev tools (the dev overlay's Tab keys, devtools.js): host only; kick here (any phase: the lobby too), the rest RaceSim.onDev
-function onDev(p, m, room, host, sim) {
-  const t = now(), op = typeof m.op === 'string' ? m.op : '';
-  if (!room) return;
-  if (!host) return send(p, { t: 'devr', op, why: 'host only' });
-  if (t - (p.devT || 0) < 150) return send(p, { t: 'devr', op, why: 'too fast' });
-  p.devT = t;
-  if (op === 'kick') {
-    let q = null;
-    if (m.pid != null) q = room.players.find(x => x.id === (m.pid | 0)) || null;
-    else if (m.id != null && sim && sim.G) { const c = sim.G.cars.find(x => x.id === (m.id | 0)); q = c && c.net ? room.players.find(x => x === c.net.p) || null : null; }
-    if (!q) return send(p, { t: 'devr', op, why: 'not a player' });
-    if (q === p) return send(p, { t: 'devr', op, why: "can't kick yourself" });
-    const nm = dname(q);
-    (room.kicked || (room.kicked = new Set())).add(q.token);
-    send(q, { t: 'devn', op, you: 1, txt: 'The host removed you from the room' });
-    leaveRoom(q, 'kicked');
-    sendAll(room, { t: 'devn', op, id: -1, pid: q.id, txt: 'Host kicked ' + nm });
-    return;
-  }
-  if (!sim || !sim.onDev) return send(p, { t: 'devr', op, why: 'no race' });
-  sim.onDev(p, m);
 }
 
 function onConnection(ws) {
