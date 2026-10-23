@@ -1874,10 +1874,10 @@ html.agp-touch .agp-snd-hint .is-touch { display: inline; }
 .agp-sw-del:hover { background: var(--agp-red); color: #fff; }
 .agp-mn-panel.is-locked .agp-sw-del { display: none; }
 html.agp-touch .agp-sw-del { width: 2.4em; height: 2.4em; top: .1em; right: .1em; opacity: .9; }
-/* delete-livery confirm (over any menu screen) */
-.agp-cf { position: absolute; inset: 0; z-index: 6; display: none; align-items: center; justify-content: center; padding: 1em; box-sizing: border-box;
+/* delete-livery confirm (over any menu screen; root class agp-lvcf: a bare .agp-cf hid the championship standings rows) */
+.agp-lvcf { position: absolute; inset: 0; z-index: 6; display: none; align-items: center; justify-content: center; padding: 1em; box-sizing: border-box;
   background: rgba(5, 6, 9, .74); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
-.agp-cf.on { display: flex; }
+.agp-lvcf.on { display: flex; }
 .agp-cf-box { width: min(34em, 100%); box-sizing: border-box; padding: 1.4em 1.6em 1.2em; border-radius: .4em; background: rgba(13, 15, 21, .98);
   border-top: .35em solid var(--agp-red); box-shadow: 0 1em 3em rgba(0, 0, 0, .6); animation: agp-bn-in .2s ease-out both; }
 .agp-cf-head { display: flex; align-items: center; gap: 1em; }
@@ -73979,8 +73979,12 @@ const Quali = (() => {
   // still growing (4 s EMA > rate s/s, not flat out); both decay at 0.3 x dt. Cool-down when: a competitive best and
   // D >= dA with lf >= lfA (or D >= dA2 with tu >= tuA); else D >= dB (no best yet: dX, against the expected lap) with
   // lf >= lfB and tu >= tuB. Back to flying only if the lap wins back rel s. A cool-down lap: no flying lap (qPush off:
-  // the HUD's COOL-DOWN, blue light, no yields), not counted in LAPS unless it sets a time
+  // the HUD's COOL-DOWN, blue light, no yields), not counted in LAPS unless competitive (LAP_COMP)
   const CD = { bin: 20, dA: 3, lfA: 1.5, dA2: 6, tuA: 3, dB: 3, dX: 5, lfB: 4, tuB: 3, rate: 0.1, vk: 0.88, th: 0.75, fast: 0.7, ck: 1 / 400, mis: 3, rel: 1.5, cutM: 0.006, poleM: 0.015 };
+  // LAPS (the session row's laps, laps()): a cool-down lap driven on track - a human's (coolJudge) or an AI car's (q.st 'cool' at
+  // the line: planned, or a push lap given up - not a deleted flying lap) - counts only if competitive: <= LAP_COMP over the
+  // driver's own best this session (none: the session's best; nobody's: only if it sets a time). Out / in laps never count
+  const LAP_COMP = 0.02;
   const OFF_FLY = 5;                                      // s off the car's pace, projected over the lap: no flying lap for impeding (a cool-down: nobody impedes it)
   // held up (the flying lap's loss counts only then, held()): right behind (<= IMP_HM m or IMP_HT s), the car ahead not pulling
   // away (> IMP_PULL m/s), that car with more than IMP_ROOM m left between it and the edge / wall on the side away from the
@@ -74340,8 +74344,9 @@ const Quali = (() => {
     // started DL_DEAD s before the flag - and either att push laps are done on this set or a new set is worth > gain s
     // over this one's next lap; else another lap now)
     const fits = qs.clock + (1 - sh) * P * CAL.cool + inOf(G, car, P) + turn(qs) + tlOf(G, car, P) + DL_DEAD < qs.g[qs.idx] + qs.len[qs.idx];
-    const again = fits && ((q.att || 0) >= SET.att || P * fN - runLap(G, car.tyre.compound, P) > SET.gain);
+    const again = fits && ((q.att || 0) >= SET.att || P * fN - runLap(G, car.tyre.compound, P) > SET.gain), del = q.del && !q.valid;
     setSt(G, qs, car, again ? 'in' : 'cool');
+    if (del) q.del = true;   // (a deleted lap: LAP DELETED stays up until the line, or the pit lane)
     return true;
   }
   // the tyre category is wrong for the conditions by > 3 %: no push lap on it. u: laps to the push lap (out / cool lap):
@@ -74412,7 +74417,7 @@ const Quali = (() => {
       if (car.offTrack || lostCtl(T, car) || carNear(G, car)) q.evT = (q.evT || 0) + dt;
       abortLap(G, qs, car);
     }
-    if ((q.wxT -= dt) <= 0) { q.wxT = 2; if (tyresIn(G, qs, car, q.st === 'push' ? 0 : Math.max(0, 1 - (rc.dist - rc.lineDist) / T.length))) setSt(G, qs, car, 'in'); }
+    if ((q.wxT -= dt) <= 0) { q.wxT = 2; if (tyresIn(G, qs, car, q.st === 'push' ? 0 : Math.max(0, 1 - (rc.dist - rc.lineDist) / T.length))) { const d = q.del; setSt(G, qs, car, 'in'); q.del = d; } }
   }
 
   // ---------- per step ----------
@@ -74440,10 +74445,10 @@ const Quali = (() => {
   const QH = {
     emit: (G, e) => emit(G, e), note: () => {},
     qDel: (G, car, why, turn) => {
-      const q = car.q, rc = car._race;
-      if (!q || !q.valid || (q.st !== 'push' && q.st !== 'cool')) return;
-      q.valid = false; q.del = true; if (rc && rc.h) rc.h.bad = true;
-      emit(G, { type: 'qDeleted', car, turn: turn || '', why });
+      const q = car.q, rc = car._race, qs = G.race && G.race.qs;
+      if (!qs || !q || !q.valid || (q.st !== 'push' && q.st !== 'cool')) return;
+      if (rc && rc.h) rc.h.bad = true;
+      delLap(G, qs, car, turn, why);
     },
     qIn: (G, car) => {
       const race = G.race, qs = race && race.qs, q = car.q, rc = car._race;
@@ -74498,8 +74503,9 @@ const Quali = (() => {
       else if (q.st === 'lane' && !ps) { setSt(G, qs, car, 'out'); q.clr = false; emit(G, { type: 'qOutLap', car }); if (model && !human) toModel(G, car); }
       else if (human && (q.st === 'out' || q.st === 'push') && ps) setSt(G, qs, car, 'in');   // (in lap: only once past the limiter line - Race takes the car to the box; the entry road alone is not one)
       if (!car.inPitLane) q.clr = true;
+      else if (q.del && q.st === 'in') q.del = false;   // (an AI car's deleted lap given up for an in lap: LAP DELETED until the pit lane)
       if (car.lap !== q.lapN) { laps(G, race, qs, car); q.lapN = car.lap; crossing(G, qs, car); }
-      if (q.valid && (q.st === 'push' || q.st === 'cool') && rc.h && rc.h.bad) { q.valid = false; q.del = true; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }
+      if (q.valid && (q.st === 'push' || q.st === 'cool') && rc.h && rc.h.bad) delLap(G, qs, car, turnAt(G, car.s));
       if (!human) { if (q.st === 'garage') garage(G, race, qs, car, dt); else if (q.st === 'out' || q.st === 'push' || q.st === 'cool') aiTrack(G, qs, car, dt); }
       // pace on track with nobody close ahead (speed / raceSpeed, 1.5 s EMA): the expected speed when impeded
       if (!model && !ps && away(car) && car.speed > 8 && clearAhead(G, car)) q.kE += (clamp(car.speed / Math.max(5, vAt(T, car.s)), 0.5, 1.15) - q.kE) * Math.min(1, dt / 1.5);
@@ -74545,12 +74551,10 @@ const Quali = (() => {
     while (q.seen < H_.length) {
       const e = H_[q.seen++], R = rowOf(qs, qs.idx, car.id);
       if (!R || qs.st === 'break' || qs.st === 'done') continue;
-      const cool = q.cd && q.seen === H_.length && !e.invalid && R.best != null && e.time >= R.best;   // (a human's cool-down lap - coolJudge - that set no time)
-      if (!e.outLap && !e.inLap && !cool) R.laps++;   // (LAPS = timed laps: no out / in / cool-down laps)
+      if (!e.outLap && !e.inLap && lapCounts(qs, car, R, e, q.seen === H_.length)) R.laps++;   // (LAPS: no out / in laps, no slow cool-down laps)
       if (q.cnt !== qs.idx) continue;
       if (e.invalid) {
-        if (q.del) R.del++;
-        else if (!e.inLap && !e.outLap) { R.del++; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }   // (judged at the line: still announce it)
+        if (!q.del && !e.inLap && !e.outLap) { R.del++; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }   // (judged at the line: still announce it; a lap deleted on the way was counted then - delLap)
         continue;
       }
       e.qi = qs.idx;
@@ -74573,6 +74577,25 @@ const Quali = (() => {
         emit(G, { type: 'qDeleted', car, turn: '' });
       }
     }
+  }
+  // a lap just completed (e, the car's state still that lap's) counts in LAPS: anything but a cool-down lap that is not competitive
+  // (LAP_COMP; last: the newest lap - the state is that lap's). R.best: this driver's best before this lap
+  function lapCounts(qs, car, R, e, last) {
+    const q = car.q, cool = last && (isHuman(car) ? !!q.cd : q.st === 'cool' && !q.del);
+    if (!cool) return true;
+    if (e.invalid || !(e.time > 0)) return false;
+    const ref = R.best != null ? R.best : qs.best ? qs.best.time : null;
+    return ref != null ? e.time <= ref * (1 + LAP_COMP) + 1e-9 : q.cnt === qs.idx;
+  }
+  // a lap deleted on track (track limits, race control): LAP DELETED (q.del) until the line - the AI's lap given up for a cool / in
+  // lap keeps it (abortLap; an in lap until the pit lane) - and the row's deleted count at once (the server re-sends 'qres')
+  function delLap(G, qs, car, turn, why) {
+    const q = car.q, R = q.cnt === qs.idx && qs.st !== 'break' && qs.st !== 'done' ? rowOf(qs, qs.idx, car.id) : null;
+    q.valid = false; q.del = true;
+    if (R) { R.del++; qs.seq++; }
+    const ev = { type: 'qDeleted', car, turn: turn || '' };
+    if (why) ev.why = why;
+    emit(G, ev);
   }
   function best(G, race, qs, car, R, time, s, c, at) {
     R.best = time; R.s = [s[0], s[1], s[2]]; R.at = at; R.c = c;
@@ -75226,7 +75249,7 @@ const Quali = (() => {
     PRESETS, IMP, COL, CAL, SPEEDS, collision, format, opts, start, update, frame, garageMode, setSpeed, speed,
     goOut, returnToGarage, endInLap, skipBreak, ready, cont, simulateRest, finish, classify, status, remaining, humansIn,
     stateMsg, applyState, mirror, resMsg, applyRes, clientTick, snapshot, restore, canRewind,
-    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt, held, coolJudge, compPace, setPick, exitClear, aiTrack },   // (tests)
+    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt, held, coolJudge, compPace, setPick, exitClear, aiTrack, laps, lapCounts },   // (tests)
   };
 })();
 
@@ -75519,7 +75542,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-22 20:10';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-23 17:29';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] — stored value = round(v / scale), delta-encoded per lap
@@ -94901,7 +94924,7 @@ const HUD = (() => {
     shown = !!v;
     if (!root) return;
     root.classList.toggle('agp-off', !shown);
-    if (shown) { MAP.dirty = true; tTower = tTiming = 9; } else proxReset();
+    if (shown) { MAP.dirty = true; tTower = tTiming = 9; } else { proxReset(); clearNotes(); }   // (hidden: no banner waits to come up in a later view)
   }
 
   function resetRace(G) {
@@ -94920,7 +94943,8 @@ const HUD = (() => {
     proxReset();                              // (proximity arrows: off)
     gbOrd.clear();                            // (give-back orders)
     if (E.pitClock) Object.assign(E.pitClock.s, { t0: null, fin: false, hold: 0, stop: null, pen: 0 });   // (the pit timer)
-    if (E.banners) { E.banners.textContent = ''; banners.length = 0; waitQ.length = 0; E.rc.textContent = ''; feed.length = 0; rcCardReset(); if (E.vsc) { E.vsc.style.display = 'none'; RCB.on = false; RCB.dk = null; E.rcRow.appendChild(E.vsc); } }
+    clearNotes(); notesKey = sesKey(G);
+    if (E.banners && E.vsc) { E.vsc.style.display = 'none'; RCB.on = false; RCB.dk = null; E.rcRow.appendChild(E.vsc); }
   }
 
   // ---------- main update ----------
@@ -94929,6 +94953,7 @@ const HUD = (() => {
     if (!root || !shown || !G) return;
     lastG = G;
     if (G.race !== lastRace) resetRace(G);
+    notesFor(G);
     if (typeof Input !== 'undefined' && Input.rev !== keyRev) relabelKeys();   // (Settings > Controls changed a key)
     const car = G.player;
     if (!car) return;
@@ -96221,6 +96246,16 @@ const HUD = (() => {
   const pri5 = p => (p < 0 ? 0 : p > 4 ? 4 : p | 0);
   const slots = () => (E.hud && E.hud.classList.contains('has-eng') ? MAX_BIG - 1 : MAX_BIG);
   let wSeq = 0;
+  // notifications belong to the session they came up in (Q1 / Q2 / Q3 / the race: one race object) and to the view: cleared at a
+  // session change and when the HUD is hidden (a qualifying callout held back behind the session's result screen - the HUD hidden
+  // in the frame it came up - used to wait there, frozen, and come up over the race's start lights)
+  let notesKey = '';
+  const sesKey = G => { const r = G && G.race; return !r ? '' : r.phase === 'quali' ? 'q' + (r.qs ? r.qs.idx : '') : 'r'; };
+  function notesFor(G) { const k = sesKey(G); if (k !== notesKey) { notesKey = k; clearNotes(); } }
+  function clearNotes() {
+    if (!E.banners) return;
+    E.banners.textContent = ''; banners.length = 0; waitQ.length = 0; E.rc.textContent = ''; feed.length = 0; rcCardReset();
+  }
   function flash(text, o = {}) {
     if (!root) return null;
     if (o.kind === 'rc') return feedMsg(o.sub ? text + ' \u2014 ' + o.sub : text, o);
@@ -96380,6 +96415,7 @@ const HUD = (() => {
   function onEvent(ev) {
     if (!root || !ev) return;
     const G = lastG, me = G && G.player;
+    if (G && G.race === lastRace) notesFor(G);   // (an event of a new session: the last one's notes go first)
     const isMe = !!ev.car && (ev.car === me || (ev.car.isPlayer && !me));
     if (G && G.race && G.race.qs && qEvent(G, ev, isMe)) return;   // (Q1 / Q2 / Q3 events + filters; qualifying section)
     switch (ev.type) {
@@ -100314,11 +100350,11 @@ const Menu = (() => {
   function qStat(G, car) {
     const qs = G.race.qs, n = sNames(qs);
     if (car.qOut >= 0 && (car.qSt === 'parked' || car.qSt === 'garage')) return ['OUT · ' + n[car.qOut], 'ko'];
+    if (car.qDel && (car.qSt === 'push' || car.qSt === 'cool' || car.qSt === 'in')) return ['LAP DELETED', 'del'];   // (an AI car's lap given up after it too: until the line / the pit lane)
     switch (car.qSt) {
       case 'lane': return ['PIT EXIT', 'pit'];
       case 'out': return ['OUT LAP', 'out'];
       case 'push': {
-        if (car.qDel) return ['LAP DELETED', 'del'];
         if (!car.qPush) return ['ON TRACK', ''];
         const T = G.track, k = T && T.sectorAt && isNum(car.s) ? T.sectorAt(car.s) : -1;
         return ['FLYING' + (k >= 0 ? ' · S' + (k + 1) : ''), 'fly'];
@@ -101527,7 +101563,7 @@ const Menu = (() => {
     } else if (screen === 'main') { refreshList('main'); setFocus('main', idxOf('teamIndex'), false); }
   }
   function cfInit() {
-    root.insertAdjacentHTML('beforeend', `<div class="agp-cf" data-r="lvConfirm" role="dialog" aria-modal="true" aria-label="Delete livery">
+    root.insertAdjacentHTML('beforeend', `<div class="agp-lvcf" data-r="lvConfirm" role="dialog" aria-modal="true" aria-label="Delete livery">
       <div class="agp-cf-box"><div class="agp-cf-head"><i class="agp-sw-liv" data-cf="sw"></i><div><small>DELETE THIS LIVERY?</small><b data-cf="name"></b></div></div>
         <div class="agp-cf-msg" data-cf="msg"></div>
         <div class="agp-cf-btns"><div class="agp-cf-b" data-cf-b="no" role="button">CANCEL</div><div class="agp-cf-b is-del" data-cf-b="yes" role="button">DELETE</div></div>
@@ -106436,7 +106472,7 @@ const Game = (() => {
         if (!G.attract) { if (M.hud) M.hud.onEvent(ev); if (M.sfx && audioReady) M.sfx.onEvent(ev); }
         onEvent(ev);
       }
-      G.events.length = 0;
+      G.events.length = 0; qCall = false;
       for (const c of G.cars) c.collision = 0;
       if (resultsTimer > 0) { resultsTimer -= dt; if (resultsTimer <= 0) showResults(); }
       // menu showcase: run the same race for 3 laps of the featured car, then fade to black into a new one
@@ -106675,15 +106711,21 @@ const Game = (() => {
   // a session's result (qEnd; knocked out -> the rest simulated at once, or watch it from the garage), the grid (qDone:
   // AI brains rebuilt for the race, the HUD's confirm screen shows it). qScr = the qualifying screen open: 'garage' | 'result'.
   let qScr = null, qRes = -1, qBrains = null, qPre = false;   // (qPre: qGrid's entry list)
+  // a session ended on the player's own line crossing (the last car running: qBest / qDeleted and qEnd in one frame): the HUD
+  // stays up Q_HOLD s for that lap's callout (qScr 'hold', the clock waiting), then the result screen. Not with the grid formed
+  // (the last session: its result at once, as the HUD's grid screen would come up). qCall: the player's lap callout this frame
+  let qCall = false, qHoldT = 0;
+  const Q_HOLD = 3;
   const qOn = () => !!(M.quali && M.menu && G.race && G.race.qs && !G.race.net && !G.attract && G.screen === 'race');
   function qStart() {
-    qScr = null; qRes = -1; qBrains = null; qPre = false;
+    qScr = null; qRes = -1; qBrains = null; qPre = false; qCall = false; qHoldT = 0;
     if (M.quali && G.race && G.race.qs && !G.attract && params.has('qspeed')) M.quali.setSpeed(G, +params.get('qspeed'));   // (tests: garage speed x1 / 2 / 5 / 10)
   }
   function qFrame(dt) {
     if (qPre && !G.paused && G.race === qBrains && !G.race.awaitConfirm) qGo();   // (the grid confirmed elsewhere)
+    if (qScr === 'hold' && (qHoldT -= dt) <= 0) qResult(qRes);   // (the player's callout seen: the session's result)
     if (!qOn() || G.paused || !M.quali.garageMode(G)) return false;
-    if (qScr !== 'result') M.quali.frame(G, dt * M.quali.speed(G));   // (the clock waits while a session's result is read)
+    if (qScr !== 'result' && qScr !== 'hold') M.quali.frame(G, dt * M.quali.speed(G));   // (the clock waits while a session's result is read)
     return true;
   }
   function qGarage() {
@@ -106725,9 +106767,13 @@ const Game = (() => {
   }
   function qEvent(ev) {
     if (!qOn()) return;
-    if (ev.type === 'qGarage' && ev.car === G.player && qScr !== 'result') qGarage();
-    else if (ev.type === 'qEnd' && !ev.sim) qResult(ev.idx);
-    else if (ev.type === 'qDone' && qScr !== 'result' && qBrains !== G.race) qGrid();   // (simulated too: the spectator's SKIP TO THE GRID)
+    if ((ev.type === 'qBest' || ev.type === 'qDeleted') && ev.car === G.player && !ev.sim) qCall = true;
+    if (ev.type === 'qGarage' && ev.car === G.player && qScr !== 'result' && qScr !== 'hold') qGarage();
+    else if (ev.type === 'qEnd' && !ev.sim) {
+      if (qCall && !qScr && G.race.phase === 'quali' && M.hud && !G.paused) { qScr = 'hold'; qRes = ev.idx; qHoldT = Q_HOLD; }
+      else qResult(ev.idx);
+    }
+    else if (ev.type === 'qDone' && qScr !== 'result' && qScr !== 'hold' && qBrains !== G.race) qGrid();   // (simulated too: the spectator's SKIP TO THE GRID)
     // QF: not again after CONTINUE's qGrid (qBrains set): its qDone arrives a frame later, after the HUD put the grid screen
     // up, and qGrid's Menu.hide() took it down for good (awaitConfirm 'grid' with no screen: the lights never came)
   }
@@ -106736,6 +106782,7 @@ const Game = (() => {
     if (RCD.open && G.race === RCD.race && G.race.phase === 'racing' && G.player && G.player.retired) { M.menu.showRaceControl(G, RCD.ctl); if (M.hud) M.hud.setVisible(false); return true; }
     if (!qOn()) return false;
     if (qPre && G.race === qBrains && G.race.awaitConfirm) { M.menu.showGrid(G, qGo); return true; }   // (the entry list before the race)
+    if (qScr === 'hold') { qResult(qRes); return true; }   // (paused in the hold: the result now)
     if (qScr === 'result') { M.menu.showQualiResult(G, qRes, qContinue, qWatch); return true; }
     if (qScr === 'garage' || M.quali.garageMode(G)) { qGarage(); return true; }
     return false;
@@ -106824,6 +106871,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-22 20:10 -->
+<!-- Apex GP build 2026-10-23 17:29 -->
 </body>
 </html>

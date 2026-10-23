@@ -18914,8 +18914,12 @@ const Quali = (() => {
   // still growing (4 s EMA > rate s/s, not flat out); both decay at 0.3 x dt. Cool-down when: a competitive best and
   // D >= dA with lf >= lfA (or D >= dA2 with tu >= tuA); else D >= dB (no best yet: dX, against the expected lap) with
   // lf >= lfB and tu >= tuB. Back to flying only if the lap wins back rel s. A cool-down lap: no flying lap (qPush off:
-  // the HUD's COOL-DOWN, blue light, no yields), not counted in LAPS unless it sets a time
+  // the HUD's COOL-DOWN, blue light, no yields), not counted in LAPS unless competitive (LAP_COMP)
   const CD = { bin: 20, dA: 3, lfA: 1.5, dA2: 6, tuA: 3, dB: 3, dX: 5, lfB: 4, tuB: 3, rate: 0.1, vk: 0.88, th: 0.75, fast: 0.7, ck: 1 / 400, mis: 3, rel: 1.5, cutM: 0.006, poleM: 0.015 };
+  // LAPS (the session row's laps, laps()): a cool-down lap driven on track - a human's (coolJudge) or an AI car's (q.st 'cool' at
+  // the line: planned, or a push lap given up - not a deleted flying lap) - counts only if competitive: <= LAP_COMP over the
+  // driver's own best this session (none: the session's best; nobody's: only if it sets a time). Out / in laps never count
+  const LAP_COMP = 0.02;
   const OFF_FLY = 5;                                      // s off the car's pace, projected over the lap: no flying lap for impeding (a cool-down: nobody impedes it)
   // held up (the flying lap's loss counts only then, held()): right behind (<= IMP_HM m or IMP_HT s), the car ahead not pulling
   // away (> IMP_PULL m/s), that car with more than IMP_ROOM m left between it and the edge / wall on the side away from the
@@ -19275,8 +19279,9 @@ const Quali = (() => {
     // started DL_DEAD s before the flag - and either att push laps are done on this set or a new set is worth > gain s
     // over this one's next lap; else another lap now)
     const fits = qs.clock + (1 - sh) * P * CAL.cool + inOf(G, car, P) + turn(qs) + tlOf(G, car, P) + DL_DEAD < qs.g[qs.idx] + qs.len[qs.idx];
-    const again = fits && ((q.att || 0) >= SET.att || P * fN - runLap(G, car.tyre.compound, P) > SET.gain);
+    const again = fits && ((q.att || 0) >= SET.att || P * fN - runLap(G, car.tyre.compound, P) > SET.gain), del = q.del && !q.valid;
     setSt(G, qs, car, again ? 'in' : 'cool');
+    if (del) q.del = true;   // (a deleted lap: LAP DELETED stays up until the line, or the pit lane)
     return true;
   }
   // the tyre category is wrong for the conditions by > 3 %: no push lap on it. u: laps to the push lap (out / cool lap):
@@ -19347,7 +19352,7 @@ const Quali = (() => {
       if (car.offTrack || lostCtl(T, car) || carNear(G, car)) q.evT = (q.evT || 0) + dt;
       abortLap(G, qs, car);
     }
-    if ((q.wxT -= dt) <= 0) { q.wxT = 2; if (tyresIn(G, qs, car, q.st === 'push' ? 0 : Math.max(0, 1 - (rc.dist - rc.lineDist) / T.length))) setSt(G, qs, car, 'in'); }
+    if ((q.wxT -= dt) <= 0) { q.wxT = 2; if (tyresIn(G, qs, car, q.st === 'push' ? 0 : Math.max(0, 1 - (rc.dist - rc.lineDist) / T.length))) { const d = q.del; setSt(G, qs, car, 'in'); q.del = d; } }
   }
 
   // ---------- per step ----------
@@ -19375,10 +19380,10 @@ const Quali = (() => {
   const QH = {
     emit: (G, e) => emit(G, e), note: () => {},
     qDel: (G, car, why, turn) => {
-      const q = car.q, rc = car._race;
-      if (!q || !q.valid || (q.st !== 'push' && q.st !== 'cool')) return;
-      q.valid = false; q.del = true; if (rc && rc.h) rc.h.bad = true;
-      emit(G, { type: 'qDeleted', car, turn: turn || '', why });
+      const q = car.q, rc = car._race, qs = G.race && G.race.qs;
+      if (!qs || !q || !q.valid || (q.st !== 'push' && q.st !== 'cool')) return;
+      if (rc && rc.h) rc.h.bad = true;
+      delLap(G, qs, car, turn, why);
     },
     qIn: (G, car) => {
       const race = G.race, qs = race && race.qs, q = car.q, rc = car._race;
@@ -19433,8 +19438,9 @@ const Quali = (() => {
       else if (q.st === 'lane' && !ps) { setSt(G, qs, car, 'out'); q.clr = false; emit(G, { type: 'qOutLap', car }); if (model && !human) toModel(G, car); }
       else if (human && (q.st === 'out' || q.st === 'push') && ps) setSt(G, qs, car, 'in');   // (in lap: only once past the limiter line - Race takes the car to the box; the entry road alone is not one)
       if (!car.inPitLane) q.clr = true;
+      else if (q.del && q.st === 'in') q.del = false;   // (an AI car's deleted lap given up for an in lap: LAP DELETED until the pit lane)
       if (car.lap !== q.lapN) { laps(G, race, qs, car); q.lapN = car.lap; crossing(G, qs, car); }
-      if (q.valid && (q.st === 'push' || q.st === 'cool') && rc.h && rc.h.bad) { q.valid = false; q.del = true; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }
+      if (q.valid && (q.st === 'push' || q.st === 'cool') && rc.h && rc.h.bad) delLap(G, qs, car, turnAt(G, car.s));
       if (!human) { if (q.st === 'garage') garage(G, race, qs, car, dt); else if (q.st === 'out' || q.st === 'push' || q.st === 'cool') aiTrack(G, qs, car, dt); }
       // pace on track with nobody close ahead (speed / raceSpeed, 1.5 s EMA): the expected speed when impeded
       if (!model && !ps && away(car) && car.speed > 8 && clearAhead(G, car)) q.kE += (clamp(car.speed / Math.max(5, vAt(T, car.s)), 0.5, 1.15) - q.kE) * Math.min(1, dt / 1.5);
@@ -19480,12 +19486,10 @@ const Quali = (() => {
     while (q.seen < H_.length) {
       const e = H_[q.seen++], R = rowOf(qs, qs.idx, car.id);
       if (!R || qs.st === 'break' || qs.st === 'done') continue;
-      const cool = q.cd && q.seen === H_.length && !e.invalid && R.best != null && e.time >= R.best;   // (a human's cool-down lap - coolJudge - that set no time)
-      if (!e.outLap && !e.inLap && !cool) R.laps++;   // (LAPS = timed laps: no out / in / cool-down laps)
+      if (!e.outLap && !e.inLap && lapCounts(qs, car, R, e, q.seen === H_.length)) R.laps++;   // (LAPS: no out / in laps, no slow cool-down laps)
       if (q.cnt !== qs.idx) continue;
       if (e.invalid) {
-        if (q.del) R.del++;
-        else if (!e.inLap && !e.outLap) { R.del++; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }   // (judged at the line: still announce it)
+        if (!q.del && !e.inLap && !e.outLap) { R.del++; emit(G, { type: 'qDeleted', car, turn: turnAt(G, car.s) }); }   // (judged at the line: still announce it; a lap deleted on the way was counted then - delLap)
         continue;
       }
       e.qi = qs.idx;
@@ -19508,6 +19512,25 @@ const Quali = (() => {
         emit(G, { type: 'qDeleted', car, turn: '' });
       }
     }
+  }
+  // a lap just completed (e, the car's state still that lap's) counts in LAPS: anything but a cool-down lap that is not competitive
+  // (LAP_COMP; last: the newest lap - the state is that lap's). R.best: this driver's best before this lap
+  function lapCounts(qs, car, R, e, last) {
+    const q = car.q, cool = last && (isHuman(car) ? !!q.cd : q.st === 'cool' && !q.del);
+    if (!cool) return true;
+    if (e.invalid || !(e.time > 0)) return false;
+    const ref = R.best != null ? R.best : qs.best ? qs.best.time : null;
+    return ref != null ? e.time <= ref * (1 + LAP_COMP) + 1e-9 : q.cnt === qs.idx;
+  }
+  // a lap deleted on track (track limits, race control): LAP DELETED (q.del) until the line - the AI's lap given up for a cool / in
+  // lap keeps it (abortLap; an in lap until the pit lane) - and the row's deleted count at once (the server re-sends 'qres')
+  function delLap(G, qs, car, turn, why) {
+    const q = car.q, R = q.cnt === qs.idx && qs.st !== 'break' && qs.st !== 'done' ? rowOf(qs, qs.idx, car.id) : null;
+    q.valid = false; q.del = true;
+    if (R) { R.del++; qs.seq++; }
+    const ev = { type: 'qDeleted', car, turn: turn || '' };
+    if (why) ev.why = why;
+    emit(G, ev);
   }
   function best(G, race, qs, car, R, time, s, c, at) {
     R.best = time; R.s = [s[0], s[1], s[2]]; R.at = at; R.c = c;
@@ -20161,7 +20184,7 @@ const Quali = (() => {
     PRESETS, IMP, COL, CAL, SPEEDS, collision, format, opts, start, update, frame, garageMode, setSpeed, speed,
     goOut, returnToGarage, endInLap, skipBreak, ready, cont, simulateRest, finish, classify, status, remaining, humansIn,
     stateMsg, applyState, mirror, resMsg, applyRes, clientTick, snapshot, restore, canRewind,
-    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt, held, coolJudge, compPace, setPick, exitClear, aiTrack },   // (tests)
+    _int: { expLap, runLap, projPos, inOf, sampleLap, wearF, plan, tlOf, lapSum, timeBack, toModel, handBack, impeding, advanceW, splits, paceOf, offPace, shareAt, held, coolJudge, compPace, setPick, exitClear, aiTrack, laps, lapCounts },   // (tests)
   };
 })();
 
