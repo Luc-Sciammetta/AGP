@@ -520,11 +520,11 @@ class RaceSim {
     Physics.ghostStart(car);
   }
   // tyre choice made in the pit lane (after the limiter line the server drives: no STATE packets carry it then)
-  // contact damage: a client's own wall hit (its car's physics runs there); judged here: the car is client-driven, racing,
+  // contact damage: a client's own wall hit (its car's physics runs there); judged here: the car is client-driven, racing / qualifying,
   // next to a wall, the numbers plausible; at most 8 per message, ~20 a second
   onWallHit(p, m) {
     const car = this.byPid.get(p.id), w = this.G.world, race = this.race;
-    if (!car || !w || !w.damage || !car.net || car.net.auth !== 'client' || race.phase !== 'racing' || !Array.isArray(m.h)) return;
+    if (!car || !w || !w.damage || !car.net || car.net.auth !== 'client' || (race.phase !== 'racing' && race.phase !== 'quali') || !Array.isArray(m.h)) return;   // (qualifying too, HANDOFF "Damage in qualifying")
     const n = car.net, tNow = now();
     if (tNow - (n.whT || 0) > 1000) { n.whT = tNow; n.whN = 0; }
     const T = this.track, i = car.idx >= 0 ? car.idx : T.idxAt(car.s), cor = T.corridor(car.s, car.d, { min: 0, max: 0, pit: false });
