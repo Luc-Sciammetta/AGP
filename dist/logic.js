@@ -50,7 +50,35 @@ const U = (() => {
   const hexToInt = hex => parseInt(hex.replace('#', ''), 16);
   // race laps for a share of the F1 distance (user 2026-10-19): 100 % = the fewest laps covering 305 km, 25 / 50 % = ceil(share x that)
   const raceLaps = (pct, len) => { const full = Math.ceil(305000 / Math.max(1, len)); return pct >= 100 ? full : Math.max(1, Math.ceil(pct / 100 * full)); };
-  return { raceLaps, TAU, clamp, lerp, invLerp, smooth, wrapAngle, sign, approach, expDecay, rng, fmtTime, fmtGap, kmh, setSpeedUnit, spdK, spd, spdKmh, spdUnit, hexToInt };
+  // The circuits a player can pick, in the one order every list shows them (menu cards, the championship calendar's default and
+  // SELECT ALL, STATS, the multiplayer room's CIRCUIT row and the server's list): the REAL circuits by the 2026 F1 calendar,
+  // then the fictional ones in TRACK_DATA order. Only ids are ordered, TRACK_DATA itself is never reordered. A real circuit
+  // missing from TRACK_ORDER lands after the listed ones (still before the fictional); draft circuits are hidden.
+  // New real circuit: add its id here at its 2026 race date.
+  const TRACK_ORDER = [
+    'albertpark',    // Australian GP, 8 Mar
+    'bahrain',       // Bahrain GP, 12 Apr (cancelled for 2026; keeps its calendar slot)
+    'jeddah',        // Saudi Arabian GP, 19 Apr (cancelled for 2026; keeps its calendar slot)
+    'montreal',      // Canadian GP, 24 May
+    'monaco',        // Monaco GP, 7 Jun
+    'silverstone',   // British GP, 5 Jul
+    'spa',           // Belgian GP, 19 Jul
+    'sepang',        // "Bahrain GP in Malaysia", 4 Oct (the rescheduled Bahrain round)
+    'singapore',     // Singapore GP, 11 Oct
+    'mexico',        // Mexico City GP, 1 Nov
+  ];
+  // real-world circuit or a fictional one: the made-up ones say so in TRACK_DATA's country ("Italy (fictional)"); an explicit
+  // `real: true / false` wins
+  const isRealTrack = d => !!d && (d.real != null ? !!d.real : !/fictional/i.test(String(d.country || '')));
+  // trackIds(TRACK_DATA) = every pickable circuit id in that order; trackIds(TRACK_DATA, list) = `list` (a server's list)
+  // sorted the same way, unknown ids dropped
+  const trackIds = (data, list) => {
+    const all = data ? Object.keys(data) : [];
+    const key = id => { const i = TRACK_ORDER.indexOf(id); return (isRealTrack(data[id]) ? 0 : 1000) + (i < 0 ? 500 : i); };
+    return (Array.isArray(list) ? list : all).filter((id, i, a) => data && data[id] && !data[id].draft && a.indexOf(id) === i)
+      .sort((a, b) => key(a) - key(b) || all.indexOf(a) - all.indexOf(b));
+  };
+  return { TRACK_ORDER, isRealTrack, trackIds, raceLaps, TAU, clamp, lerp, invLerp, smooth, wrapAngle, sign, approach, expDecay, rng, fmtTime, fmtGap, kmh, setSpeedUnit, spdK, spd, spdKmh, spdUnit, hexToInt };
 })();
 
 ;
@@ -483,7 +511,7 @@ CFG.setup = {
     // cdZ: drag × with Straight mode open (base drops to straightCdA, zoneKeep of the setup's extra drag stays)
     return { fw, rw, clK, cdK, bal: CFG.car.aeroBalance + S.bal * (x - y), cdZ: CFG.aero.straightCdA + S.zoneKeep * (cdK - 1) };
   },
-  // car.carK = {pw, cl, cd} (championship Extreme's team spread, race.js carSpread): downforce x cl, drag x cd, engine
+  // car.carK = {pw, cl, cd} (a championship at Extreme: its team spread, race.js carSpread): downforce x cl, drag x cd, engine
   // power x pw (a.pwK: physics + driveAccel); a.carK marks it (the AI's setup calibration strips it). none = as before
   apply(car, s) {
     const a = CFG.setup.aero(s), k = car.carK;
@@ -7771,8 +7799,9 @@ const RaceControl = (() => {
   const VSC_MIN = 0, VSC_MR = 0;
   const VSC_K = 1.35, VC_K = 0.85, D0 = 1.0, DCAP = 1.5, DTOL = 0.2, END_T = 10, END_R = 5, VSC_PIT = 0.5, VG = 0.6;
   // obstacles: marshals / vehicles within OB_EDGE m of the asphalt; passing one within OB_LAT m (car centre to its side)
-  // faster than OB_V m/s (100 km/h) = an offence (humans); half widths / lengths by kind (marshal, tractor, crane, sweeper)
-  const OB_EDGE = 3, OB_LAT = 4, OB_V = 27.8, OB_T0 = 3, OB_W = [0.5, 1.3, 1.4, 1.3, 1.2], OB_L = [0.5, 3.0, 4.5, 3.5, 3.0];
+  // faster than OB_V m/s (200 km/h, the user 2026-10-24; was 100) = an offence (humans); OB_VV: the race-control vehicles'
+  // own passing speed (unchanged, 0.7 x the old 100 km/h); half widths / lengths by kind (marshal, tractor, crane, sweeper)
+  const OB_EDGE = 3, OB_LAT = 4, OB_V = 55.6, OB_VV = 19.5, OB_T0 = 3, OB_W = [0.5, 1.3, 1.4, 1.3, 1.2], OB_L = [0.5, 3.0, 4.5, 3.5, 3.0];
   // why codes (HUD / engineer text)
   const WHY = ['', 'CAR OFF', 'CAR SPUN', 'CAR STOPPED', 'STRANDED CAR', 'CAR STOPPED ON TRACK', 'DEBRIS', 'SLOW CAR', 'CARS STOPPED', 'TRACK BLOCKED', 'HEAVY RAIN', 'BARRIER DAMAGE', 'INCIDENT', 'HEAVY DEBRIS', 'MULTIPLE CAR CRASH'];
   const W = { off: 1, spin: 2, stopped: 3, stranded: 4, blocked: 5, debris: 6, slow: 7, multi: 8, track: 9, rain: 10, barrier: 11, dev: 12, field: 13, pile: 14 };   // (field / pile: the red flag's heavy debris field / 3+ car crash, user 2026-10-20)   // (dev: the dev tools' yellow, devYellow)
@@ -8253,7 +8282,7 @@ const RaceControl = (() => {
   // permanent 25-30 %); HZ_P = P(VSC or SC | a failure) per track, measured with headless field sims (HANDOFF §59 'Phase 7'),
   // else HZ_PK by kind; failures per full-length race (Poisson) = -ln(1 - TGT) / p (hzLam). A shorter race proportionally
   // fewer (x its distance / FULL), Less / More x FREQ, under HZ_N cars x n / HZ_N. A failure due under a VSC / SC / red
-  // flag waits for the green (+ half a lap). None in qualifying, the time trial, a championship at Extreme (its own reliability).
+  // flag waits for the green (+ half a lap). None in qualifying, the time trial, a championship (its own reliability, race.js carSpread).
   const FULL = 305000, TGT = { street: 0.5, perm: 0.275 }, HZ_PK = { street: 1, perm: 0.63 }, HZ_N = 6, HZ_D0 = 0.04, HZ_D1 = 0.95;
   const HZ_P = { vortex: 0.6, kotori: 0.87, mirage: 0.5, serrano: 0.63, leman: 0.77, dorado: 0.77, sepang: 0.5, silverstone: 0.43 };   // (30 sims each; street circuits 80 / 80: 1)
   const hzLam = T => { const k = layout(T).street ? 'street' : 'perm'; return -Math.log(1 - TGT[k]) / Math.max(0.3, HZ_P[T.id] || HZ_PK[k]); };
@@ -9273,7 +9302,7 @@ const RaceControl = (() => {
       vT = Math.min(vT, Math.sqrt(vp * vp + 2 * B * Math.max(0, ds - l - 4)));
     };
     const O = obstacles(G);
-    if (O) for (const o of O) if (!(o.mc && V.k)) avoid(o.s, o.d, o.w, o.l, o.k === 4 ? 14 : OB_V * 0.7);   // (o.mc: the parked medical car - not itself)
+    if (O) for (const o of O) if (!(o.mc && V.k)) avoid(o.s, o.d, o.w, o.l, o.k === 4 ? 14 : OB_VV);   // (o.mc: the parked medical car - not itself)
     let fc = null, fd = Infinity;
     for (const c of G.cars) {
       if (!c._race || c.finished || c.inPitLane || c._race.pit || (c.kinematic && !c.dnf)) continue;
@@ -11004,6 +11033,7 @@ const AI = (() => {
     kFF: 1.0, kH: 1.0, kE: 1.4, vE: 6, kR: 0.08, tFF: 0.1,
     mistK: 1.0,
     form: 0.024,     // per-race driver form spread (± half)
+    formS: 0.25,     // ... its share in a championship (race.js carSpread: the season's pecking order sets the pace)
     wallM: 2.1,      // min planned distance of the car centre from a barrier
     lowK: 0.95,      // grip share for slow corners (< 30 m/s) relative to fast ones
     wetK: 0.3,       // extra corner/braking margin per unit of lost grip (wet, worn)
@@ -11835,7 +11865,10 @@ const AI = (() => {
       inp: { throttle: 0, brake: 0, steer: 0, boost: false, aeroPress: false, reverse: false },
       // adaptive: compressed field; Extreme (diff.perfK / formK): compressed too — it drives near the limit, a top car with
       // top form would otherwise plan corners the (identical) physics car can't take
-      paceFix: Math.pow(perf, P.perfK * (diff.adaptive ? 0.45 : diff.perfK != null ? diff.perfK : 1)) * (1 + (rnd() - 0.5) * P.form * (diff.adaptive ? 0.5 : diff.formK != null ? diff.formK : 1)),   // (Extreme: perfK / formK 0)
+      // (a championship at Easy / Medium / Hard: the season's pace factor, race.js carSpread car.seasonK.pace, instead of team
+      // perf; the day's form P.formS of a quick race's - the season's per-round track affinity is in the pace factor)
+      paceFix: car.seasonK && car.seasonK.pace > 0 && !diff.allOut && !diff.adaptive ? car.seasonK.pace * (1 + (rnd() - 0.5) * P.form * P.formS)
+        : Math.pow(perf, P.perfK * (diff.adaptive ? 0.45 : diff.perfK != null ? diff.perfK : 1)) * (1 + (rnd() - 0.5) * P.form * (diff.adaptive ? 0.5 : diff.formK != null ? diff.formK : 1)),   // (Extreme: perfK / formK 0)
       pace: P.base * (1 - (1 - diff.pace) * P.paceK) * Math.pow(perf, P.perfK),
       dPace: diff.allOut && G && G.track && X_PACE[G.track.id] ? X_PACE[G.track.id] : diff.pace,
       aggr: diff.aggression, adaptive: !!diff.adaptive, kw: diff.kerb || 0, kwBase: diff.kerb || 0, lead: 0,
@@ -11903,7 +11936,7 @@ const AI = (() => {
     b.mvR = U.rng(((seed | 0) ^ 0x5bd1e995) >>> 0);                    // own stream for the moves
     b.smR = U.rng(((seed | 0) ^ 0x2c1b3c6d) >>> 0);                    // own stream for start craft (leaves mistakes etc. untouched)
     b.smWill = b.smR() < 0.35 + 0.6 * diff.aggression;
-    // driver traits (car.drvK = {aggr, err, mist}: championship Extreme, race.js carSpread; none = the level's own). Not pace:
+    // driver traits (car.drvK = {aggr, err, mist}: a championship, race.js carSpread; none = the level's own). Not pace:
     // racecraft (aggression: attack / defend gaps, start moves), consistency (err: per-corner chance of a small error, a
     // lift to 97.5-99 % of the corner speed, on its own stream) and the odd mistake (mist: the level's per-corner mistake)
     const dk = car.drvK;
@@ -14570,7 +14603,9 @@ const AI = (() => {
     const k0 = clamp(pr.r * TYPICAL, cal.kEasy, cal.kMax);
     const S = { k: k0, target: k0, ratio: null, cover: 0, conf: pr.c, prior: pr.r, e: eOfK(k0, cal), kFloor: cal.kEasy, kMax: cal.kMax, tref: 0, cal,
       nFast: 0, nEqual: 0, band: [], bandOf: new Map(), pl, conf0: pr.c, aggr: d0.aggression, t: -1, contacts: 0, colCD: 0, passes: 0, lastPos: pl.pos || 0 };
-    const ai = G.cars.filter(c => c !== pl).sort((a, b) => ((b.team && b.team.perf) || 1) - ((a.team && a.team.perf) || 1) || a.id - b.id);
+    // (in a championship the band follows the season's pecking order, race.js carSpread car.seasonK.D: the same cars quick all season)
+    const pk = c => (c.seasonK ? 1 - c.seasonK.D : (c.team && c.team.perf) || 1);
+    const ai = G.cars.filter(c => c !== pl).sort((a, b) => pk(b) - pk(a) || a.id - b.id);
     const rnd = U.rng((((race.seed | 0) ^ 0x5bd1e995) >>> 0) || 1);
     // band sizes scale with the field: 9 rivals = 2-3 quicker, 2-3 level, the rest slower (m rivals: the same shares,
     // at least one level rival, one quicker from 2 rivals); > 3 quicker spread 0.8 .. 0.3 %, > 5 slower within -0.5 .. -2.5 %
@@ -15945,7 +15980,7 @@ const Race = (() => {
       cars.push(car);
     }
     const player = cars.find(c => c.isPlayer);
-    if (race.championship && diff.allOut && !opts.attract && !tt && CFG.setup && CFG.setup.lapTime) carSpread(race, cars, track, playerTeam);   // (championship Extreme: the cars differ)
+    if (race.championship && !opts.attract && !tt && (!diff.allOut || (CFG.setup && CFG.setup.lapTime))) carSpread(race, cars, track, opts.spreadAll ? -1 : playerTeam, diff);   // (a championship: the cars differ)
     // car setup (front / rear wing, CFG.setup): the player's from opts.setup = {fw, rw}; each AI car picks its own for
     // the circuit (skill by difficulty and driver, team taste for front bias, more wing in the wet; opts.aiSetups false = off)
     if (player && !opts.attract && CFG.setup && CFG.setup.apply) CFG.setup.apply(player, opts.setup);
@@ -15953,7 +15988,7 @@ const Race = (() => {
       const sr = U.rng(seed ^ 0x5e7a9b1), sk0 = { easy: 0.3, medium: 0.6, hard: 0.85, extreme: 1.2, adaptive: 0.7 }[difficulty] ?? 0.6;
       for (const car of cars) {
         if (car.isPlayer && !opts.attract) continue;
-        const bias = [0, 1, -1, 1, 0, -1, 1, 0, 2, -1, 1, -1, 0, 1, -1, 2, 0, 1, -1, 0][car.teamIndex % 20], sk = U.clamp(sk0 + ((car.team && car.team.perf) || 0.988) * 8 - 7.9, 0, 1);
+        const bias = [0, 1, -1, 1, 0, -1, 1, 0, 2, -1, 1, -1, 0, 1, -1, 2, 0, 1, -1, 0][car.teamIndex % 20], sk = U.clamp(sk0 + perfOf(car) * 8 - 7.9, 0, 1);
         try { CFG.setup.apply(car, CFG.setup.choose(track, { skill: sk, wet, bias, rnd: sr })); } catch (e) { car.setup = undefined; }
       }
     }
@@ -15964,10 +15999,11 @@ const Race = (() => {
     if (gridMode === 'qfull') { for (const c of cars) c._startC = c.tyre.compound; Quali.start(G, race, opts.quali); return race; }   // Q1 / Q2 / Q3 (quali.js)
     let grid = cars;
     if (!tt) {
-      grid = cars.filter(c => !c.isPlayer).map(c => ({ c, k: race.carSpread ? 1 - (c.carK ? c.carK.D : 0) + (rnd() - 0.5) * 0.005 : c.team.perf + (rnd() - 0.5) * 0.012 }))
+      grid = cars.filter(c => !c.isPlayer || (opts.spreadAll && race.carSpread)).map(c => ({ c, k: race.carSpread ? 1 - (c.seasonK ? c.seasonK.D : 0) + (rnd() - 0.5) * 0.005 : c.team.perf + (rnd() - 0.5) * 0.012 }))
         .sort((a, b) => b.k - a.k).map(o => o.c);
-      if (gridMode === 'random') { grid.push(player); for (let i = grid.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const x = grid[i]; grid[i] = grid[j]; grid[j] = x; } }
-      else {
+      const inG = !!(opts.spreadAll && race.carSpread);   // (headless season sims: the player's car sorted as an AI car)
+      if (gridMode === 'random') { if (!inG) grid.push(player); for (let i = grid.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const x = grid[i]; grid[i] = grid[j]; grid[j] = x; } }
+      else if (!inG) {
         const base = Math.max(1, Math.round(({ easy: 6, medium: 7, hard: 8 }[difficulty] || 7) * cars.length / 10));   // (scaled to the field)
         const pg = U.clamp(opts.gridPos != null ? opts.gridPos | 0 : base + Math.floor(rnd() * 3) - 1, 1, cars.length);
         grid.splice(pg - 1, 0, player);
@@ -16007,19 +16043,42 @@ const Race = (() => {
     for (const car of G.cars) initCar(race, car, track, rnd, diff, tt ? 0 : cpCap);
   }
 
-  // ---------- championship Extreme: a real grid (user 2026-10-17, HANDOFF §60) ----------
-  // Extreme drives all out on identical cars (perfK / formK 0). In a championship the CARS differ instead: car.carK =
-  // {pw, cl, cd, lap} (engine power / downforce / drag x, CFG.setup.apply; lap = the lap-time factor they are sized for)
-  // from the team's place in the season's pecking order (TEAMS perf order + a seeded shake-up + a small in-season
-  // development): each round the quickest AI car is exactly today's Extreme (no carK) and the slowest GRID.lo..hi slower
-  // (lap model, CFG.setup.lapTime, per circuit), split over power / downforce / drag by the team's own mix. The player's car
-  // is never touched. Drivers (car.drvK, ai.js) differ in racecraft, consistency and the odd mistake, not pace. car.relia =
-  // {d: race metres, why}: a mechanical DNF for ~2-3 % of the AI cars a race (backmarkers a little more often). All from
-  // the season's seed (champ.wxSeed) + team + round: Restart replays it. Never quick races, other levels, multiplayer.
+  // ---------- championships: a real grid at every level (user 2026-10-17 / 2026-10-24, HANDOFF §60 + "Championship pecking order") ----------
+  // In a championship (every level; never quick races, the time trial, attract, multiplayer) the AI cars differ like a real
+  // grid, and each SEASON draws its own competitive shape from its seed (GRID.nW .. back): how many cars fight at the front
+  // (1 = a dominant car well clear .. 5 within a few tenths), the gap behind them, the midfield's and the back's spread, how
+  // much the order develops through the season (GRID.dev) and a per-round track affinity (GRID.aff). The team order = TEAMS
+  // perf + a seeded shake-up (GRID.jit). Per round a car's deficit D (lap-time share behind the quickest AI car, which stays
+  // exactly the level's top pace, so easier levels stay as beatable) -> car.seasonK = {D, lap: 1 + D, pace}:
+  //  * Extreme (allOut, identical cars otherwise): car.carK = {pw, cl, cd, lap, D} - engine power / downforce / drag x, split
+  //    by the team's mix with the lap model's elasticity per circuit (CFG.setup.apply, physics; null for the quickest car);
+  //  * Easy / Medium / Hard: the AI's pace factor (ai.js paceFix, instead of team perf x the race's form) = (1 + D)^(-1 / el),
+  //    el = the level's measured lap-time elasticity of that factor (GRID.el);
+  //  * Adaptive: the battle band's order (ai.js newAdapt; its offsets and pull stay the player-centred ones).
+  // Drivers (car.drvK, ai.js: racecraft, consistency, the odd mistake; not pace) and reliability (car.relia: a mechanical DNF
+  // for ~2-3 % of the cars a race, backmarkers a little more often; the player's car too) at every level. All from the
+  // season's seed (champ.wxSeed) + team + round: Restart replays it. The player's car is never touched (opts.spreadAll:
+  // headless season sims only, tools/champ_grid.mjs - it joins the order like an AI car).
   // (cal: the AI's real solo laps lose more per lever than the lap model says - Extreme at the limit, 4 circuits: power
   // x1.27, downforce x1.24, drag x1.8 the model's elasticity; x0.93 for the 40 / 40 / 20 mix together)
-  const GRID = { lo: 0.010, hi: 0.013, jit: 0.004, dev: 0.004, mix: [0.4, 0.4, 0.2], mixJ: 0.12, cal: { pw: 1.18, cl: 1.15, cd: 1.67 },
-    aggr: [0.7, 1], err: [0.006, 0.03], mist: [0.0002, 0.0012], fail: [0.018, 0.03],
+  const GRID = {
+    // the season's shape (lap-time shares): front group size n (weights for 1..5, at most a quarter of the AI cars), its span
+    // per extra car, the gap behind it, a dominant car's lead (n = 1), the midfield (55 % of the rest) span, the step to the
+    // back and its span; interior cars of each group at sorted uniform places
+    nW: [0.22, 0.28, 0.24, 0.16, 0.10], fSpan: [0.0003, 0.0008], gap: [0.0010, 0.0035], lead: [0.0020, 0.0055],
+    mid: [0.0030, 0.0065], step: [0.0005, 0.0025], back: [0.0015, 0.0045],
+    jit: 0.010,                 // team order: (1 - TEAMS perf) + jit x U(-.5, .5)
+    dev: [0.0005, 0.0040],      // development by the last round: per team U(-1, 1) x the season's amount
+    aff: [0.0008, 0.0020],      // per round: per team U(-1, 1) x the season's amount (a track that suits the car; at 0.04-0.12 % a
+                                // 0.04 % edge at Extreme - pole, then lap 1 - still won 12 of 16 in a 6-close season)
+    // per level: x the deficits (the slower levels' own noise - mistakes, slow getaways, line noise - shuffles more: a wider
+    // field keeps the same season shape; the quickest AI car stays at the level's top pace either way)
+    lv: { easy: 1.6, medium: 1.4, hard: 1.3, extreme: 1, adaptive: 1 },
+    // per level: the pace factor's lap-time elasticity (solo laps at 1 vs 0.985, 8 circuits: Easy 0.62-1.05, Medium 0.72-0.86,
+    // Hard 0.57-1.01; Adaptive: the band's own offsets)
+    el: { easy: 0.89, medium: 0.77, hard: 0.70, adaptive: 0.77 },
+    mix: [0.4, 0.4, 0.2], mixJ: 0.12, cal: { pw: 1.18, cl: 1.15, cd: 1.67 },
+    aggr: [0.7, 1], aggrL: [0.8, 1.2], err: [0.006, 0.03], mist: [0.0002, 0.0012], mistL: [0.5, 1.5], fail: [0.018, 0.03],
     WHY: ['Engine', 'Gearbox', 'Hydraulics', 'Electrics', 'Power unit', 'Brakes'] };
   const gridEl = new Map();   // track id -> lap-time elasticity of power / downforce / drag (lap model, base wings)
   function gridElastic(T) {
@@ -16031,38 +16090,84 @@ const Race = (() => {
     gridEl.set(T.id, e);
     return e;
   }
+  // a car's standing for its setup skill: team perf, in a championship its place in the season's order (1 - D)
+  const perfOf = car => (car.seasonK ? 1 - car.seasonK.D : (car.team && car.team.perf) || 0.988);
   const mix32 = (a, b) => { let h = Math.imul((a | 0) ^ 0x7f4a7c15, 0x9e3779b1) ^ Math.imul((b | 0) + 0x632be5ab, 0x85ebca6b); h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); return (h ^ (h >>> 13)) >>> 0; };
-  // the season's per-team draws (fixed for the season) and this round's spread; sets car.carK / drvK / relia
-  function carSpread(race, cars, T, playerTeam) {
-    const ch = race.championship, field = Array.isArray(ch.field) && ch.field.length ? ch.field : cars.map(c => c.teamIndex);
+  const uIn = (r, a) => a[0] + (a[1] - a[0]) * r();
+  // the season's sorted deficits for n AI cars (the shape; r = the season's own stream)
+  function gridShape(r, n) {
+    const W = GRID.nW, cap = Math.max(1, Math.min(W.length, Math.round(n / 4)));
+    let tot = 0; for (let i = 0; i < cap; i++) tot += W[i];
+    let nF = 1, x = r() * tot;
+    while (nF < cap && x >= W[nF - 1]) { x -= W[nF - 1]; nF++; }
+    const span = nF > 1 ? uIn(r, GRID.fSpan) * (nF - 1) : 0, gap = uIn(r, nF > 1 ? GRID.gap : GRID.lead);
+    const nR = Math.max(0, n - nF), nM = Math.min(nR, Math.max(1, Math.round(nR * 0.55))), nB = nR - nM;
+    const mid = uIn(r, GRID.mid), step = uIn(r, GRID.step), back = uIn(r, GRID.back);
+    const fill = (k, a, w, out) => { const u = []; for (let i = 0; i < k; i++) u.push(i === 0 ? 0 : i === k - 1 ? 1 : r()); u.sort((p, q) => p - q); for (const v of u) out.push(a + w * v); };
+    const d = [];
+    fill(nF, 0, span, d); fill(nM, span + gap, mid, d); fill(nB, span + gap + mid + step, back, d);
+    return { d: d.slice(0, n), nF };
+  }
+  const seasons = new Map();   // season key -> its draws (fixed for the season)
+  function seasonOf(ch, playerTeam, field) {
     let ss = ch.wxSeed != null ? ch.wxSeed | 0 : 0;
-    if (ch.wxSeed == null) for (const ch2 of String((ch.rounds || []).join() + field.join())) ss = mix32(ss, ch2.charCodeAt(0));
-    const nR = Math.max(1, (ch.rounds ? ch.rounds.length : 1) - 1), round = U.clamp(ch.round | 0, 0, nR), u = round / nR;
-    const S = GRID.lo + (GRID.hi - GRID.lo) * U.rng(mix32(ss, 1))(), teams = [];
+    if (ch.wxSeed == null) for (const c of String((ch.rounds || []).join() + field.join())) ss = mix32(ss, c.charCodeAt(0));
+    const key = ss + '|' + field.join() + '|' + playerTeam;
+    let o = seasons.get(key);
+    if (o) return o;
+    const teams = [];
     for (const ti of field) {
       if (ti === playerTeam || !TEAMS[ti]) continue;
-      const r = U.rng(mix32(ss, 1000 + ti)), jit = r() - 0.5, dv = r() * 2 - 1, mP = r() * 2 - 1, mC = r() * 2 - 1;
-      const raw = (1 - TEAMS[ti].perf) + GRID.jit * jit - GRID.dev * dv * u;
-      teams.push({ ti, raw, mP, mC, aggr: U.lerp(GRID.aggr[0], GRID.aggr[1], r()), err: U.lerp(GRID.err[0], GRID.err[1], r()), mist: U.lerp(GRID.mist[0], GRID.mist[1], r()) });
+      const r = U.rng(mix32(ss, 1000 + ti));
+      teams.push({ ti, k: (1 - TEAMS[ti].perf) + GRID.jit * (r() - 0.5), dv: r() * 2 - 1, mP: r() * 2 - 1, mC: r() * 2 - 1, u: [r(), r(), r()] });
     }
-    if (!teams.length) return;
-    let lo = Infinity, hi = -Infinity;
-    for (const o of teams) { lo = Math.min(lo, o.raw); hi = Math.max(hi, o.raw); }
-    const E = gridElastic(T), L = T.length, laps = race.laps || 1, by = new Map(teams.map(o => [o.ti, o]));
-    race.carSpread = { S, round, n: teams.length };
+    teams.sort((a, b) => a.k - b.k || a.ti - b.ti);
+    const r = U.rng(mix32(ss, 2)), sh = gridShape(r, teams.length);
+    teams.forEach((t, i) => { t.base = sh.d[i]; });
+    o = { ss, teams, nF: sh.nF, dev: uIn(r, GRID.dev), aff: uIn(r, GRID.aff) };
+    if (seasons.size > 8) seasons.clear();
+    seasons.set(key, o);
+    return o;
+  }
+  // this round's deficits {teamIndex: D} (the quickest AI car 0) at the level
+  function seasonD(ch, playerTeam, round, level, field) {
+    const o = seasonOf(ch, playerTeam, field), nR = Math.max(1, (ch.rounds ? ch.rounds.length : 1) - 1), u = U.clamp(round | 0, 0, nR) / nR, out = {};
+    let lo = Infinity;
+    for (const t of o.teams) {
+      const f = U.rng(mix32(mix32(o.ss, 3000 + t.ti), round + 1));
+      const D = t.base - o.dev * t.dv * u + o.aff * (f() * 2 - 1);
+      out[t.ti] = D; lo = Math.min(lo, D);
+    }
+    const k = GRID.lv[level] != null ? GRID.lv[level] : 1;
+    for (const ti in out) out[ti] = (out[ti] - lo) * k;
+    return out;
+  }
+  // this round's spread on the cars: car.seasonK / carK / drvK / relia
+  function carSpread(race, cars, T, playerTeam, diff) {
+    const ch = race.championship, field = Array.isArray(ch.field) && ch.field.length ? ch.field : cars.map(c => c.teamIndex);   // (an old save without a field: its cars)
+    const nR = Math.max(1, (ch.rounds ? ch.rounds.length : 1) - 1), round = U.clamp(ch.round | 0, 0, nR), level = diff.allOut ? 'extreme' : diff.id;
+    const o = seasonOf(ch, playerTeam, field), Dm = seasonD(ch, playerTeam, round, level, field), by = new Map(o.teams.map(t => [t.ti, t]));
+    if (!o.teams.length) return;
+    let S = 0; for (const ti in Dm) S = Math.max(S, Dm[ti]);
+    const E = diff.allOut ? gridElastic(T) : null, L = T.length, laps = race.laps || 1, el = GRID.el[level] || 1;
+    race.carSpread = { S, round, n: o.teams.length, nF: o.nF, level };
+    const fail = (car, p) => { const f = U.rng(mix32(mix32(o.ss, 5000 + car.teamIndex), round + 1)); return f() < p && race.mechFail !== false ? { d: (0.03 + 0.95 * f()) * laps * L, why: GRID.WHY[Math.floor(f() * GRID.WHY.length) % GRID.WHY.length] } : null; };
     for (const car of cars) {
-      const o = by.get(car.teamIndex);
-      if (!o || car.isPlayer) continue;
-      const D = hi - lo > 1e-9 ? S * (o.raw - lo) / (hi - lo) : 0;
-      let wP = GRID.mix[0] + GRID.mixJ * o.mP, wC = GRID.mix[1] + GRID.mixJ * o.mC, wD = Math.max(0.05, 1 - wP - wC);
-      const sw = wP + wC + wD; wP /= sw; wC /= sw; wD /= sw;
-      car.carK = D > 0 ? { pw: 1 - wP * D / E.pw, cl: 1 - wC * D / E.cl, cd: 1 + wD * D / E.cd, lap: 1 + D, D } : null;
-      car.drvK = { aggr: o.aggr, err: o.err, mist: o.mist };
-      const f = U.rng(mix32(mix32(ss, 5000 + car.teamIndex), round + 1)), p = U.lerp(GRID.fail[0], GRID.fail[1], S > 0 ? D / S : 0);
-      car.relia = f() < p && race.mechFail !== false ? { d: (0.03 + 0.95 * f()) * laps * L, why: GRID.WHY[Math.floor(f() * GRID.WHY.length) % GRID.WHY.length] } : null;
+      const t = by.get(car.teamIndex);
+      if (!t || (car.isPlayer && playerTeam >= 0)) continue;
+      const D = Dm[car.teamIndex] || 0;
+      car.seasonK = { D, lap: 1 + D, pace: diff.allOut ? 1 : Math.pow(1 + D, -1 / el) };
+      if (E) {
+        let wP = GRID.mix[0] + GRID.mixJ * t.mP, wC = GRID.mix[1] + GRID.mixJ * t.mC, wD = Math.max(0.05, 1 - wP - wC);
+        const sw = wP + wC + wD; wP /= sw; wC /= sw; wD /= sw;
+        car.carK = D > 0 ? { pw: 1 - wP * D / E.pw, cl: 1 - wC * D / E.cl, cd: 1 + wD * D / E.cd, lap: 1 + D, D } : null;
+      }
+      car.drvK = diff.allOut ? { aggr: U.lerp(GRID.aggr[0], GRID.aggr[1], t.u[0]), err: U.lerp(GRID.err[0], GRID.err[1], t.u[1]), mist: U.lerp(GRID.mist[0], GRID.mist[1], t.u[2]) }
+        : { aggr: U.clamp((diff.aggression || 0.55) * U.lerp(GRID.aggrL[0], GRID.aggrL[1], t.u[0]), 0.1, 1), err: U.lerp(GRID.err[0], GRID.err[1], t.u[1]), mist: (diff.mistake || 0) * U.lerp(GRID.mistL[0], GRID.mistL[1], t.u[2]) };
+      car.relia = fail(car, U.lerp(GRID.fail[0], GRID.fail[1], S > 0 ? D / S : 0));
     }
     // the player's car fails too (its team's stream, the grid's mean rate; Mechanical failures off: no one), user 2026-10-18
-    for (const car of cars) if (car.isPlayer) { const f = U.rng(mix32(mix32(ss, 5000 + car.teamIndex), round + 1)); car.relia = f() < (GRID.fail[0] + GRID.fail[1]) / 2 && race.mechFail !== false ? { d: (0.03 + 0.95 * f()) * laps * L, why: GRID.WHY[Math.floor(f() * GRID.WHY.length) % GRID.WHY.length] } : null; }
+    for (const car of cars) if (car.isPlayer && playerTeam >= 0) car.relia = fail(car, (GRID.fail[0] + GRID.fail[1]) / 2);
   }
   // a scheduled mechanical failure: retire() at its race distance (not in the pit lane); parked once stopped, as damageStep
   // does (that runs only with the damage flag)
@@ -16130,7 +16235,7 @@ const Race = (() => {
     // (≈0.3 s of CPU); fall back to the lap estimate if the AI/physics aren't available
     let ref = simQualiLap(G, diff);
     if (!(ref > 20)) ref = race.lapTimeEst * QUALI_K;
-    const times = G.cars.filter(c => c !== P).map(car => ({ car, time: (race.carSpread ? ref * (car.carK ? car.carK.lap : 1) : ref / car.team.perf) * (1 + (rnd() + rnd() - 1) * 0.006) }));   // (carSpread: the car's own pace)
+    const times = G.cars.filter(c => c !== P).map(car => ({ car, time: (race.carSpread ? ref * (car.seasonK ? car.seasonK.lap : 1) : ref / car.team.perf) * (1 + (rnd() + rnd() - 1) * 0.006) }));   // (carSpread: the car's own pace)
     // track limits, judged as the player's lap (the level's rules): each AI lap is a solo flying lap, deleted as often as
     // the AI's real solo push laps are at this difficulty and level (OS_DEL) -> NO TIME, the back of the grid (own stream)
     const dr = U.rng((race.seed ^ 0x3c6ef372) >>> 0), pd = race.pen && OS_DEL[race.difficulty] ? OS_DEL[race.difficulty][race.penaltyLevel] || 0 : 0;
@@ -16458,7 +16563,7 @@ const Race = (() => {
     if (racing && race.wx) Weather.step(race.wx, G, dt);
     scanCollisions(G, race);
     if (G.world && G.world.damage && typeof Damage !== 'undefined') damageStep(G, race, dt);   // (contact damage flag)
-    if (race.carSpread && racing) reliaStep(G, race);   // (championship Extreme: mechanical DNFs)
+    if (race.carSpread && racing) reliaStep(G, race);   // (a championship: mechanical DNFs)
     for (let i = 0; i < cars.length; i++) {
       const car = cars[i], rc = car._race;
       if (!rc) continue;
@@ -18252,7 +18357,7 @@ const Race = (() => {
     let dF = 0, dR = 0, trim = car.wingTrim | 0;
     if (c0 !== c1) { dF = WET_WING[c1][0] - WET_WING[c0][0]; dR = WET_WING[c1][1] - WET_WING[c0][1]; }
     else if (c1 === 0 && rem >= 5 && race.wearScale > 0) {
-      const sk = U.clamp(({ easy: 0.3, medium: 0.6, hard: 0.85, extreme: 1.2, adaptive: 0.7 }[race.difficulty] ?? 0.6) + ((car.team && car.team.perf) || 0.988) * 8 - 7.9, 0, 1);
+      const sk = U.clamp(({ easy: 0.3, medium: 0.6, hard: 0.85, extreme: 1.2, adaptive: 0.7 }[race.difficulty] ?? 0.6) + perfOf(car) * 8 - 7.9, 0, 1);
       if (rr() < 0.3 + 0.5 * sk) {
         const wf = car.tyre.wear / old.cliff;
         if (wf >= 0.85 && trim < AI_TRIM_MAX) dF = 1;
@@ -18611,7 +18716,18 @@ const Race = (() => {
     garageGo,   // time trial: leave the garage {compound, fw, rw}
     // Q1 / Q2 / Q3 qualifying (quali.js): step(G, race, dt), garagePark(G, race, car, teleport), garageGo(G, sel, car),
     // toGrid(G, race, orderCars), refLap(G, diff, compound) -> {lap, pace} (one dry flying lap with the AI, ~0.3 s CPU)
+    // the championship pecking order's season draws (tools/champ_grid.mjs): draw(champ, playerTeam (-1: every car), round, level) -> {teamIndex: D}
+    _season: { draw: (ch, pt, round, level) => seasonD(ch, pt, round, level, Array.isArray(ch.field) && ch.field.length ? ch.field : []), GRID },
     _sess: { step: sessStep, garagePark, garageGo, toGrid, refLap: (G, diff, compound) => simQualiLap(G, diff, compound || 'S', true) },
+    // estimates(track, difficulty) -> { lapTimeEst, pitLossEst } as create() makes them (the multiplayer lobby's forecast:
+    // the race weather bound and the engineer's start call exactly as the race will have them)
+    estimates: (track, difficulty) => {
+      const diff = DIFFICULTY[difficulty] || DIFFICULTY.medium;
+      let vAvg = 0; for (let i = 0; i < track.N; i++) vAvg += track.raceSpeed[i]; vAvg /= track.N;
+      const was = CFG.race.pitLimTrack; pitLimOf(track);   // (this circuit's pit limit, as in create; the global put back after)
+      try { return { lapTimeEst: track.length / Math.max(20, vAvg * diff.pace * 0.97), pitLossEst: estimatePitLoss(track, diff.pace * 0.97, pitGeometry(track)) }; }
+      finally { CFG.race.pitLimTrack = was; }
+    },
     PIT_TOL_KMH, TL_WARN, collisionFault, turnLabel, wheelsOff,   // (HUD pit-speed colour; tests; wheelsOff(track, car): all four wheels beyond the white line)
     sectorFlag,   // sectorFlag(race, car, i, time, storedFlag) -> 'purple' | 'green' | 'yellow' against the current bests (HUD)
     // fastLaneD(G, s) -> the pit lane's fast lane d at s (the cars' own lateral path, beside the dashed line; pit roads
@@ -19139,7 +19255,8 @@ const Quali = (() => {
   // ---------- pace ----------
   function brainPace(diff, car) {   // AI.create's pace without the driver's form (no brain yet / a human)
     const P = typeof AI !== 'undefined' && AI.P ? AI.P : { base: 0.965, paceK: 0.62, perfK: 1 }, perf = (car && car.team && car.team.perf) || 1;
-    return P.base * (1 - (1 - (diff.pace || 0.955)) * P.paceK) * Math.pow(perf, P.perfK * (diff.adaptive ? 0.45 : diff.perfK || 1));
+    const sk = car && car.seasonK && car.seasonK.pace > 0 && !diff.allOut && !diff.adaptive ? car.seasonK.pace : 0;   // (a championship: the season's pace factor)
+    return P.base * (1 - (1 - (diff.pace || 0.955)) * P.paceK) * (sk || Math.pow(perf, P.perfK * (diff.adaptive ? 0.45 : diff.perfK || 1)));
   }
   function paceOf(G, car) {
     const b = G.brains && G.brains.get ? G.brains.get(car) : null;
@@ -19148,7 +19265,7 @@ const Quali = (() => {
   // expected push lap (s, no noise) of `car` on compound c at track wetness w
   function expLap(G, qs, car, c, w) {
     return qs.ref.lap * Math.pow(qs.ref.pace / paceOf(G, car), CAL.e) * (CAL.k[G.race.difficulty] || 1) * (CAL.s[G.race.difficulty] || 1) * lapF(c || 'S', w) / lapF('S', 0) * (1 + CAL.wet * Math.min(1, (w || 0) / 0.5))
-      * (car && car.carK ? car.carK.lap : 1);   // (championship Extreme: the car's own pace, race.js carSpread)
+      * (car && car.carK ? car.carK.lap : 1);   // (a championship at Extreme: the car's own pace, race.js carSpread; the other levels: in the brain's pace)
   }
   const qWear = (G, race) => (race.wearScale > 0 ? race.wearScale / (Math.max(race.laps || 0, Q_REF) * G.track.length) : 0);
   // lap-time factor of the tyre's wear over the coming lap (grip^-0.45 as Weather's lap factors; nominal usage)
@@ -20960,17 +21077,28 @@ const NetCore = (() => {
     ['ty', 'THANKS'], ['wd', 'WELL DRIVEN'], ['close', 'CLOSE ONE!'], ['oops', 'OOPS'], ['wow', 'WOW'], ['lol', 'HAHA'],
     ['again', 'REMATCH?'], ['ready', 'READY?'], ['brb', 'BE RIGHT BACK'], ['bye', 'GOTTA GO']];
   const OPT = {
-    mode: ['race', 'timetrial'], laps: [1, 2, 3, 5, 8, 10, 15, 20, 30], weather: ['dry', 'damp', 'wet', 'dynamic'], timeOfDay: ['day', 'dusk', 'night'],
+    mode: ['race', 'timetrial'], laps: [1, 2, 3, 5, 8, 10, 15, 20, 30], weather: ['dry', 'damp', 'wet', 'dynamic', 'custom'], timeOfDay: ['day', 'dusk', 'night'],
+    wxCond: ['dry', 'damp', 'wet'], wxWhen: ['early', 'mid', 'late'],   // (weather 'custom': weatherStart / weatherEnd, weatherWhen - as single player's)
     difficulty: ['easy', 'medium', 'hard', 'extreme'], tyreWear: ['off', 'normal', 'high'], contact: ['contact', 'ghost'],
     damage: ['none', 'off', 'visual', 'reduced', 'full'],   // contact damage (damage.js; 'none' = the feature off: old contacts)
     penaltyLevel: ['off', 'lenient', 'standard', 'strict'],
     grid: ['random', 'qfull'], qualiLen: ['f1', 'sprint', 'short', 'quick', 'mini', 'custom'], qualiDay: ['same', 'before'],   // (qualifying: Quali.PRESETS keys)
   };
   const DEF = { mode: 'race', trackId: 'vortex', laps: 5, fieldSize: 10, weather: 'dry', timeOfDay: 'day', difficulty: 'medium', penalties: true,
-    penaltyLevel: 'standard', contact: 'contact', tyreWear: 'normal', twoCompound: false, humanSlots: 4, grid: 'random', qualiLen: 'quick', qualiDay: 'same', grassSlip: 0.8, damage: 'none' };
+    penaltyLevel: 'standard', contact: 'contact', tyreWear: 'normal', twoCompound: false, humanSlots: 4, grid: 'random', qualiLen: 'quick', qualiDay: 'same', grassSlip: 0.8, damage: 'none',
+    weatherStart: 'dry', weatherEnd: 'wet', weatherWhen: 'mid' };
+  // The room's weather seed (wxSeed; user 2026-10-24: the lobby shows the forecast of the race that will run). The server
+  // draws it (a new one at each race start and on the host's SHUFFLE, never from a client's settings); the race seed is
+  // derived from it, raceSeed(wxSeed) = (wxSeed ^ WX_K) >>> 0, and the race weather's seed is (race seed ^ WX_K) >>> 0 on
+  // the server and on every client (server.mjs / main.js makeWeather): exactly wxSeed, the seed the lobby's forecast uses.
+  // Race seeds stay 1 .. 2^31 - 2 as before (an older client builds the same weather).
+  const WX_K = 0x5bd1e995;
+  const raceSeed = wx => { const r = ((+wx >>> 0) ^ WX_K) >>> 0; return r >= 1 && r < 2147483647 ? r : 0; };   // (0: not a room weather seed)
+  const wxSeedOf = r => ((+r >>> 0) ^ WX_K) >>> 0;
   // grass slipperiness of the room (CFG.grass: 0 = grips like the track, 0.8 = standard, 1 = 15 % less grip): the host's
   // setting, in 5 % steps; every car (server physics + AI, each client's own car) runs on it
-  // race control (racecontrol.js): { on, yellow, vsc, sc, red, freq } (the host's settings; defaults: all on, realistic)
+  // race control (racecontrol.js): { on, yellow, vsc, sc, red, freq, fail, crash, avoid } (the host's settings, the lobby's
+  // RULES tab as Settings > Rules; defaults: all on, realistic, AI crashes normal)
   const rcOf = v => { v = v && typeof v === 'object' ? v : {}; const o = {}; for (const k of ['on', 'yellow', 'vsc', 'sc', 'red', 'fail']) o[k] = v[k] !== false; o.freq = ['less', 'realistic', 'more', 'testing'].includes(v.freq) ? v.freq : 'realistic'; o.crash = ['off', 'low', 'normal', 'high'].includes(v.crash) ? v.crash : 'normal'; o.avoid = v.avoid !== false; return o; };   // (crash / avoid: AI crashes, the host's)
   const grassOf = v => (v != null && v !== '' && isFinite(+v) ? Math.round(clamp(+v, 0, 1) * 20) / 20 : DEF.grassSlip);
   const Q_CUSTOM = { q1: 18, q2: 15, q3: 13 };   // custom session minutes (3..30)
@@ -20997,6 +21125,11 @@ const NetCore = (() => {
     o.fieldSize = o.aiCount != null ? clamp((humans | 0) + o.aiCount, 2, MAX_CARS) : clamp(Math.round(+s.fieldSize) || DEF.fieldSize, Math.max(2, humans | 0), MAX_CARS);
     o.penaltyLevel = OPT.penaltyLevel.includes(s.penaltyLevel) ? s.penaltyLevel : s.penalties === false ? 'off' : DEF.penaltyLevel;
     o.penalties = o.penaltyLevel !== 'off'; o.twoCompound = !!s.twoCompound;
+    o.weatherStart = OPT.wxCond.includes(s.weatherStart) ? s.weatherStart : DEF.weatherStart;   // (weather 'custom')
+    o.weatherEnd = OPT.wxCond.includes(s.weatherEnd) ? s.weatherEnd : DEF.weatherEnd;
+    o.weatherWhen = OPT.wxWhen.includes(s.weatherWhen) ? s.weatherWhen : DEF.weatherWhen;
+    const ws = +s.wxSeed;
+    o.wxSeed = Number.isInteger(ws) && ws >= 0 && ws <= 0xffffffff && raceSeed(ws) ? ws : null;   // (null: the server draws one)
     o.grassSlip = grassOf(s.grassSlip);
     o.raceControl = rcOf(s.raceControl);   // (race control: the host's switches + frequency)
     return o;
@@ -21029,6 +21162,9 @@ const NetCore = (() => {
       grassSlip: grassOf(S.grassSlip),   // (the room's: main puts it in G.world for this car's physics)
       raceControl: rcOf(S.raceControl),   // (the room's race control: the server decides, this client only draws)
       damage: OPT.damage.includes(S.damage) ? S.damage : 'none',   // (the room's contact damage: the server decides, main's world reports wall hits)
+      // weather 'custom': the room's start / end conditions and change point (main's makeWeather, as the server's)
+      weatherStart: OPT.wxCond.includes(S.weatherStart) ? S.weatherStart : DEF.weatherStart, weatherEnd: OPT.wxCond.includes(S.weatherEnd) ? S.weatherEnd : DEF.weatherEnd,
+      weatherWhen: OPT.wxWhen.includes(S.weatherWhen) ? S.weatherWhen : DEF.weatherWhen,
       // your car setup for this circuit exactly as the server runs it (setup.mySetup; missing = your saved one)
       setups: setup.mySetup ? Object.assign({}, base && base.setups, { [S.trackId]: { fw: setup.mySetup.fw, rw: setup.mySetup.rw } }) : base && base.setups,
       fieldSize: setup.field ? setup.field.length : 1, grid: 'choose', gridPos: (me && me.grid) || 1, teamIndex: me ? me.team : 0,
@@ -21040,6 +21176,14 @@ const NetCore = (() => {
   // Settings > Rules (main.js G.settings): a guest with race control on in a room without it had the medical car waiting
   // behind the grid all race, never moved by the server - user 2026-10-22)
   const raceOpts = setup => (setup.mode === 'timetrial' ? { seed: setup.seed } : { field: setup.field.slice(), seed: setup.seed, aiSetups: false, raceControl: rcOf(setup.settings && setup.settings.raceControl) });
+  // the room rules (Settings > Rules) as a race + world apply them: tests compare the server's race with a local race
+  // (tools/mp_rules_test.mjs; the server answers 'rulesq' with this under --rules-test)
+  function rulesOf(G) {
+    const r = (G && G.race) || {}, w = (G && G.world) || {}, rc = r.rc, a = r.aiCrash || {}, cf = (rc && rc.cfg) || {};
+    return { tyreWear: r.tyreWear, wearScale: r.wearScale, wearPerMetre: w.wearPerMetre, twoCompound: !!r.twoCompound, twoCompoundActive: !!r.twoCompoundActive,
+      penaltyLevel: r.penaltyLevel, penalties: !!r.penalties, grassSlip: w.grassSlip, damage: w.damage ? w.damage.level : 'none', damageK: w.damage ? w.damage.k : 0,
+      rc: !!(rc && rc.on), yellow: cf.yellow, vsc: cf.vsc, sc: cf.sc, red: cf.red, freq: cf.freq, fail: cf.fail, mechFail: r.mechFail, crash: a.lvl, avoid: a.avoid };
+  }
   // after Race.create: names, numbers, grid slots and tyres exactly as on the server; remote cars are moved by snapshots
   function patchRace(G, setup) {
     if (setup.mode === 'timetrial') return;
@@ -21674,7 +21818,8 @@ const NetCore = (() => {
     newState, stateFromCar, writeState, readState, copyState, writeSnapHead, writeSnapCar, readSnap, writeRace, readRace,
     infoOf, applyInfo, packEvent, unpackEvent, EV_SKIP,
     makeClock, clockSample, serverNow, makeBuf, bufPush, bufReset, bufSample, extrap,
-    roomSettings, gridSize, cleanSetups, MAX_CARS, sessionSettings, raceOpts, patchRace, towFor, contactFor, SOFT, plausible,
+    roomSettings, gridSize, cleanSetups, MAX_CARS, sessionSettings, raceOpts, rcOf, rulesOf, patchRace, towFor, contactFor, SOFT, plausible,
+    WX_K, raceSeed, wxSeedOf,   // (the room's weather seed: lobby forecast = race weather)
     createSession, setRoster, aiInput, sessionTick, sessionFrame, onBinary, onMessage, outState, ttEvents, chaseGhost, adopt, latStats, HOLD,
     toGridClient,   // (qualifying: 'qgrid')
     fmtCode, cleanCode, cleanName,

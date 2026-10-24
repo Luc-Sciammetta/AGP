@@ -50,7 +50,7 @@ const { U, NAMES, CFG, SURF, COMPOUNDS, TEAMS, DIFFICULTY, TRACK_DATA, buildTrac
 // a player's custom livery (src/livery.js): sanitised here (hex colours, name / code lengths, a known pattern), shown to
 // everyone (room players, race entry list, time-trial roster / leaderboard); the car keeps its team slot (p.team)
 const LV = L.Livery, cleanLivery = o => (o && LV ? LV.clean(o) : null);
-const TRACK_IDS = Object.keys(TRACK_DATA).filter(id => !TRACK_DATA[id].draft);
+const TRACK_IDS = U.trackIds(TRACK_DATA);   // the shared circuit order (util.js TRACK_ORDER: real circuits by the 2026 calendar, then the fictional)
 const trackCache = {};
 const getTrack = id => trackCache[id] || (trackCache[id] = buildTrack(TRACK_DATA[id]));
 const STEP = 1 / CFG.physicsHz, STEPMS = 1000 / CFG.physicsHz;
@@ -248,6 +248,9 @@ function warmSoon(room, ms = 1500) {
   room.warmT = setTimeout(() => { if (rooms.has(room.code) && !room.sim) warmTrack(room.settings && room.settings.trackId, room.settings && room.settings.damage, () => rooms.has(room.code)); }, ms);
 }
 setTimeout(() => warmTrack(N.DEF.trackId), 2000);   // (boot: the default circuit and the race code)
+// the room's weather seed (netcore raceSeed: the next race's weather; the lobby shows its forecast): drawn here only - at
+// creation, at each race start (for the next one) and on the host's SHUFFLE ('wxshuf'); a client's settings never set it
+const newWxSeed = old => { for (;;) { const w = N.wxSeedOf(crypto.randomInt(1, 2 ** 31 - 1)); if (w !== old) return w; } };
 // lock = { on, code? }: a locked room is listed with a lock and joined only with its code (the host's own 6 digits, or a
 // random one); an open room is joined from the list (its rid) without one. The 6-digit code always works on its own.
 function createRoom(host, settings, me, lock) {
@@ -261,7 +264,7 @@ function createRoom(host, settings, me, lock) {
   }
   code = code || newCode();
   if (!code) return send(host, { t: 'error', msg: 'No free room code' });
-  const room = { code, rid: crypto.randomBytes(6).toString('hex'), locked, host, players: [], settings: N.roomSettings(settings, TRACK_IDS, 1), phase: 'lobby', sim: null, dirty: true, urgent: true, sentT: 0, created: Date.now() };
+  const room = { code, rid: crypto.randomBytes(6).toString('hex'), locked, host, players: [], settings: N.roomSettings(Object.assign({}, settings, { wxSeed: newWxSeed() }), TRACK_IDS, 1), phase: 'lobby', sim: null, dirty: true, urgent: true, sentT: 0, created: Date.now() };
   rooms.set(code, room);
   joinRoom(room, host, me);
   warmSoon(room, 0);
@@ -306,7 +309,9 @@ function splitName(n) {
 function makeWeather(S, track, seed) {
   const mode = S.weather || 'dry', tod = S.timeOfDay || 'day';
   if (!Weather || !Weather.create) { const wet = { dry: 0, damp: 0.5, wet: 1 }[mode] || 0; return { wet, rain: wet >= 1 ? 1 : wet > 0 ? 0.35 : 0, timeOfDay: tod }; }
-  return Weather.create({ mode, timeOfDay: tod, track, laps: S.mode === 'timetrial' ? 0 : S.laps, seed: (seed ^ 0x5bd1e995) >>> 0, custom: { start: 'dry', end: 'wet', when: 'mid' } });
+  // (a race's seed comes from the room's wxSeed: this seed is then exactly wxSeed, the lobby's forecast - netcore raceSeed)
+  return Weather.create({ mode, timeOfDay: tod, track, laps: S.mode === 'timetrial' ? 0 : S.laps, seed: (seed ^ N.WX_K) >>> 0,
+    custom: { start: S.weatherStart || 'dry', end: S.weatherEnd || 'wet', when: S.weatherWhen || 'mid' } });
 }
 const wearPerMetre = (S, track) => (S.mode === 'timetrial' || S.tyreWear === 'off' ? 0 : (S.tyreWear === 'high' ? 2 : 1) / (Math.max(S.laps, CFG.tyre.minRefLaps) * track.length));
 // START TYRE AUTO ('A'): the tyre the conditions call for at the start (= Weather.startChoice: the wet / dry crossover;
@@ -358,7 +363,7 @@ class RaceSim {
     for (let i = rest.length - 1; i > 0; i--) { const j = crypto.randomInt(0, i + 1), t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
     for (let i = 0; i < rest.length && field.length < n; i++) field.push(rest[i]);
     field.sort((a, b) => a - b);
-    const seed = this.seed = crypto.randomInt(1, 2 ** 31 - 1);
+    const seed = this.seed = N.raceSeed(S.wxSeed) || crypto.randomInt(1, 2 ** 31 - 1);   // (from the room's weather seed: the lobby's forecast is this race's weather)
     // (qualifying: Quali.start reads its lengths / day from G.settings, after Race.create bound the race weather — the
     // clients build the same quali weather the same way, netcore qualiPatch)
     const G = this.G = { track, cars: [], player: null, race: null, world: null, events: [], weather: null, brains: new Map(), attract: false, time: 0, input: null,
@@ -552,7 +557,15 @@ class RaceSim {
     const L = G.cars.filter(c => !c.net && !c.dnf && !c.finished && !c.inPitLane && !(c._race && c._race.pit)).sort((a, b) => onT(a) - onT(b));
     for (const c of L.slice(0, Math.min(3, m.n | 0))) Race.retire(G, race, c, 'Engine');
   }
-  // dev tools (devtools.js; the host's Tab keys, onDev checked the host): applied here (authoritative), everyone told ('devn'); a
+  // (tests only: node server.mjs --rules-test, tools/mp_rules_test.mjs) the room rules as this race applies them (N.rulesOf), the
+  // seed / field, and the plans they make from the race seed: race control's mechanical failures, the AI's own crashes
+  onRulesQ(p) {
+    const G = this.G, race = this.race, tmp = race.rc ? { cfg: race.rc.cfg } : null;
+    if (tmp && RaceControl.hzPlan) RaceControl.hzPlan(G, race, tmp);
+    const mk = AI._mk && AI._mk.plan ? AI._mk.plan(G, race) : null;
+    send(p, { t: 'rulesq', d: N.rulesOf(G), seed: this.seed, field: race.field.slice(), laps: race.laps, hz: tmp ? tmp.hz : null,
+      mk: mk ? { on: mk.on, lv: mk.lv || 0, avoid: !!mk.avoid, lam: mk.lam, ev: mk.ev.map(e => [e.c, Math.round(e.d)]) } : null, cars: G.cars.map(c => ({ id: c.id, team: c.teamIndex, human: !!c.net, wear: c.tyre.wear, c: c.tyre.compound, dist: c.raceDist || 0, pit: !!(c.inPitLane || c.dnf || (c._race && c._race.pit)) })) });
+  }
   // human's car: its client does the own-car part (loc). Battery / repair / yellow without a car: the host's own car
   onDev(p, m) {
     const G = this.G, race = this.race, op = m.op, O = DevTools && DevTools.OPS[op];
@@ -1124,8 +1137,14 @@ function onText(p, raw) {
       const upd = Object.assign({}, m.settings);
       if ('penalties' in upd && !('penaltyLevel' in upd)) upd.penaltyLevel = upd.penalties === false ? 'off' : room.settings.penaltyLevel !== 'off' ? room.settings.penaltyLevel : 'standard';   // (older clients: on / off)
       const tr0 = room.settings.trackId;
+      upd.wxSeed = room.settings.wxSeed;   // (the server's: SHUFFLE is 'wxshuf')
+      if (upd.raceControl && typeof upd.raceControl === 'object') upd.raceControl = Object.assign({}, room.settings.raceControl, upd.raceControl);   // (a partial race control change keeps the room's other switches)
       room.settings = N.roomSettings(Object.assign({}, room.settings, upd), TRACK_IDS, room.players.length); room.urgent = true; for (const q of room.players) if (q !== p) q.ready = false;
       if (room.settings.trackId !== tr0) warmSoon(room);
+    } break;
+    case 'wxshuf': if (host && room.phase === 'lobby') {   // host: SHUFFLE (a new forecast for the race; a setting change: the others un-ready)
+      room.settings = Object.assign({}, room.settings, { wxSeed: newWxSeed(room.settings.wxSeed) }); room.urgent = true;
+      for (const q of room.players) if (q !== p) q.ready = false;
     } break;
     case 'start': {
       if (!host || room.phase !== 'lobby') return;
@@ -1137,6 +1156,7 @@ function onText(p, raw) {
       p.ready = true;
       try { room.sim = room.settings.mode === 'timetrial' ? new TTSim(room) : new RaceSim(room); }
       catch (e) { console.error(e); room.sim = null; return send(p, { t: 'error', msg: 'Could not start: ' + e.message }); }
+      if (room.sim.mode === 'race') room.settings = Object.assign({}, room.settings, { wxSeed: newWxSeed(room.settings.wxSeed) });   // (this race has its weather: the lobby shows the next one's)
       room.phase = room.settings.mode === 'timetrial' ? 'tt' : 'loading';
       room.urgent = true;
       break;
@@ -1156,6 +1176,7 @@ function onText(p, raw) {
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
     case 'rft': if (sim && sim.onRft) sim.onRft(p, m); break;   // (the red flag: a tyre choice for the restart)
     case 'rcx': if (sim && sim.onRcx) sim.onRcx(p, m); break;   // (tests only: --rc-test)
+    case 'rulesq': if (ARG['rules-test'] && sim && sim.onRulesQ) sim.onRulesQ(p); break;   // (tests only: --rules-test)
     case 'wh': if (sim && sim.onWallHit) sim.onWallHit(p, m); break;   // (contact damage: a client's wall hit)
     case 'bh': if (sim && sim.onBarHit) sim.onBarHit(p, m); break;   // (race control: a client's push into a movable barrier)
     case 'rst': if (sim && sim.onReset) sim.onReset(p); break;   // (reset ghost: the player pressed R)
