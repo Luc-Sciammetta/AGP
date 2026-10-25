@@ -461,7 +461,14 @@ class RaceSim {
   onLeave(p) { const car = this.byPid.get(p.id); if (car && car.net) car.net.left = true; }
   stop() { this.stopped = true; }
   // ---- messages from a racing client
-  onLoaded(p) { p.loaded = true; }
+  // (a client's race built: the whole picture at once - race control's state too (the medical car, the safety car, the flags), not
+  // only what changes from now on: a page that built its race late - a slow load, a rematch built behind the last race - kept its own
+  // medical car behind the grid while the server's was round the lap or parked, user 2026-10-24. As resume: the others' keys kept)
+  onLoaded(p) {
+    p.loaded = true;
+    if (!this.race || !this.byPid.has(p.id) || !connected(p)) return;
+    const k = new Map(this.infoKey), rk = this.rKey; this.info(true, p); this.infoKey = k; this.rKey = rk;
+  }
   onState(p, dv) {
     const car = this.byPid.get(p.id); if (!car) return;
     const n = car.net, s = N.readState(dv, this._st);
@@ -614,7 +621,7 @@ class RaceSim {
       car.aero = r.straight ? 'straight' : 'corner'; car.boosting = r.boosting; car.harvesting = r.harvesting; car.onKerb = r.onKerb; car.reverse = r.reverse;
       if (pre && Math.hypot(car.vx, car.vz) < 0.05) { car.vx = 0; car.vz = 0; }
     } else { car.x += car.vx * dt; car.z += car.vz * dt; }   // just handed back: dead reckoning until the client's first report
-    const p = track.project(car.x, car.z, car.idx, this._pr);
+    const p = track.project(car.x, car.z, car.idx, this._pr, true);   // (with the pit roads, as Physics: Race's pit lane path on a road is in road coordinates - QUEUE 9, Monaco's garage road)
     car.s = p.s; car.d = p.d; car.idx = p.idx;
     const ch = Math.cos(car.h), sh = Math.sin(car.h);
     car.speed = Math.hypot(car.vx, car.vz); car.vLong = car.vx * ch + car.vz * sh; car.vLat = -car.vx * sh + car.vz * ch;
@@ -952,7 +959,7 @@ class RaceSim {
       sbs: race.sessionBestSectors, lf: !!race.leaderFinished, tca: !!race.twoCompoundActive, t: race.t };
     if (this.G.world && this.G.world.damage && typeof Damage !== 'undefined') r.db = Damage.packDebris(race);   // (contact damage: debris)
     if (race.rc && typeof RaceControl !== 'undefined') r.rc = RaceControl.pack(race);   // (race control: the zone flags, decided here)
-    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db, r.rc && r.rc[0], r.rc && r.rc[8] ? r.rc[8][0] : 0, r.rc && (r.rc[5] || r.rc[6]) ? Math.floor(race.t * 2) : 0]);   // (r.rc[8][0]: the movable barriers' version; under a VSC / SC 2 Hz: the deltas, which clients' own followers correct to)
+    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db, r.rc && r.rc[0], r.rc && r.rc[8] ? r.rc[8][0] : 0, r.rc && (r.rc[5] || r.rc[6]) ? Math.floor(race.t * 2) : 0, r.rc ? Math.floor(race.t / 2) : 0]);   // (r.rc[8][0]: the movable barriers' version; under a VSC / SC 2 Hz: the deltas, which clients' own followers correct to; race control on: every 2 s anyway - a client that missed a change, e.g. the medical car parked while its page was still building the race, is put right)
     const msg = { t: 'info', c: ch };
     if (full || rk !== this.rKey) { this.rKey = rk; msg.r = r; }
     if (!ch.length && !msg.r) return;
@@ -964,7 +971,7 @@ class RaceSim {
     if (!car) return;
     car.net.left = false; car.net.afk = false; car.net.lobby = false;
     send(p, this.setupMsg(p, true));
-    const k = new Map(this.infoKey); this.info(true, p); this.infoKey = k;
+    const k = new Map(this.infoKey), rk = this.rKey; this.info(true, p); this.infoKey = k; this.rKey = rk;   // (the others' keys kept: a change not yet sent to them still goes out)
     if (this.q && this.race.qs.st !== 'done') { this.qSend(p); for (let i = 0; i <= this.race.qs.idx; i++) this.qSendRes(i, true, p); }   // (qualifying: the whole picture)
     if (car.net.auth === 'server') this.ctl(car);   // (the server has the car — garage / pit lane / AI: a fresh page follows it)
     if (this.results) send(p, this.resFor(p));
