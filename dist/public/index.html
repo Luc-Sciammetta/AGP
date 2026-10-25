@@ -75988,7 +75988,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-25 10:29';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-25 11:43';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -84443,7 +84443,7 @@ const RCModels = (() => {
 
 // ===== src/lvfx.js =====
 // Las Vegas night spectacle (TRACK_DATA.lasvegas.scenery.osm.lv; browser only, used by render3d.js buildLV): the LED content library
-// (15 animations, GLSL, rendered into render targets) shared by the Sphere screen and the casino LED signs, the Sphere (a content RT on
+// (25 animations, GLSL, rendered into render targets) shared by the Sphere screen and the casino LED signs, the Sphere (a content RT on
 // a 78.6 m sphere, camera-facing content, updates by visibility / size), the Bellagio fountain show (GPU particles, a baked
 // choreography texture, mirrored jets, mist), LED signs + neon chasers, the facade atlas V + the lit city (extruded OSM buildings,
 // lit windows, flood washes, crown LEDs), the High Roller and the Eiffel replica. Proven in the plan's prototype pages
@@ -84452,7 +84452,7 @@ const LVFX = (() => {
   const LV_CONTENT = (() => {
     const HEAD = `
   precision highp float;
-  uniform float uTime, uMode, uFocusLon, uFocusLat, uLatMin, uAspect, uAlpha, uSeed;
+  uniform float uTime, uMode, uFocusLon, uFocusLat, uLatMin, uAspect, uAlpha, uSeed, uT0;
   uniform sampler2D uText;
   uniform vec4 uP;
   varying vec2 vUv;
@@ -84473,7 +84473,7 @@ const LVFX = (() => {
   vec3 rotX(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z); }
   float cov(float d, float w){ return clamp(0.5 - d / w, 0.0, 1.0); }          // coverage of a signed distance (inside < 0)
   vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h * 6.0 + vec3(0, 4, 2), 6.0) - 3.0) - 1.0, 0.0, 1.0); return v * mix(vec3(1.0), k, s); }
-  float txt(float row, vec2 q){ if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return 0.0; return texture2D(uText, vec2(q.x, (3.0 - row + q.y) / 4.0)).r; }
+  float txt(float row, vec2 q){ if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return 0.0; return texture2D(uText, vec2(q.x, (7.0 - row + q.y) / 8.0)).r; }
   vec3 P; vec2 F; float vis, lon, lat, AA;
   vec3 fD, fR, fU;
   void setup(){
@@ -84497,33 +84497,70 @@ const LVFX = (() => {
     vec3 D = vec3(cos(fl), sin(fl), 0.0), R = normalize(cross(vec3(0.0, 1.0, 0.0), D)), U = cross(D, R);
     sv = dot(Pl, D); return vec2(dot(Pl, R), dot(Pl, U));
   }
+  float sdSeg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+  float sdTri(vec2 p, vec2 p0, vec2 p1, vec2 p2){
+    vec2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2, v0 = p - p0, v1 = p - p1, v2 = p - p2;
+    vec2 q0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0), q1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0), q2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);
+    float s = sign(e0.x * e2.y - e0.y * e2.x);
+    vec2 d = min(min(vec2(dot(q0, q0), s * (v0.x * e0.y - v0.y * e0.x)), vec2(dot(q1, q1), s * (v1.x * e1.y - v1.y * e1.x))), vec2(dot(q2, q2), s * (v2.x * e2.y - v2.y * e2.x)));
+    return -sqrt(d.x) * sign(d.y); }
+  mat2 rot2(float a){ float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+  float ease3(float x){ x = clamp(x, 0.0, 1.0); return x < 0.5 ? 4.0 * x * x * x : 1.0 - 0.5 * pow(2.0 - 2.0 * x, 3.0); }
+  // a gaze in the unit disc (the eye, the face), seed s, 2.2 s segments: quick saccades to random points (fast-in, a small
+  // overshoot, settle; sometimes two in a segment), slow pursuits, holds on the viewer, now and then a full roll round the rim
+  vec2 gzP(float k, float s){ float h = h11(k * 7.13 + s), a = TAU * h11(k * 3.71 + s + 1.3), r = mix(0.35, 1.0, sqrt(h11(k * 5.19 + s + 2.9)));
+    return h < 0.2 ? vec2(0.0) : vec2(cos(a), sin(a)) * (h > 0.9 ? 1.0 : r); }
+  vec2 gaze(float t, float s){
+    float L = 2.2, k = floor(t / L), u = t - k * L, h = h11(k * 7.13 + s);
+    vec2 p0 = gzP(k - 1.0, s), p1 = gzP(k, s), j = (vec2(vnoise(vec2(t * 2.3, s * 1.7)), vnoise(vec2(s * 1.7 + 5.0, t * 2.3))) - 0.5) * 0.05;
+    if (h > 0.9) { float a1 = atan(p1.y, p1.x), dr = h11(k + s * 3.1) < 0.5 ? -1.0 : 1.0;   // the roll
+      if (u < 0.3) return mix(p0, p1, ease3(u / 0.3));
+      float a = a1 + dr * TAU * ease3((u - 0.3) / 1.8); return vec2(cos(a), sin(a)); }
+    if (h > 0.68) return mix(p0, p1, ease3(u / L)) + j;                                        // a pursuit
+    vec2 a0 = p0, a1 = p1; float uu = u;
+    if (h > 0.5) { vec2 M = gzP(k + 0.5, s); if (u < 1.1) a1 = M; else { a0 = M; uu = u - 1.1; } }
+    float x = clamp(uu / 0.16, 0.0, 1.0), e = 1.0 - pow(1.0 - x, 3.0) + 0.07 * sin(clamp((uu - 0.1) / 0.32, 0.0, 1.0) * PI);
+    return mix(a0, a1, e) + j * 0.5;
+  }
   `;
     const A = [];
-    const add = (name, kind, code, avg) => A.push({ name, kind, code, avg });
+    const add = (name, kind, code, avg, x) => A.push(Object.assign({ name, kind, code, avg }, x));   // (x: hold (s, or r => s), tick(t, content))
+    // the Magic 8-ball's answers ('line 1|line 2': text rows 4 + 5) and the single-zero wheel (its pocket numbers: text row 7)
+    const EIGHT = ['BOX|BOX', 'PUSH|NOW', 'OUTLOOK|GOOD', 'ASK AGAIN|LATER', 'IT IS|CERTAIN', 'FULL|SEND', 'STAY|OUT', 'VERY|DOUBTFUL', 'SIGNS SAY|YES', 'NO|CHANCE', 'TRY|AGAIN', 'GO FOR|IT'];
+    const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 
-    // 1 the Eye: an eyeball that looks at the viewer, saccades, blinks
+    // 1 the Eye: an eyeball that looks round in every direction (saccades, pursuits, rolls round the rim, holds on you); the iris is
+    // a cap round the gaze (foreshortened as it turns); the upper lid follows the vertical gaze; blinks (sometimes double)
     add('eye', 'facing', `
   vec3 anim(){
-    float t = uTime, k = floor(t / 2.6);
-    vec2 c = (vec2(h11(k), h11(k + 5.0)) - 0.5) * vec2(0.5, 0.28) * step(0.35, h11(k + 9.0));
-    vec2 q = F - c; float r = length(q), th = atan(q.y, q.x);
+    float t = uTime;
+    vec2 g = gaze(t, 0.0), ga = vec2(g.x * 0.62, g.y * (g.y > 0.0 ? 0.55 : 0.42));
+    vec3 Gd = normalize(fD + fR * ga.x + fU * ga.y), gR = normalize(cross(vec3(0.0, 1.0, 0.0), Gd)), gU = cross(Gd, gR);
+    vec2 q = vec2(dot(P, gR), dot(P, gU)); float r = length(q), th = atan(q.y, q.x), front = step(0.0, dot(P, Gd)) * step(0.0, vis);
     vec3 col = vec3(0.93, 0.91, 0.88);
     float vn = abs(vnoise(vec2(lon * 9.0 + lat * 3.0, lat * 14.0)) * 2.0 - 1.0);
-    col = mix(col, vec3(0.78, 0.12, 0.1), smoothstep(0.06, 0.0, vn) * smoothstep(0.55, 1.15, r) * 0.65);
+    col = mix(col, vec3(0.78, 0.12, 0.1), smoothstep(0.06, 0.0, vn) * smoothstep(0.55, 1.15, length(F)) * 0.65);
     col *= 0.8 + 0.2 * smoothstep(-0.2, 0.6, vis);
-    float R = 0.4, pr = 0.14 + 0.035 * sin(t * 0.6);
+    float R = 0.41, pr = 0.13 + 0.025 * sin(t * 0.6) + 0.035 * smoothstep(0.3, 0.0, length(g));
     float fib = vnoise(vec2(th * 16.0, r * 8.0)) * 0.6 + vnoise(vec2(th * 45.0, r * 2.5)) * 0.4;
     vec3 irc = mix(vec3(0.03, 0.3, 0.55), vec3(0.1, 0.62, 0.5), fib);
     irc = mix(irc, vec3(0.85, 0.55, 0.12), smoothstep(pr * 1.9, pr * 1.05, r) * 0.85);
-    irc *= mix(0.25, 1.0, smoothstep(R, R * 0.8, r));
-    float front = step(0.0, vis);
+    irc *= mix(0.15, 1.0, smoothstep(R, R * 0.8, r));
     col = mix(col, irc, cov(r - R, AA * 2.0) * front);
     col = mix(col, vec3(0.005), cov(r - pr, AA * 2.0) * front);
     col += vec3(1.3) * smoothstep(0.065, 0.035, length(q - vec2(-0.12, 0.13))) * front;
-    float bt = mod(t, 4.3), bl = smoothstep(0.0, 0.1, bt) * smoothstep(0.3, 0.18, bt);
-    float lidY = mix(1.2, -0.02, bl);
+    // the lids: the upper one drops as it looks down (rises a little looking up), the lower one rises looking up; blinks
+    float bk = floor(t / 4.3), bt = t - bk * 4.3 - 0.3 - 2.6 * h11(bk + 11.0);
+    float bl = smoothstep(0.0, 0.08, bt) * smoothstep(0.26, 0.14, bt); bt -= 0.36;
+    bl = max(bl, step(0.75, h11(bk + 23.0)) * smoothstep(0.0, 0.08, bt) * smoothstep(0.26, 0.14, bt));
+    float up = mix(0.84 + (ga.y > 0.0 ? 0.45 : 1.3) * ga.y, -0.1, bl) - 0.2 * F.x * F.x;
+    float lo = mix(-0.62 + 0.3 * max(ga.y, 0.0), -0.1, bl) + 0.12 * F.x * F.x;
+    col *= mix(0.45, 1.0, smoothstep(0.0, 0.16, up - F.y)) * mix(0.7, 1.0, smoothstep(0.0, 0.1, F.y - lo));
     vec3 skin = vec3(0.62, 0.4, 0.3) * (0.55 + 0.45 * smoothstep(-0.2, 0.8, vis));
-    col = mix(col, skin, step(lidY, abs(F.y)) * front * step(0.001, bl));
+    skin *= 1.0 - 0.4 * cov(abs(F.y - up - 0.15 + 0.05 * F.x * F.x) - 0.012, 0.02) * (1.0 - bl);
+    skin *= mix(1.0, 0.75, smoothstep(0.12, 0.0, F.y - up));
+    col = mix(col, skin, max(cov(up - F.y, AA * 2.0), cov(F.y - lo, AA * 2.0)));
+    col = mix(col, vec3(0.05, 0.025, 0.02), min(1.0, cov(abs(F.y - up) - 0.022, AA * 2.0) + 0.8 * cov(abs(F.y - lo) - 0.013, AA * 2.0)));
     return col;
   }`, [0.8, 0.78, 0.75]);
 
@@ -84578,21 +84615,111 @@ const LVFX = (() => {
     return mix(c, vec3(0.02), cov(s - w, 0.006));
   }`, [0.55, 0.22, 0.05]);
 
-    // 5 Emoji: a yellow smiley that looks at the viewer and winks
+    // 5 the Face: a parametric smiley. Each expression is a parameter set; a change morphs every parameter (1.2 s, eased), so the
+    // mouth / eyes / brows reshape. 9 expressions: 0 happy, 1 laughing, 2 awe, 3 angry, 4 sad, 5 cheeky (wink, tongue out), 6 love
+    // (heart eyes), 7 sleepy (droopy lids, a yawn, Zs), 8 suspicious (side-eye, one brow up). An appearance (uT0: its start, uSeed:
+    // the first expression + a step coprime to 9: no repeats) shows 3-5 of them (the playlist hold), 7.2 s each (1.2 s morph + 6 s).
+    // It looks round like the eye: the features turn on the sphere, the pupils lead.
     add('emoji', 'facing', `
+  // A eyes (open L, open R, squint ^^, heart), B (pupil x, pupil y, pupil shrink, red), C brows (lift L, tilt L, lift R, tilt R:
+  // + inner end up), D mouth (curve, open, half width, tilt), E (tongue out, blush, tear, teeth), G (bob, sleepy, mouth x, O shape)
+  void ex(float i, out vec4 A, out vec4 B, out vec4 C, out vec4 D, out vec4 E, out vec4 G){
+    A = vec4(1.0, 1.0, 0.0, 0.0); B = vec4(0.0); C = vec4(0.03, 0.12, 0.03, 0.12); D = vec4(0.2, 0.0, 0.4, 0.0); E = vec4(0.0); G = vec4(0.0);
+    if (i < 0.5) { D = vec4(0.22, 0.08, 0.42, 0.0); E = vec4(0.0, 0.35, 0.0, 0.85); }
+    else if (i < 1.5) { A.z = 1.0; C = vec4(0.08, 0.1, 0.08, 0.1); D = vec4(0.18, 0.26, 0.46, 0.0); E = vec4(0.0, 0.6, 0.0, 1.0); G.x = 1.0; }
+    else if (i < 2.5) { A.xy = vec2(1.3); B.z = 1.0; C = vec4(0.13, 0.15, 0.13, 0.15); D = vec4(0.0, 0.21, 0.12, 0.0); G.w = 1.0; }
+    else if (i < 3.5) { A.xy = vec2(0.78); B.w = 1.0; C = vec4(-0.08, -0.95, -0.08, -0.95); D = vec4(-0.22, 0.05, 0.32, 0.0); E.w = 1.0; }
+    else if (i < 4.5) { A.xy = vec2(0.92); B.y = -0.7; C = vec4(0.04, 0.55, 0.04, 0.55); D = vec4(-0.2, 0.0, 0.28, 0.0); E.z = 1.0; }
+    else if (i < 5.5) { A.y = 0.0; B.x = -0.3; D = vec4(0.16, 0.03, 0.34, -0.06); E = vec4(1.0, 0.45, 0.0, 0.0); C.z = -0.02; }
+    else if (i < 6.5) { A.w = 1.0; C = vec4(0.08, 0.14, 0.08, 0.14); D = vec4(0.22, 0.06, 0.4, 0.0); E = vec4(0.0, 0.9, 0.0, 0.7); }
+    else if (i < 7.5) { A.xy = vec2(0.3); B.y = -0.5; C = vec4(-0.01, 0.2, -0.01, 0.2); D = vec4(0.0, 0.0, 0.16, 0.0); G.y = 1.0; G.w = 1.0; }
+    else { A.xy = vec2(0.52, 0.6); B.x = 1.0; C = vec4(-0.04, -0.25, 0.15, -0.05); D = vec4(-0.05, 0.0, 0.25, 0.07); G.z = 0.08; }
+  }
+  float sdHeart(vec2 p){ p.x = abs(p.x);
+    if (p.y + p.x > 1.0) return length(p - vec2(0.25, 0.75)) - 0.35355;
+    return sqrt(min(dot(p - vec2(0.0, 1.0), p - vec2(0.0, 1.0)), dot(p - 0.5 * max(p.x + p.y, 0.0), p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y); }
   vec3 anim(){
-    vec3 c = vec3(1.0, 0.82, 0.12) * (0.75 + 0.25 * smoothstep(-0.3, 0.8, vis));
-    float front = step(0.0, vis), t = uTime;
-    float w = smoothstep(0.0, 0.15, mod(t, 5.0)) * smoothstep(0.7, 0.55, mod(t, 5.0));
-    vec2 el = F - vec2(-0.3, 0.2), er = F - vec2(0.3, 0.2);
-    float dl = length(el / vec2(0.09, 0.16)) - 1.0;
-    float dr = mix(length(er / vec2(0.09, 0.16)) - 1.0, abs(length(er + vec2(0.0, 0.1)) - 0.12) / 0.03 - 1.0 + step(er.y, -0.04) * 9.0, w);
-    c = mix(c, vec3(0.25, 0.12, 0.03), max(cov(dl, 0.06), cov(dr, 0.08)) * front);
-    vec2 m = F - vec2(0.0, 0.2); float dm = abs(length(m) - 0.6) - 0.045;
-    c = mix(c, vec3(0.25, 0.12, 0.03), cov(dm, 0.01) * step(F.y, -0.12) * front);
-    c = mix(c, vec3(1.0, 0.45, 0.35), 0.5 * smoothstep(0.14, 0.05, min(length(F - vec2(-0.5, -0.12)), length(F - vec2(0.5, -0.12)))) * front);
+    float t = uTime, lt = max(t - uT0, 0.0), k = floor(lt / 7.2), u = lt - k * 7.2;
+    float e0 = mod(uSeed, 9.0), si = floor(mod(uSeed, 54.0) / 9.0);
+    float st = si < 0.5 ? 1.0 : si < 1.5 ? 2.0 : si < 2.5 ? 4.0 : si < 3.5 ? 5.0 : si < 4.5 ? 7.0 : 8.0;
+    vec4 A0, B0, C0, D0, E0, G0, A, B, C, D, E, G;
+    ex(mod(e0 + (k - 1.0) * st, 9.0), A0, B0, C0, D0, E0, G0);
+    ex(mod(e0 + k * st, 9.0), A, B, C, D, E, G);
+    float m = k < 0.5 ? 1.0 : ease3(u / 1.2);
+    A = mix(A0, A, m); B = mix(B0, B, m); C = mix(C0, C, m); D = mix(D0, D, m); E = mix(E0, E, m); G = mix(G0, G, m);
+    // the head turns (a smoothed, delayed gaze), the pupils lead it
+    vec2 g = gaze(t, 5.0), gh = (gaze(t - 0.3, 5.0) + gaze(t - 0.55, 5.0) + gaze(t - 0.8, 5.0)) / 3.0;
+    gh *= 1.0 - 0.6 * G.y;
+    vec3 Hd = normalize(fD + fR * gh.x * 0.3 + fU * gh.y * (gh.y > 0.0 ? 0.2 : 0.12)), hR = normalize(cross(vec3(0.0, 1.0, 0.0), Hd)), hU = cross(Hd, hR);
+    vec2 p = vec2(dot(P, hR), dot(P, hU));
+    p.y -= G.x * 0.03 * abs(sin(t * 9.0)); p.x += B.w * 0.006 * sin(t * 47.0);
+    float front = step(0.0, vis) * smoothstep(0.1, 0.3, dot(P, Hd));
+    vec3 c = mix(vec3(0.95, 0.66, 0.04), vec3(0.95, 0.2, 0.04), B.w * smoothstep(-0.6, 0.8, p.y) * 0.9);
+    c *= 0.72 + 0.28 * smoothstep(-0.3, 0.8, vis);
+    vec3 ink = vec3(0.22, 0.1, 0.03);
+    c = mix(c, vec3(1.0, 0.4, 0.36), E.y * 0.6 * smoothstep(0.14, 0.04, length((vec2(abs(p.x), p.y) - vec2(0.5, -0.1)) / vec2(1.0, 0.65))) * front);
+    // eyes (white, outlined; lids; the laughing ^ arc and the heart are SDF morph targets) and brows
+    for (int i = 0; i < 2; i++) {
+      float s = i == 0 ? -1.0 : 1.0, o = i == 0 ? A.x : A.y, oc = min(o, 1.0);
+      vec2 pe = p - vec2(0.3 * s, 0.2);
+      vec2 rr = vec2(0.1 * (1.0 + 0.15 * max(o - 1.0, 0.0)), 0.15 * max(o, 1.0));
+      float dEl = (length(pe / rr) - 1.0) * rr.x;
+      float hs = 0.29 * (1.0 + 0.07 * sin(t * 7.0) * A.w), dH = sdHeart(pe / hs + vec2(0.0, 0.55)) * hs;
+      float dE = mix(dEl, dH, A.w), lidOn = (1.0 - A.z) * (1.0 - A.w);
+      float yl = rr.y * (1.0 - 1.9 * (1.0 - oc)) + 2.5 * (1.0 - oc) * pe.x * pe.x;
+      float wht = cov(max(dE, mix(-1.0, pe.y - yl, lidOn)), 0.01) * (1.0 - A.z);
+      c = mix(c, mix(vec3(0.98, 0.97, 0.94), vec3(0.85, 0.02, 0.07), A.w), wht * front);
+      vec2 pp = vec2(B.x * 0.045, B.y * 0.07) + (g - gh) * vec2(0.05, 0.06) + gh * 0.02;
+      pp = clamp(pp, -rr + 0.06, rr - 0.06);
+      float pr = 0.062 - 0.026 * B.z, pk = wht * (1.0 - A.w) * front;
+      c = mix(c, ink, cov(length(pe - pp) - pr, 0.01) * pk);
+      c = mix(c, vec3(1.4), smoothstep(0.022, 0.012, length(pe - pp - vec2(-0.022, 0.026))) * pk);
+      float dOut = min(max(abs(dE) - 0.014, mix(-1.0, pe.y - yl - 0.012, lidOn)), max(abs(pe.y - yl) - 0.016, dEl) + 9.0 * (1.0 - lidOn) + 9.0 * step(0.98, oc));
+      float sq = max(abs(length(pe + vec2(0.0, 0.06)) - 0.1) - 0.027, -0.06 - pe.y);
+      c = mix(c, ink, cov(mix(dOut, sq, A.z), 0.011) * front);
+      vec2 pb = p - vec2(0.3 * s, 0.47 + (i == 0 ? C.x : C.z) + 0.15 * max(o - 1.0, 0.0));
+      float ba = i == 0 ? C.y : C.w, xi = -s * pb.x;
+      float dB = length(vec2(max(abs(pb.x) - 0.11, 0.0), (pb.y - ba * xi + 1.6 * pb.x * pb.x) / sqrt(1.0 + ba * ba))) - 0.027;
+      c = mix(c, ink, cov(dB, 0.011) * front);
+    }
+    // a tear running down the left cheek
+    float tf = fract(t / 1.9), ty = 0.07 - 0.45 * tf * tf; vec2 pt = p - vec2(-0.43, ty);
+    float dT = min(length(pt) - 0.034 * E.z, max(abs(pt.x) - 0.034 * E.z * clamp(1.0 - pt.y / 0.075, 0.0, 1.0), max(-pt.y, pt.y - 0.075 * E.z)));
+    c = mix(c, vec3(0.5, 0.78, 1.0), 0.5 * E.z * cov(sdSeg(p, vec2(-0.41, 0.09), vec2(-0.43, ty)) - 0.012, 0.01) * front);
+    c = mix(c, vec3(0.35, 0.68, 1.3), cov(dT, 0.01) * step(0.01, E.z) * front);
+    // the mouth: a curve (smile + / frown -) with an opening (D for laughing, O for awe / a yawn), teeth, the tongue
+    float yawn = G.y * smoothstep(2.0, 2.8, u) * smoothstep(4.8, 3.9, u);
+    float W = mix(D.z, 0.13, yawn), Op = D.y + 0.2 * yawn, Ow = clamp(G.w, 0.0, 1.0);
+    vec2 pm = p - vec2(G.z, -0.2);
+    float xm = pm.x / W, xc = clamp(xm, -1.0, 1.0), sq2 = sqrt(max(1.0 - xc * xc, 0.0));
+    float yc = D.x * (xc * xc - 0.35) + D.w * xc, up = Op * mix(0.3, 0.75, Ow) * sq2, dn = Op * mix(1.0, 0.75, Ow) * sq2;
+    float sl = sqrt(1.0 + pow((2.0 * D.x * xc + D.w) / W, 2.0));
+    float dO = max((abs(xm) - 1.0) * W, max(pm.y - yc - up, yc - dn - pm.y) / sl);
+    float dL = length(vec2(max(abs(pm.x) - W, 0.0), (pm.y - yc) / sl)) - 0.022;
+    vec3 mc = vec3(0.42, 0.06, 0.08);
+    mc = mix(mc, vec3(0.95, 0.4, 0.48), step(length((pm - vec2(0.0, yc - dn)) / vec2(W * 0.55, dn * 0.55 + 0.001)), 1.0));
+    mc = mix(mc, vec3(0.97, 0.96, 0.92), E.w * step(yc + up - min(0.045, (up + dn) * 0.45), pm.y));
+    c = mix(c, mc, cov(dO, 0.01) * front);
+    if (E.x > 0.01) {   // the tongue out: grows from the lip line
+      float xt = 0.07 / W, yct = D.x * (xt * xt - 0.35) + D.w * xt;
+      vec2 q2 = pm - vec2(0.07, yct - 0.075 * E.x);
+      float dTg = max((length(q2 / vec2(0.085, 0.1 * E.x + 0.001)) - 1.0) * 0.085, pm.y - yct);
+      c = mix(c, ink, cov(dTg - 0.014, 0.01) * front);
+      c = mix(c, vec3(1.0, 0.36, 0.46), cov(dTg, 0.01) * front);
+      c = mix(c, vec3(0.7, 0.16, 0.26), cov(abs(q2.x) - 0.007, 0.008) * cov(dTg + 0.035, 0.01) * front);
+    }
+    c = mix(c, ink, cov(min(max(dL, -dO - 0.016), abs(dO) - 0.016), 0.011) * front);
+    // sleepy: Zs float up
+    if (G.y > 0.01) for (int i = 0; i < 3; i++) {
+      float fz = fract(t * 0.3 + float(i) / 3.0), sz = (0.07 + 0.07 * fz) * G.y + 0.001;
+      vec2 pz = (p - vec2(0.45 + 0.2 * fz, 0.45 + 0.36 * fz)) / sz;
+      float dz = (min(min(sdSeg(pz, vec2(-0.5, 0.5), vec2(0.5, 0.5)), sdSeg(pz, vec2(0.5, 0.5), vec2(-0.5, -0.5))), sdSeg(pz, vec2(-0.5, -0.5), vec2(0.5, -0.5))) - 0.14) * sz;
+      float al = smoothstep(0.0, 0.12, fz) * smoothstep(1.0, 0.75, fz) * front;
+      c = mix(c, ink, cov(dz - 0.01, 0.008) * al);
+      c = mix(c, vec3(1.3, 1.35, 1.5), cov(dz, 0.008) * al);
+    }
     return c;
-  }`, [0.8, 0.62, 0.1]);
+  }`, [0.8, 0.6, 0.08], { hold: r => (3 + Math.floor(r * 3)) * 7.2 - 3.2 });
 
     // 6 Disco ball: mirror tiles, sweeping coloured lights, glints
     add('disco', 'sphere', `
@@ -84786,11 +84913,416 @@ const LVFX = (() => {
     return c;
   }`, [0.08, 0.08, 0.1]);
 
+    // ---- 16-25 (indices 15-24): the second set, shuffled into the playlist (the race events still force indices 6-9)
+    // 16 Jack-o'-lantern: a ribbed pumpkin, a carved face lit by a flickering candle (the cut walls glow, light leaks round the holes)
+    add('pumpkin', 'facing', `
+  float holes(vec2 p){
+    vec2 q = vec2(abs(p.x), p.y);
+    float d = sdTri(q, vec2(0.15, 0.13), vec2(0.5, 0.11), vec2(0.29, 0.42));
+    d = min(d, sdTri(p, vec2(-0.08, -0.04), vec2(0.08, -0.04), vec2(0.0, 0.1)));
+    float m = max(length(p - vec2(0.0, 0.25)) - 0.62, 0.78 - length(p - vec2(0.0, 0.55)));
+    m = max(m, -max(abs(q.x - 0.19) - 0.05, abs(p.y + 0.215) - 0.05));
+    m = max(m, -max(abs(p.x) - 0.055, abs(p.y + 0.37) - 0.06));
+    return min(d, m);
+  }
+  vec3 anim(){
+    float t = uTime;
+    float fl = 0.8 + 0.14 * vnoise(vec2(t * 6.0, 1.3)) + 0.1 * vnoise(vec2(t * 17.0, 4.1)) - 0.12 * step(0.93, vnoise(vec2(t * 3.0, 9.0)));
+    vec3 fD0 = normalize(vec3(fD.x, 0.0, fD.z));
+    float az = atan(dot(P, fR), dot(P, fD0)), rib = 0.5 + 0.5 * cos(az * 10.0);
+    vec3 c = mix(vec3(0.2, 0.045, 0.005), vec3(0.78, 0.25, 0.015), pow(rib, 0.5));
+    c *= 0.45 + 0.55 * smoothstep(-0.2, 0.9, vis) * (0.75 + 0.25 * smoothstep(-0.6, 0.6, F.y - F.x * 0.3));
+    c += vec3(0.9, 0.6, 0.3) * 0.25 * pow(max(dot(P, normalize(fD + fU * 0.55 - fR * 0.45)), 0.0), 28.0) * rib;
+    float sv = step(0.0, vis);
+    vec2 p = F - vec2(0.0, 0.14);
+    float d = holes(p), dw = holes(p - vec2(0.012, -0.035));
+    vec3 flame = vec3(2.3, 1.05, 0.22) * fl;
+    c += flame * 0.22 * exp(-max(d, 0.0) * 20.0) * sv * (0.5 + 0.5 * rib);
+    vec3 inside = mix(vec3(1.5, 0.5, 0.05), vec3(2.6, 1.6, 0.4), smoothstep(0.45, -0.4, p.y + 0.15 * abs(p.x - 0.05 * sin(t * 2.3)))) * fl;
+    inside = mix(inside, vec3(1.7, 0.95, 0.25) * fl, cov(-dw, 0.006) * 0.85);
+    c = mix(c, inside, cov(d, AA * 2.0) * sv);
+    c = mix(c, vec3(0.18, 0.2, 0.06), cov(length((F - vec2(0.03, 0.99)) / vec2(1.0, 0.7)) - 0.11, 0.01) * sv);
+    return c;
+  }`, [0.5, 0.2, 0.04]);
+
+    // 17 Snow globe: a glass ball over a tiny Las Vegas (towers with lit windows, the STRAT, a little Sphere, the Luxor beam); shaken
+    // every 16 s, the snow swirls then settles; glass highlights and a rim
+    add('snowglobe', 'facing', `
+  vec3 anim(){
+    float t = uTime, tau = mod(t, 16.0), sk = floor(t / 16.0);
+    vec2 p = (F - vec2(0.0, 0.06)) / 1.3 + vec2(0.025 * sin(tau * 22.0), 0.012 * sin(tau * 31.0)) * exp(-tau * 3.0);
+    vec3 c = mix(vec3(0.015, 0.03, 0.11), vec3(0.07, 0.11, 0.3), smoothstep(0.9, -0.35, p.y));
+    c += vec3(0.5) * step(0.985, h21(floor(p * 60.0))) * smoothstep(0.4, 0.1, length(fract(p * 60.0) - 0.5)) * smoothstep(0.1, 0.5, p.y);
+    // the skyline
+    float gy = -0.2 + 0.05 * cos(p.x * 2.4), bx = floor(p.x / 0.075), bf = fract(p.x / 0.075);
+    float bh = gy + 0.08 + 0.32 * pow(h11(bx * 1.7 + 3.0), 2.0) * smoothstep(0.85, 0.3, abs(p.x));
+    float inB = step(p.y, bh) * step(0.08, bf) * step(bf, 0.92) * step(abs(p.x), 0.75);
+    vec2 wg = vec2(bf * 5.0, (p.y - gy) / 0.022); float lit = step(0.45, h21(floor(wg) + bx * 7.0));
+    vec3 bc = vec3(0.04, 0.05, 0.1) + lit * step(0.25, fract(wg.x)) * step(0.3, fract(wg.y)) * mix(vec3(1.5, 1.0, 0.45), vec3(0.7, 1.0, 1.6), step(0.7, h11(bx)));
+    bc = mix(bc, hsv(h11(bx * 3.3), 0.8, 1.6), step(bh - 0.012, p.y) * step(0.5, h11(bx + 9.0)));
+    c = mix(c, bc, inB);
+    c = mix(c, vec3(0.85, 0.9, 1.0), inB * step(bh - 0.006, p.y));
+    float st = max(abs(p.x - 0.43) - 0.012 - 0.01 * smoothstep(0.1, gy, p.y), p.y - 0.5);
+    st = min(st, length((p - vec2(0.43, 0.42)) / vec2(1.0, 0.55)) - 0.035);
+    c = mix(c, vec3(0.08, 0.08, 0.12) + vec3(1.3, 0.4, 0.9) * step(abs(p.y - 0.42), 0.008), cov(st, 0.006));
+    c = mix(c, vec3(1.6, 0.25, 0.3) * (0.6 + 0.4 * sin(t * 3.0)), smoothstep(0.012, 0.0, length(p - vec2(0.43, 0.56))));
+    float sd = length(p - vec2(-0.27, gy + 0.075)) - 0.07;
+    c = mix(c, hsv(fract(t * 0.1 + p.x * 2.0), 0.7, 1.5), cov(sd, 0.006));
+    float py = max(abs(p.x + 0.56) * 1.1 + p.y - (gy + 0.16), gy - 0.02 - p.y);
+    c = mix(c, vec3(0.05, 0.06, 0.1) + vec3(0.9, 0.7, 0.3) * cov(abs(abs(p.x + 0.56) * 1.1 + p.y - (gy + 0.16)) - 0.004, 0.005), cov(py, 0.006));
+    c += vec3(0.7, 0.85, 1.4) * 0.8 * cov(abs(p.x + 0.56) - 0.006, 0.006) * step(gy + 0.16, p.y) * smoothstep(1.0, 0.2, p.y);
+    // the snow on the ground
+    float gd = p.y - gy - 0.012 * sin(p.x * 30.0) * 0.4;
+    c = mix(c, vec3(0.78, 0.84, 0.98) * (0.85 + 0.15 * vnoise(p * 40.0)) + vec3(1.2) * step(0.97, h21(floor(p * 140.0))), cov(gd, 0.008));
+    // falling / swirling snow: 3 layers; the swirl dies away after the shake, the flakes thin out as they land
+    float sw = 2.4 * (1.0 - exp(-tau * 0.45));
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i), sc = 9.0 + fi * 6.0, rr = length(p);
+      vec2 q = rot2(sw * (1.2 - 0.6 * fi / 2.0) / (0.4 + rr)) * p;
+      q.y += tau * (0.05 + 0.025 * fi); q.x += 0.03 * sin(tau * 0.7 + fi);
+      vec2 g = q * sc + sk * 13.0 + fi * 7.0, id = floor(g), f = fract(g) - 0.5 - (h22(id) - 0.5) * 0.7;
+      float dens = 0.35 + 0.45 * exp(-tau * 0.25), sz = (0.07 + 0.08 * h21(id + 3.0)) * (1.0 - fi * 0.15);
+      c = mix(c, vec3(1.25), smoothstep(sz, sz * 0.35, length(f)) * step(h21(id + fi), dens) * (0.55 + 0.2 * fi));
+    }
+    // the glass: a rim, two window reflections, a sharp glint
+    c += vec3(0.35, 0.5, 0.8) * pow(1.0 - max(vis, 0.0), 3.0);
+    vec2 hp = rot2(0.6) * (F - vec2(-0.42, 0.42));
+    c += vec3(0.55, 0.6, 0.7) * smoothstep(0.02, -0.02, length(hp / vec2(0.28, 0.09)) - 1.0) * smoothstep(-0.1, 0.12, hp.y + 0.05) * 0.5;
+    c += vec3(0.4) * smoothstep(0.05, 0.0, abs(length(F - vec2(0.05, -0.05)) - 0.8)) * smoothstep(0.2, 0.6, F.x - F.y * 0.3) * 0.5;
+    c += vec3(1.8) * smoothstep(0.03, 0.0, length(F - vec2(-0.3, 0.55)));
+    return c * step(0.0, vis) + vec3(0.02, 0.03, 0.08) * step(vis, 0.0);
+  }`, [0.15, 0.18, 0.32]);
+
+    // 18 the Sun: a facing disc, boiling granulation, limb darkening, sunspots (umbra + penumbra) carried round, a corona with
+    // streamers, prominence loops and spicules off the rim, a flare now and then
+    add('sun', 'facing', `
+  vec3 anim(){
+    float t = uTime, Rs = 0.6; vec2 Q = F - vec2(0.0, 0.22); float r = length(Q), a = atan(Q.y, Q.x);
+    vec3 c = vec3(0.004, 0.004, 0.01) + vec3(0.4) * step(0.993, h21(floor(F * 90.0))) * smoothstep(0.4, 0.1, length(fract(F * 90.0) - 0.5));
+    float hh = r - Rs;
+    // the corona, streamers
+    c += vec3(1.0, 0.42, 0.12) * 0.5 * exp(-max(hh, 0.0) * 9.0) * (0.55 + 0.45 * vnoise(vec2(a * 5.0, t * 0.12 + 3.0))) * step(Rs, r);
+    // spicules / flames off the rim
+    float fs = vnoise(vec2(a * 34.0, hh * 18.0 - t * 0.9)) * vnoise(vec2(a * 9.0 + 4.0, t * 0.3));
+    c += vec3(2.2, 0.6, 0.15) * smoothstep(0.35, 0.75, fs - hh * 6.0) * step(Rs, r) * exp(-max(hh, 0.0) * 12.0);
+    // prominence loops (5 sites, slow), one erupts now and then
+    for (int i = 0; i < 5; i++) {
+      float fi = float(i), a0 = 0.25 + (PI - 0.5) * fract(h11(fi + 1.7) + t * 0.004), w = 0.07 + 0.07 * h11(fi + 5.3);
+      float da = mod(a - a0 + PI, TAU) - PI, s = da * Rs;
+      float er = smoothstep(0.0, 1.0, fract(t / 23.0 + fi * 0.2)) * step(3.5, fi);
+      vec2 lp = vec2(s, hh * (1.0 - 0.5 * er));
+      float dl = abs(length(lp / vec2(1.0, 1.25)) - w) - 0.008 - 0.012 * vnoise(vec2(atan(lp.y, lp.x) * 6.0 - t * 0.8, fi));
+      c += vec3(2.4, 0.55, 0.18) * cov(dl, 0.012) * step(Rs - 0.004, r) * (0.7 + 0.3 * vnoise(vec2(s * 40.0 - t, fi)));
+    }
+    if (r < Rs + 0.004) {
+      vec2 dp = Q / Rs; float z = sqrt(max(0.0, 1.0 - dot(dp, dp)));
+      vec3 n = rotY(vec3(dp, z), t * 0.05);
+      float g = vnoise3(n * 34.0 + vec3(0.0, 0.0, t * 0.35)), g2 = vnoise3(n * 80.0 - vec3(t * 0.5, 0.0, 0.0));
+      float gran = 0.25 + 0.6 * pow(1.0 - abs(g * 2.0 - 1.0), 1.5) + 0.25 * g2;
+      float ld = 0.32 + 0.68 * pow(z, 0.55);
+      vec3 sc = mix(vec3(0.95, 0.22, 0.02), vec3(1.7, 0.95, 0.22), gran * ld) * (0.35 + 0.65 * ld);
+      for (int i = 0; i < 4; i++) {
+        float fi = float(i), sa = TAU * h11(fi + 11.0), sl = (h11(fi + 13.0) - 0.5) * 0.9;
+        vec3 sp = vec3(cos(sl) * cos(sa), sin(sl), cos(sl) * sin(sa));
+        vec3 dv = n - sp; float ds = length(dv), sr = 0.05 + 0.035 * h11(fi + 17.0);
+        float fil = 0.75 + 0.25 * vnoise(vec2(atan(dot(dv, vec3(0.0, 1.0, 0.0)), dot(dv, cross(sp, vec3(0.0, 1.0, 0.0)))) * 12.0, fi));
+        sc *= mix(1.0, 0.5 * fil, smoothstep(sr * 2.1, sr * 1.8, ds)) * mix(1.0, 0.15, smoothstep(sr * 1.05, sr * 0.85, ds));
+      }
+      float fla = exp(-length(dp - vec2(0.45 * cos(floor(t / 9.0) * 2.4), 0.4 * sin(floor(t / 9.0) * 3.7))) * 30.0) * smoothstep(0.0, 0.15, mod(t, 9.0)) * smoothstep(2.0, 0.3, mod(t, 9.0));
+      sc += vec3(3.0, 2.4, 1.6) * fla;
+      c = mix(c, sc, cov(r - Rs, 0.006));
+    }
+    return c;
+  }`, [0.6, 0.3, 0.07]);
+
+    // 19 Jupiter: turbulent bands with alternating jets (differential rotation), the Great Red Spot swirling, a moon's shadow
+    // crossing the disc (in the viewer's frame: every side sees a transit)
+    add('jupiter', 'sphere', `
+  vec3 anim(){
+    float t = uTime, la = asin(clamp(P.y, -1.0, 1.0));
+    vec3 q = rotY(P, t * 0.13 + 0.5 * sin(la * 13.0) * sin(t * 0.06));   // (the jets slide back and forth: a bounded shear, no aliasing late in a race)
+    float w = fbm3l(q * vec3(2.5, 7.0, 2.5) + 1.7);
+    float lw = la + 0.06 * (w - 0.5) + 0.03 * (fbm3(q * vec3(5.0, 16.0, 5.0) + 4.0) - 0.5);
+    float b = sin(lw * 15.0 + 0.7) + 0.35 * sin(lw * 31.0 + 1.3);
+    vec3 zone = vec3(0.8, 0.68, 0.5), belt = vec3(0.45, 0.2, 0.08);
+    vec3 c = mix(zone, belt, smoothstep(-0.25, 0.55, b));
+    c = mix(c, vec3(0.75, 0.48, 0.3), smoothstep(0.2, 0.9, w) * 0.45);
+    c = mix(c, vec3(0.5, 0.48, 0.5), smoothstep(0.85, 1.25, abs(la)));
+    float ed = vnoise3(q * vec3(9.0, 30.0, 9.0) + vec3(t * 0.05, 0.0, 0.0));
+    c *= 0.88 + 0.24 * ed * smoothstep(0.1, 0.6, abs(b));
+    // the Great Red Spot
+    float lq = lon - t * 0.13 + 0.46 * sin(t * 0.06), dl = mod(lq - 1.2 + PI, TAU) - PI;   // (rides its band, unsheared)
+    vec2 v = vec2(dl * cos(la) / 0.23, (la + 0.15) / 0.115); float rv = length(v);   // (higher than the real 22 S: the Sphere's foot is buried)
+    if (rv < 1.6) {
+      vec2 vs = rot2(2.2 * (1.0 - rv) + t * 0.5) * v;
+      float sn = vnoise(vs * 3.0 + 7.0);
+      vec3 gr = mix(vec3(0.75, 0.28, 0.14), vec3(0.95, 0.55, 0.36), sn * smoothstep(0.0, 0.9, rv));
+      gr = mix(gr, vec3(0.55, 0.18, 0.1), smoothstep(0.5, 0.0, rv) * 0.5);
+      c = mix(c, vec3(0.96, 0.9, 0.82), smoothstep(1.55, 1.15, rv) * smoothstep(0.95, 1.15, rv) * 0.8);
+      c = mix(c, gr, smoothstep(1.05, 0.9, rv));
+    }
+    // light: a slight phase, the limb darkening, a thin haze at the rim
+    vec3 S = normalize(fD + fR * 0.35 + fU * 0.15);
+    c *= mix(0.06, 1.0, smoothstep(-0.12, 0.35, dot(P, S))) * (0.3 + 0.7 * pow(max(vis, 0.0), 0.45));
+    float sl = uFocusLon + 1.4 - mod(t * 0.07, 2.8), dsh = length(vec2((mod(lon - sl + PI, TAU) - PI) * cos(lat), lat - 0.1));
+    c *= mix(1.0, 0.04, smoothstep(0.05, 0.035, dsh));
+    c += vec3(0.25, 0.3, 0.45) * pow(1.0 - max(vis, 0.0), 4.0) * 0.4;
+    return c;
+  }`, [0.42, 0.32, 0.22]);
+
+    // 20 Beach ball: six classic panels and white caps, spinning on a rocking axis, bobbing in a pool (the water line sways)
+    add('beachball', 'sphere', `
+  vec3 anim(){
+    float t = uTime, bob = sin(t * 2.1);
+    vec3 q = rotY(rotX(P, 0.45 + 0.18 * bob), t * 0.9);
+    float a = atan(q.z, q.x), g = floor(mod(a / TAU * 6.0, 6.0));
+    vec3 c = g < 0.5 ? vec3(0.92, 0.07, 0.05) : g < 1.5 ? vec3(0.95, 0.95, 0.92) : g < 2.5 ? vec3(0.04, 0.24, 0.9) : g < 3.5 ? vec3(1.0, 0.8, 0.04) : g < 4.5 ? vec3(0.95, 0.95, 0.92) : vec3(0.08, 0.68, 0.18);
+    float cl = sqrt(max(1.0 - q.y * q.y, 0.0)), ds = abs(fract(a / TAU * 6.0 + 0.5) - 0.5) * TAU / 6.0 * cl;
+    c = mix(c, c * 0.55, cov(ds - 0.004, 0.006));
+    float cap = abs(q.y) - 0.9;
+    c = mix(c, vec3(0.95, 0.95, 0.93), cov(-cap, 0.006));
+    c = mix(c, vec3(0.6, 0.6, 0.62), cov(abs(cap) - 0.004, 0.005));
+    c = mix(c, vec3(0.75, 0.75, 0.8), cov(length(q.xz) - 0.05, 0.006) * step(0.0, q.y));
+    vec3 L = normalize(fD + fU * 0.6 - fR * 0.45);
+    float dif = 0.35 + 0.65 * max(dot(P, normalize(fD + fU * 0.4 - fR * 0.3)), 0.0);
+    c = c * dif + vec3(1.9) * pow(max(dot(P, L), 0.0), 70.0) + vec3(0.35) * pow(max(dot(P, L), 0.0), 8.0);
+    // the pool: the water line rises and falls with the bob
+    float wl = -0.28 + 0.06 * bob + 0.015 * sin(F.x * 14.0 + t * 3.0) + 0.01 * sin(F.x * 31.0 - t * 4.0);
+    float uw = smoothstep(wl + 0.004, wl - 0.004, F.y) * step(0.0, vis);
+    vec3 water = mix(c * vec3(0.3, 0.6, 0.75), vec3(0.0, 0.25, 0.45), 0.45) + vec3(0.5, 0.8, 1.0) * 0.5 * step(0.8, vnoise(vec2(F.x * 30.0 + t, F.y * 60.0 - t * 2.0))) * smoothstep(wl - 0.25, wl, F.y);
+    c = mix(c, water, uw);
+    c += vec3(0.9, 1.0, 1.1) * cov(abs(F.y - wl) - 0.005, 0.006) * step(0.0, vis);
+    return c;
+  }`, [0.5, 0.42, 0.38]);
+
+    // 21 Magic 8-ball: the black ball rolls (the 8 goes round), turns its window to you, the blue die surfaces from the ink with a
+    // race answer (rows 4 + 5 of the text canvas, set by tick() each 7 s cycle), sinks, turns back
+    add('eightball', 'facing', `
+  vec3 anim(){
+    float t = uTime, tau = mod(t, 7.0), ps, ph = 0.0;
+    if (tau < 2.6) { ps = TAU * ease3(tau / 2.6); ph = 0.35 * sin(tau * 2.4); }
+    else if (tau < 3.4) ps = PI * ease3((tau - 2.6) / 0.8);
+    else if (tau < 6.6) ps = PI + 0.05 * sin((tau - 3.4) * 2.5);
+    else ps = PI + PI * ease3((tau - 6.6) / 0.4);
+    vec3 b = rotX(vec3(dot(P, fR), dot(P, fU), dot(P, fD)), 0.26);
+    vec3 bb = rotX(rotY(b, ps), ph);
+    vec3 c = vec3(0.012, 0.012, 0.016);
+    // the 8
+    vec2 e = bb.xy / 0.44;
+    float d8 = length(e) - 1.0;
+    if (bb.z > 0.0) {
+      c = mix(c, vec3(0.92, 0.92, 0.9), cov(d8 * 0.44, 0.006));
+      float g8 = min(abs(length(e - vec2(0.0, 0.3)) - 0.22) - 0.1, abs(length(e - vec2(0.0, -0.24)) - 0.28) - 0.11);
+      c = mix(c, vec3(0.012), cov(g8 * 0.44, 0.006) * step(d8, 0.0));
+    }
+    // the window, the die, the answer
+    vec2 w = vec2(-bb.x, bb.y) / 0.62; float dw = length(w) - 1.0;
+    if (bb.z < 0.0) {
+      float rise = smoothstep(3.3, 4.3, tau) * smoothstep(6.65, 6.15, tau);
+      vec3 ink = mix(vec3(0.0, 0.015, 0.06), vec3(0.01, 0.05, 0.16), smoothstep(1.0, 0.0, length(w)));
+      ink += vec3(0.05, 0.12, 0.35) * step(0.8, vnoise(w * 9.0 + vec2(0.0, t * 0.6))) * 0.25;
+      vec2 wd = w / (0.82 + 0.18 * rise) + vec2(0.03 * sin(t * 1.3), 0.03 * cos(t * 1.1)) * (1.2 - rise);
+      float dt = sdTri(wd, vec2(-1.0, 0.52), vec2(1.0, 0.52), vec2(0.0, -1.05));
+      vec3 die = vec3(0.02, 0.1, 0.7) * (0.75 + 0.25 * smoothstep(-0.8, 0.5, wd.y));
+      float tx = txt(4.0, vec2(0.5 + wd.x * 0.3125, (wd.y - 0.12) / 0.27)) + txt(5.0, vec2(0.5 + wd.x * 0.3125, (wd.y + 0.2) / 0.27));
+      die = mix(die, vec3(1.25, 1.25, 1.3), tx);
+      vec3 wc = mix(ink, die, cov(dt, 0.012 + 0.12 * (1.0 - rise)) * rise);
+      c = mix(c, wc, cov(dw * 0.62, 0.006));
+      c = mix(c, vec3(0.2, 0.22, 0.3), cov(abs(dw * 0.62) - 0.012, 0.006));
+    }
+    // gloss: a soft window reflection + a sharp highlight, a cool rim
+    vec3 L = normalize(vec3(-0.4, 0.5, 0.8));
+    c += vec3(0.9, 0.95, 1.0) * (1.6 * pow(max(dot(b, L), 0.0), 90.0) + 0.12 * pow(max(dot(b, L), 0.0), 6.0));
+    c += vec3(0.25, 0.3, 0.45) * pow(1.0 - max(b.z, 0.0), 3.0) * 0.5;
+    return c * step(0.0, vis);
+  }`, [0.06, 0.07, 0.13], { tick(t, ct) { const c = Math.floor(t / 7); if (ct._eight !== c) { ct._eight = c; ct.setText(4, EIGHT[(c * 5 + 3) % EIGHT.length]); } } });
+
+    // 22 Roulette: a single-zero wheel facing you; it spins, the ball runs the track the other way, drops, rattles into a pocket
+    // and rides it; the winning pocket glows and the number shows on the hub (row 6, set by tick(); pocket p = (23 c + 7) mod 37
+    // for the 11 s cycle c, the same in GLSL and JS); the pocket numbers are row 7
+    add('roulette', 'facing', `
+  vec3 anim(){
+    float t = uTime, cy = floor(t / 11.0), tau = t - cy * 11.0, pk = mod(cy * 23.0 + 7.0, 37.0);
+    vec2 p = (F - vec2(0.0, 0.25)) / 0.66; float r = length(p), a = atan(p.y, p.x);
+    float Wt = t * 0.5, sa = TAU / 37.0;
+    float rel = mod(a - Wt, TAU), si = floor(rel / sa), xi = rel / sa - si - 0.5;
+    vec3 pc = si < 0.5 ? vec3(0.02, 0.5, 0.12) : mod(si, 2.0) > 0.5 ? vec3(0.75, 0.04, 0.04) : vec3(0.03, 0.03, 0.035);
+    vec3 c = vec3(0.01, 0.015, 0.012);
+    // the rim, the ball track, the number ring, the pockets + frets, the cone, the turret
+    vec3 wood = mix(vec3(0.16, 0.06, 0.025), vec3(0.32, 0.13, 0.05), vnoise(vec2(a * 40.0, r * 6.0)));
+    c = mix(c, wood, step(r, 1.0));
+    c = mix(c, vec3(0.42, 0.28, 0.14) * (0.8 + 0.25 * cos(a * 2.0 - 0.8)), step(r, 0.86));
+    c = mix(c, vec3(0.9, 0.7, 0.3), cov(abs(r - 0.86) - 0.006, 0.004) + cov(abs(r - 0.995) - 0.006, 0.004));
+    float win = step(abs(si - pk), 0.5) * smoothstep(7.0, 7.3, tau) * smoothstep(10.6, 10.3, tau);
+    vec3 ring = pc * (1.0 + win * (0.8 + 0.5 * sin(t * 9.0)));
+    ring = mix(ring, vec3(1.1), txt(7.0, vec2((si + 0.5 - xi * 0.9) / 37.0, (r - 0.635) / 0.08)));
+    c = mix(c, ring, step(r, 0.73));
+    c = mix(c, pc * 0.6 * (1.0 + win * 1.5), step(r, 0.63));
+    c = mix(c, vec3(0.85, 0.66, 0.3), cov(abs(xi) * sa * r - 0.004, 0.003) * step(0.5, r) * step(r, 0.73));
+    c = mix(c, vec3(0.85, 0.66, 0.3), cov(abs(r - 0.73) - 0.005, 0.004) + cov(abs(r - 0.63) - 0.004, 0.004));
+    vec3 cone = mix(vec3(0.3, 0.12, 0.05), vec3(0.55, 0.26, 0.1), vnoise(vec2(a * 8.0 - Wt * 8.0, r * 30.0)) * 0.5 + smoothstep(0.5, 0.2, r) * 0.5);
+    c = mix(c, cone, step(r, 0.5));
+    float sp = abs(mod(a - Wt + PI / 4.0, PI / 2.0) - PI / 4.0) * r;
+    c = mix(c, vec3(0.95, 0.75, 0.35), cov(sp - 0.014, 0.004) * step(r, 0.46) * step(0.06, r));
+    c = mix(c, vec3(1.0, 0.8, 0.4) * (0.8 + 0.3 * cos(a - 2.2)), cov(r - 0.09, 0.005));
+    // the result on the hub
+    float sh = smoothstep(6.8, 7.2, tau) * smoothstep(10.6, 10.3, tau);
+    vec3 pw = pk < 0.5 ? vec3(0.02, 0.5, 0.12) : mod(pk, 2.0) > 0.5 ? vec3(0.8, 0.04, 0.04) : vec3(0.03, 0.03, 0.035);
+    float hr = 0.24 * sh;
+    vec3 hub = mix(pw, vec3(1.3), txt(6.0, vec2(0.5 + p.x / hr * 0.039, p.y / hr * 0.62 + 0.5)));
+    c = mix(c, vec3(1.0, 0.8, 0.35), cov(r - hr - 0.012, 0.004) * step(0.01, sh));
+    c = mix(c, hub, cov(r - hr, 0.004) * step(0.01, sh));
+    // the ball: launched backwards round the track so that it ends in pocket pk
+    float t5 = cy * 11.0 + 5.0;
+    float tgt = 0.5 * t5 + (pk + 0.5) * sa, b0 = tgt + 2.0 + 22.5, ba, br;
+    if (tau < 5.0) { ba = b0 - (7.0 * tau - 0.5 * tau * tau); br = 0.79; }
+    else if (tau < 6.6) { float x = (tau - 5.0) / 1.6, l = 1.0 - (1.0 - x) * (1.0 - x);
+      ba = tgt + 2.0 * (1.0 - l) + 0.5 * (t - t5) * l + 0.07 * sin(tau * 23.0) * (1.0 - x) * (1.0 - x);
+      br = mix(0.79, 0.565, smoothstep(0.0, 0.4, x)) + 0.05 * abs(sin(x * PI * 4.0)) * (1.0 - x); }
+    else { ba = 0.5 * t + (pk + 0.5) * sa; br = 0.565; }
+    float bv = smoothstep(0.0, 0.3, tau) * smoothstep(10.9, 10.5, tau);
+    vec2 bp = br * vec2(cos(ba), sin(ba)); float db = length(p - bp) - 0.034;
+    c = mix(c, c * 0.35, smoothstep(0.03, 0.0, length(p - bp - vec2(0.012, -0.012)) - 0.034) * bv);
+    c = mix(c, vec3(0.85, 0.85, 0.82) * (0.7 + 0.3 * smoothstep(0.03, -0.03, dot(p - bp, vec2(1.0, -1.0)))), cov(db, 0.005) * bv);
+    c += vec3(1.6) * smoothstep(0.012, 0.0, length(p - bp - vec2(-0.01, 0.012))) * bv;
+    // the table light: a soft pool, the felt beyond the rim
+    c *= 0.65 + 0.45 * smoothstep(1.1, 0.0, length(p - vec2(-0.1, 0.15)));
+    c = mix(vec3(0.0, 0.12, 0.05) * (0.6 + 0.4 * vnoise(p * 80.0)), c, step(r, 1.0));
+    return c * step(0.0, vis);
+  }`, [0.22, 0.09, 0.06], { tick(t, ct) { const c = Math.floor(t / 11); if (ct._wheel !== c) { ct._wheel = c; ct.setText(6, String(WHEEL[((c * 23 + 7) % 37 + 37) % 37])); } } });
+
+    // 23 Jellyfish: six glowing jellies drifting up through deep blue water (each pulse pushes it up), bells with a bright rim,
+    // frilly oral arms, long trailing tentacles; god rays and marine snow
+    add('jelly', 'facing', `
+  vec3 anim(){
+    float t = uTime; vec2 p = F;
+    vec3 c = mix(vec3(0.0, 0.015, 0.05), vec3(0.0, 0.09, 0.2), smoothstep(-0.7, 1.0, p.y));
+    c += vec3(0.04, 0.14, 0.24) * pow(vnoise(vec2(p.x * 3.0 + p.y * 0.9 + t * 0.08, t * 0.05)), 3.0) * smoothstep(-0.4, 1.0, p.y);
+    vec2 g = p * 16.0 + vec2(0.0, t * 0.22), id = floor(g), f = fract(g) - 0.5 - (h22(id) - 0.5) * 0.6;
+    c += vec3(0.35, 0.55, 0.7) * smoothstep(0.08, 0.0, length(f)) * step(0.84, h21(id)) * 0.35;
+    for (int i = 0; i < 6; i++) {
+      float fi = float(i), sz = 0.15 + 0.09 * h11(fi + 3.0), Tp = 2.0 + 0.6 * h11(fi + 4.0), ph = t / Tp + h11(fi + 6.0);
+      float tc = fract(ph), con = smoothstep(0.0, 0.22, tc) * smoothstep(0.85, 0.3, tc);
+      float y = mod(0.1 * (floor(ph) + smoothstep(0.0, 0.5, tc)) + fi * 0.53 + 0.3, 3.2) - 1.2;
+      vec2 cp = vec2(-0.75 + mod(fi * 0.62, 1.5) + 0.12 * sin(t * 0.13 + fi * 2.0), y);
+      vec2 l = rot2(0.25 * sin(t * 0.2 + fi * 1.7)) * (p - cp) / sz;
+      if (l.y > 1.3 || l.y < -4.2 || abs(l.x) > 1.8) continue;
+      vec3 jc = hsv(0.48 + 0.36 * h11(fi + 9.0), 0.65, 1.0);
+      float bw = 1.0 - 0.2 * con, bh = 0.72 + 0.18 * con;
+      float dd = length(l / vec2(bw, bh)) - 1.0, mg = -0.05 - 0.07 * con + 0.03 * sin(l.x * 22.0);
+      float bell = max(dd, mg - l.y), rim = smoothstep(-0.35, 0.0, dd) * step(bell, 0.0);
+      float fill = cov(bell * sz, 0.006);
+      c += jc * (fill * (0.35 + 1.2 * rim) + 0.22 * exp(-max(bell, 0.0) * 4.0));
+      c += vec3(1.0, 0.5, 0.9) * 0.6 * fill * smoothstep(0.12, 0.0, abs(length(vec2(abs(l.x) - 0.25, l.y - 0.28)) - 0.14));
+      for (int k = 0; k < 3; k++) {
+        float fk = float(k) - 1.0, ax = fk * 0.18 * bw + 0.1 * sin(l.y * 4.0 - t * 2.5 + fk * 2.0) * (-l.y);
+        float wa = (0.09 + 0.03 * sin(l.y * 18.0 + t * 3.0)) * smoothstep(-2.0, -0.2, l.y);
+        c += jc * 0.55 * smoothstep(wa, 0.0, abs(l.x - ax)) * step(l.y, mg) * step(-2.0, l.y);
+      }
+      for (int k = 0; k < 6; k++) {
+        float fk = float(k), x0 = (-0.85 + fk * 0.34) * bw, ty = -l.y;
+        float tx = x0 * (1.0 + 0.08 * ty) + 0.14 * sin(ty * 2.2 - t * 1.8 + fk * 1.3) * ty * 0.5;
+        c += jc * 0.6 * smoothstep(0.035, 0.0, abs(l.x - tx)) * step(l.y, mg) * smoothstep(-4.0, -1.0, l.y);
+      }
+    }
+    return c;
+  }`, [0.06, 0.12, 0.24]);
+
+    // 24 Black hole: a shadow, its photon ring, the accretion disc seen near edge-on (Doppler bright on the side coming at you), its far
+    // side lensed into an arc over the top and a thin one underneath, background stars warped round it (a point lens) as they drift
+    add('blackhole', 'facing', `
+  vec3 disc(float rho, float ph, float t){
+    float ri = 0.36, I = pow(ri / max(rho, ri), 2.2) * smoothstep(ri, ri + 0.03, rho) * smoothstep(0.98, 0.6, rho);
+    // Keplerian shear (inner faster) as two 16 s flow phases crossfaded: the streaks wind up but never alias, however long the race
+    float om = 0.9 * pow(ri / max(rho, ri), 1.5) * 1.3, f1 = fract(t / 16.0), f2 = fract(t / 16.0 + 0.5), n = 0.0;
+    for (int i = 0; i < 2; i++) { float pp = ph - om * 16.0 * (i == 0 ? f1 : f2) + 3.1 * float(i);
+      n += (vnoise3(vec3(cos(pp) * 2.5, sin(pp) * 2.5, rho * 16.0)) * 0.65 + vnoise3(vec3(cos(pp) * 7.0, sin(pp) * 7.0, rho * 40.0)) * 0.35) * (i == 0 ? 1.0 - abs(2.0 * f1 - 1.0) : abs(2.0 * f1 - 1.0)); }
+    float dop = 1.0 - 0.7 * cos(ph);
+    vec3 col = mix(vec3(1.6, 0.45, 0.08), vec3(1.6, 1.25, 0.9), clamp(0.45 - 0.45 * cos(ph) + 0.25 * (ri / rho), 0.0, 1.0));
+    return col * I * (0.35 + 0.95 * n) * dop * dop * 0.9;
+  }
+  vec3 anim(){
+    float t = uTime; vec2 p = (F - vec2(0.0, 0.2)) * 1.3;
+    float r = length(p), a = atan(p.y, p.x), Rsh = 0.24, ci = 0.17;
+    vec2 src = p * (1.0 - 0.13 / max(r * r, 0.0576)) + vec2(t * 0.025, 0.0);
+    vec2 sg = src * 38.0, id = floor(sg), fs = fract(sg) - 0.5 - (h22(id) - 0.5) * 0.6;
+    vec3 c = vec3(0.9, 0.95, 1.1) * smoothstep(0.09, 0.0, length(fs)) * step(0.88, h21(id)) * (0.4 + 1.2 * h21(id + 3.0));
+    c += vec3(0.08, 0.05, 0.14) * fbm3l(vec3(src * 3.0, 1.0)) * 0.6;
+    c *= smoothstep(Rsh * 1.02, Rsh * 1.4, r);
+    // the lensed far side: a ring round the shadow, thick on top, thin underneath
+    float k = mix(4.5, 1.8, 0.5 + 0.5 * sin(a)), rl = 0.36 + (r - Rsh * 1.06) * k;
+    c += disc(rl, -a, t) * step(Rsh * 1.04, r) * (0.55 + 0.45 * sin(a) * sin(a)) * smoothstep(0.98, 0.9, rl);
+    c *= step(Rsh, r);
+    c += vec3(2.0, 1.6, 1.2) * cov(abs(r - Rsh * 1.04) - 0.003, 0.004) * (0.8 + 0.4 * cos(a) * cos(a));
+    // the disc itself: the far half outside the shadow, the near half in front of everything
+    vec2 dp = vec2(p.x, p.y / ci); float rho = length(dp), ph = atan(dp.y, dp.x);
+    vec3 dc = disc(rho, ph, t);
+    c += dc * step(0.0, p.y) * step(Rsh, r);
+    c = mix(c, c * 0.25 + dc, step(p.y, 0.0) * smoothstep(0.02, 0.15, length(dc)));
+    return c * step(0.0, vis);
+  }`, [0.3, 0.2, 0.12]);
+
+    // 25 Pac-Man: a chase round the equator (3 copies, 120 deg apart, one seamless loop: every side sees it): Pac-Man eats the dots
+    // ahead of him, the four ghosts run ahead; he eats a power pellet, they turn blue (flashing white before he catches them), reverse
+    // and are eaten one by one (their eyes flee), then they come back; a dim maze above and below
+    add('pacman', 'sector', `
+  vec3 ghost(vec2 q, vec3 gc, float fr, float fl, float eyes, float t, vec3 c){
+    float sk = -0.085 + 0.018 * abs(sin(q.x * 50.0 + t * 14.0));
+    float dg = q.y > 0.0 ? length(q) - 0.09 : max(abs(q.x) - 0.09, sk - q.y);
+    vec3 body = fr > 0.5 ? mix(vec3(0.1, 0.15, 1.3), vec3(1.4, 1.4, 1.5), fl) : gc;
+    c = mix(c, body, cov(dg, 0.006) * (1.0 - eyes));
+    if (fr > 0.5 && eyes < 0.5) {
+      vec2 e = vec2(abs(q.x) - 0.032, q.y - 0.025);
+      c = mix(c, vec3(1.4, 0.8, 0.6), cov(length(e) - 0.014, 0.005));
+      float zz = abs(q.y + 0.035 - 0.01 * sign(sin(q.x * 75.0)) * abs(fract(q.x * 12.0) - 0.5) * 2.0) - 0.006;
+      c = mix(c, vec3(1.4, 0.8, 0.6), cov(zz, 0.005) * step(abs(q.x), 0.06));
+    } else {
+      vec2 e = vec2(abs(q.x + 0.008) - 0.032, q.y - 0.02);
+      c = mix(c, vec3(1.5), cov(length(e / vec2(1.0, 1.3)) - 0.024, 0.005));
+      c = mix(c, vec3(0.05, 0.15, 1.0), cov(length(e - vec2(0.011, -0.004)) - 0.012, 0.005));
+    }
+    return c;
+  }
+  vec3 anim(){
+    float t = uTime, Lp = TAU / 3.0, v = 0.42, y0 = 0.2;
+    float x = lon, y = lat - y0;
+    vec3 c = vec3(0.0, 0.0, 0.012);
+    // the dim maze above / below the corridor
+    vec2 mg = vec2(x / Lp * 18.0, y / 0.17), mid = floor(mg), mf = fract(mg);
+    float mw = min(mix(9.0, mf.x, step(0.5, h21(mid))), mix(9.0, mf.y, step(0.55, h21(mid + 7.7))));
+    c += vec3(0.08, 0.12, 0.9) * 0.45 * cov(abs(mw - 0.0) - 0.04, 0.03) * step(0.27, abs(y)) * smoothstep(1.3, 0.8, abs(lat));
+    // the corridor walls (the arcade's double blue lines)
+    float wy = abs(abs(y) - 0.215) - 0.022;
+    c += vec3(0.15, 0.25, 1.5) * cov(abs(wy) - 0.006, 0.005);
+    // co-moving coords: Pac-Man at dx = 0 in every copy
+    float dx = mod(x - v * t + 0.5 * Lp, Lp) - 0.5 * Lp, tau = mod(t, 13.0), te = 2.4;
+    // the dots ahead (eaten behind him), the power pellet
+    float sp = Lp / 28.0, dd = mod(x + 0.5 * sp, sp) - 0.5 * sp;
+    c = mix(c, vec3(1.5, 1.2, 0.95), cov(length(vec2(dd, y)) - 0.022, 0.006) * step(0.06, dx));
+    float pd = dx - v * (te - tau);
+    c = mix(c, vec3(1.6, 1.3, 1.0), cov(length(vec2(pd, y)) - 0.04, 0.006) * step(tau, te) * step(0.5, fract(t * 3.0)));
+    // the ghosts
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i), d0 = 0.32 + 0.2 * fi, ti = te + d0 / 0.5;
+      vec3 gc = i == 0 ? vec3(1.5, 0.06, 0.05) : i == 1 ? vec3(1.5, 0.6, 0.9) : i == 2 ? vec3(0.1, 1.3, 1.4) : vec3(1.5, 0.7, 0.1);
+      float gx = d0 + 0.02 * sin(t * 3.0 + fi * 1.9), fr = 0.0, eyes = 0.0, sc = 1.0;
+      if (tau > te && tau < ti) { gx = d0 - (tau - te) * 0.5; fr = 1.0; }
+      else if (tau >= ti && tau < 6.5) { gx = (tau - ti) * 1.4; eyes = 1.0; }
+      else if (tau >= 6.5) sc = smoothstep(6.5 + fi * 0.3, 6.8 + fi * 0.3, tau);
+      float fl = step(te + 1.2, tau) * step(0.5, fract(t * 4.0));
+      if (sc > 0.01 && gx < 0.5 * Lp - 0.1) c = ghost(vec2(dx - gx, y + 0.01 * sin(t * 7.0 + fi)) / sc, gc, fr, fl, eyes, t, c);
+    }
+    // Pac-Man
+    float mo = 0.75 * abs(sin(t * 9.0)), dp = length(vec2(dx, y)) - 0.1, an = abs(atan(y, dx));
+    c = mix(c, vec3(1.6, 1.35, 0.08), cov(max(dp, (mo * 0.5 - an) * 0.1), 0.006));
+    return c;
+  }`, [0.12, 0.1, 0.2]);
+
     const MAIN = `
   void main(){ setup(); vec3 c = anim(); gl_FragColor = vec4(pow(clamp(c, 0.0, 4.0), vec3(1.0 / 2.2)) * 0.5, uAlpha); }
   `;
     // stored value = 0.5 * c^(1/2.2) (RGBA8): c up to 2^2.2 = 4.6 (HDR highlights kept for bloom); decoded as (2 v)^2.2
-    return { HEAD, MAIN, ANIMS: A };
+    return { HEAD, MAIN, ANIMS: A, WHEEL };
   })();
 
   const X = {};
@@ -84803,21 +85335,25 @@ const LVFX = (() => {
 
   // ---------------------------------------------------------------------------------------------------- content
   X.Content = function (renderer, o = {}) {
-    const C = LV_CONTENT, tc = document.createElement('canvas'); tc.width = 1024; tc.height = 256;   // (drawn in 2048 x 512 units at half scale: memory)
+    const C = LV_CONTENT, tc = document.createElement('canvas'); tc.width = 1024; tc.height = 512;   // (drawn in 2048 x 1024 units at half scale: memory; 8 rows of 128)
     const tex = new THREE.CanvasTexture(tc); tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = 4;
-    track('tex', 'content text canvas 1024x256', 1024 * 256 * 4 * 1.33);
+    track('tex', 'content text canvas 1024x512', 1024 * 512 * 4 * 1.33);
     const U = { uTime: { value: 0 }, uMode: { value: 0 }, uFocusLon: { value: 0 }, uFocusLat: { value: 0.2 }, uLatMin: { value: -0.44 },
-      uAspect: { value: 1 }, uAlpha: { value: 1 }, uSeed: { value: 0 }, uText: { value: tex }, uP: { value: new THREE.Vector4() } };
+      uAspect: { value: 1 }, uAlpha: { value: 1 }, uSeed: { value: 0 }, uT0: { value: 0 }, uText: { value: tex }, uP: { value: new THREE.Vector4() } };
     const mats = C.ANIMS.map(a => new THREE.ShaderMaterial({ uniforms: U, vertexShader: QUAD_VS, fragmentShader: C.HEAD + a.code + C.MAIN,
       depthTest: false, depthWrite: false, transparent: true, blending: THREE.NoBlending }));
     const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mats[0]);
     quad.frustumCulled = false; scene.add(quad);
-    const texts = ['LAS VEGAS GRAND PRIX', 'LIGHTS OUT', 'LAP 1 / 50', null];
+    const texts = ['LAS VEGAS GRAND PRIX', 'LIGHTS OUT', 'LAP 1 / 50', null, 'ASK AGAIN|LATER', null, '0', null];   // (4: the 8-ball, 'line|line' on rows 4 + 5; 6: the wheel's result)
     function drawText() {
-      const g = tc.getContext('2d'); g.setTransform(0.5, 0, 0, 0.5, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 512); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const g = tc.getContext('2d'); g.setTransform(0.5, 0, 0, 0.5, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 1024); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
       for (let r = 0; r < 3; r++) { let fs = 110; g.font = `900 ${fs}px Arial Black, Arial, Helvetica, sans-serif`; while (g.measureText(texts[r]).width > 1960 && fs > 30) { fs -= 4; g.font = `900 ${fs}px Arial Black, Arial, Helvetica, sans-serif`; } g.fillText(texts[r], 1024, r * 128 + 66); }
       const sym = ['7', 'BAR', '$', '\u2666'];   // slot symbols, 4 slots of 512 px
       for (let i = 0; i < 4; i++) { let fs = 112; g.font = `900 ${fs}px Arial Black, Arial, sans-serif`; while (g.measureText(sym[i]).width > 460) { fs -= 4; g.font = `900 ${fs}px Arial Black, Arial, sans-serif`; } g.fillText(sym[i], i * 512 + 256, 3 * 128 + 66); }
+      for (const r of [4, 6]) String(texts[r] || '').split('|').forEach((s, k) => { let fs = 110; g.font = `900 ${fs}px Arial Black, Arial, Helvetica, sans-serif`;
+        while (g.measureText(s).width > (r === 4 ? 680 : 1960) && fs > 30) { fs -= 4; g.font = `900 ${fs}px Arial Black, Arial, Helvetica, sans-serif`; } g.fillText(s, 1024, (r + k) * 128 + 66); });
+      const sw = 2048 / 37; g.font = '900 60px Arial Black, Arial, sans-serif';   // row 7: the wheel's pocket numbers (condensed into 2048 / 37 slots)
+      C.WHEEL.forEach((n, i) => { const s = String(n), k = Math.min(1, (sw - 8) / g.measureText(s).width); g.save(); g.translate((i + 0.5) * sw, 7 * 128 + 66); g.scale(k, 1); g.fillText(s, 0, 0); g.restore(); });
       tex.needsUpdate = true;
     }
     drawText();
@@ -84833,14 +85369,20 @@ const LVFX = (() => {
         renderer.setRenderTarget(rt);
         const two = b != null && b !== a && k > 0.001, gm = rt.texture.generateMipmaps;
         if (two || self.noMip) rt.texture.generateMipmaps = false;   // (one mip build per update: after the last pass)
-        quad.material = mats[a]; mats[a].blending = THREE.NoBlending; U.uAlpha.value = 1; renderer.render(scene, cam);
-        if (two) { rt.texture.generateMipmaps = self.noMip ? false : gm; quad.material = mats[b]; mats[b].blending = THREE.NormalBlending; U.uAlpha.value = k; renderer.render(scene, cam); }
+        if (self.pre) self.pre(a); quad.material = mats[a]; mats[a].blending = THREE.NoBlending; U.uAlpha.value = 1; renderer.render(scene, cam);
+        if (two) { rt.texture.generateMipmaps = self.noMip ? false : gm; if (self.pre) self.pre(b); quad.material = mats[b]; mats[b].blending = THREE.NormalBlending; U.uAlpha.value = k; renderer.render(scene, cam); }
         rt.texture.generateMipmaps = gm;
         rt.scissorTest = false; rt.viewport.set(0, 0, rt.width, rt.height);
         renderer.setRenderTarget(prev); renderer.autoClear = ac;
       },
-      // warm every program (compile at load, not on first show)
-      compileAll(rt) { for (let i = 0; i < mats.length; i++) self.render(rt, i, null, 0, [0, 0, 8, 8]); },
+      // warm every program at load, not on first show: with KHR_parallel_shader_compile the programs are only started here (in rt's
+      // state: the same program keys as the renders) and compile on the driver's threads while the track loads; else one render each
+      compileAll(rt) {
+        if (!(renderer.extensions && renderer.extensions.has('KHR_parallel_shader_compile'))) { for (let i = 0; i < mats.length; i++) self.render(rt, i, null, 0, [0, 0, 8, 8]); return; }
+        const sc = new THREE.Scene(); mats.forEach(m => { const q = new THREE.Mesh(quad.geometry, m); q.frustumCulled = false; sc.add(q); });
+        const prev = renderer.getRenderTarget(); renderer.setRenderTarget(rt); renderer.compile(sc, cam); renderer.setRenderTarget(prev);
+      },
+      ready() { return mats.every(m => { const p = renderer.properties.get(m).currentProgram; return !p || !p.isReady || p.isReady(); }); },   // (tests)
     };
     return self;
   };
@@ -84880,16 +85422,20 @@ const LVFX = (() => {
     let seedR = (o.seed || 1) * 9301 + 49297; const rndB = () => (seedR = (seedR * 9301 + 49297) % 233280) / 233280;
     const bag = last => { const a = [...Array(content.n).keys()]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rndB() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } if (a[0] === last && a.length > 1) [a[0], a[1]] = [a[1], a[0]]; return a; };
     let order = o.order || bag(-1);
+    const holdOf = i => { const h = LV_CONTENT.ANIMS[i] && LV_CONTENT.ANIMS[i].hold; return typeof h === 'function' ? h(rndB()) : h || o.hold; };   // (per animation: the Face's covers its expressions)
     const S = { group, mesh, rt, cur: order[0], next: null, k: 0, tAnim: 0, focus: null, focusLat: 0.2, acc: 0, updates: 0, ms: 0, idx: 0, forced: null, hz: 30,
       frustum: new THREE.Frustum(), m4: new THREE.Matrix4(), bs: new THREE.Sphere(new THREE.Vector3(o.x, cy, o.z), o.r), avg: new THREE.Color() };
     S.centre = new THREE.Vector3(o.x, cy, o.z); S.r = o.r; S.latMin = latMin;
-    S.force = i => { S.forced = i; S.cur = i; S.next = null; S.k = 0; S.tAnim = 0; };
+    // per appearance (current / next): hold (s), start time (uT0) and seed (uSeed): the Face's expression sequence
+    S.holdC = holdOf(S.cur); S.t0c = 0; S.seedC = Math.floor(rndB() * 54); S.holdN = o.hold; S.t0n = 0; S.seedN = 0;
+    S.force = i => { S.forced = i; S.cur = i; S.next = null; S.k = 0; S.tAnim = 0; S.holdC = o.hold; S.t0c = null; };
     S.update = (t, dt, camera, opts = {}) => {
-      // playlist: hold o.hold s, crossfade o.fade s (events can force an animation: start lights, chequered flag, ...)
+      // playlist: hold (o.hold s, or the animation's own), crossfade o.fade s (events can force an animation: start lights, chequered flag, ...)
       if (S.forced == null) {
         S.tAnim += dt;
-        if (S.next == null && S.tAnim > o.hold) { S.idx++; if (S.idx >= order.length) { order = o.order || bag(S.cur); S.idx = 0; } S.next = order[S.idx]; S.k = 0; }
-        if (S.next != null) { S.k += dt / o.fade; if (S.k >= 1) { S.cur = S.next; S.next = null; S.k = 0; S.tAnim = 0; } }
+        if (S.next == null && S.tAnim > S.holdC) { S.idx++; if (S.idx >= order.length) { order = o.order || bag(S.cur); S.idx = 0; } S.next = order[S.idx]; S.k = 0;
+          S.holdN = holdOf(S.next); S.t0n = t; S.seedN = Math.floor(rndB() * 54); }
+        if (S.next != null) { S.k += dt / o.fade; if (S.k >= 1) { S.cur = S.next; S.next = null; S.k = 0; S.tAnim = 0; S.holdC = S.holdN; S.t0c = S.t0n; S.seedC = S.seedN; } }
       }
       // focus: the camera's azimuth / elevation seen from the centre, eased (1.2 s)
       const dx = camera.position.x - o.x, dz = camera.position.z - o.z, dy = camera.position.y - cy;
@@ -84905,7 +85451,11 @@ const LVFX = (() => {
       if (S.hz > 0 && (S.acc >= 1 / S.hz - 1e-4 || opts.always)) {
         S.acc = 0; const U = content.U;
         U.uTime.value = t; U.uMode.value = 0; U.uFocusLon.value = S.focus; U.uFocusLat.value = S.focusLat; U.uLatMin.value = latMin;
+        if (S.t0c == null) S.t0c = t;
+        const AN = LV_CONTENT.ANIMS, tick = i => { if (AN[i] && AN[i].tick) AN[i].tick(t, content); }; tick(S.cur); if (S.next != null) tick(S.next);   // (text rows: the 8-ball, the wheel)
+        content.pre = i => { const c = i === S.cur; U.uT0.value = c ? S.t0c : S.t0n; U.uSeed.value = c ? S.seedC : S.seedN; };
         const t0 = performance.now(); content.render(rt, S.cur, S.next, S.k); S.ms += performance.now() - t0; S.updates++;
+        content.pre = null; U.uT0.value = 0; U.uSeed.value = 0;
       }
       const a0 = content.avg[S.cur], a1 = S.next != null ? content.avg[S.next] : a0, k = S.next != null ? S.k : 0;
       S.avg.setRGB(a0[0] + (a1[0] - a0[0]) * k, a0[1] + (a1[1] - a0[1]) * k, a0[2] + (a1[2] - a0[2]) * k);
@@ -85115,10 +85665,13 @@ const LVFX = (() => {
   };
 
   // ---------------------------------------------------------------------------------------------------- neon tubes
-  // tubes: [{pts: [[x, y, z], ...], col: [r, g, b], r: 0.12, chase: n per metre (0 = steady), speed}]
+  // tubes: [{pts: [[x, y, z], ...], col: [r, g, b], r: 0.12, chase: n per metre (0 = steady), k: HDR strength, closed,
+  //   poly: straight edges (a 6-sided prism per edge instead of a Catmull-Rom tube; a 2-point open tube is always one),
+  //   rib: [ux, uy, uz, h] a flat LED ribbon h m along (ux, uy, uz) from the points (barrier / fence strips)}]
+  // Every tube goes into ONE merged mesh (one draw call, DoubleSide for the one-sided ribbons; it was a mesh per tube).
   X.Neon = function (tubes) {
     const group = new THREE.Group();
-    const mat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 } }]),
+    const mat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 } }]), side: THREE.DoubleSide,
       vertexShader: `attribute vec4 aC; attribute vec2 aS; varying vec4 vC; varying vec2 vS;
         #include <fog_pars_vertex>
         void main(){ vC = aC; vS = aS; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
@@ -85133,18 +85686,72 @@ const LVFX = (() => {
           #include <colorspace_fragment>
           #include <fog_fragment>
         }`, fog: true });
-    let verts = 0;
+    const P = [], C = [], S = [], I = []; let nv = 0;
+    const SP = [], SC = [], SV = [], SI = []; let ns = 0;   // (ribbon spill: an additive glow on the ground in front of a ribbon, tb.spill [w m, strength], tb.nrm [[nx, nz] per point])
+    const vtx = (x, y, z, tb, s) => { P.push(x, y, z); C.push(tb.col[0], tb.col[1], tb.col[2], tb.k || 3.0); S.push(s, tb.chase || 0); return nv++; };
+    const quad = (a, b, c, d) => I.push(a, b, c, a, c, d);
     for (const tb of tubes) {
-      const curve = new THREE.CatmullRomCurve3(tb.pts.map(p => new THREE.Vector3(p[0], p[1], p[2])), !!tb.closed, 'centripetal');
-      const len = curve.getLength(), seg = Math.max(8, Math.round(len * 1.5));
-      const g = new THREE.TubeGeometry(curve, seg, tb.r || 0.12, 6, !!tb.closed);
-      const n = g.attributes.position.count, aC = new Float32Array(n * 4), aS = new Float32Array(n * 2);
-      for (let i = 0; i < n; i++) { aC.set([tb.col[0], tb.col[1], tb.col[2], tb.k || 3.0], i * 4); aS[i * 2] = g.attributes.uv.array[i * 2] * len; aS[i * 2 + 1] = tb.chase || 0; }
-      g.setAttribute('aC', new THREE.BufferAttribute(aC, 4)); g.setAttribute('aS', new THREE.BufferAttribute(aS, 2)); verts += n;
-      group.add(new THREE.Mesh(g, mat));
+      const pts = tb.pts; if (!pts || pts.length < 2) continue;
+      if (tb.rib) {   // a flat strip: two vertices per point
+        const [ux, uy, uz, h] = tb.rib; let acc = 0;
+        for (let k = 0; k < pts.length; k++) { const p = pts[k]; if (k) acc += Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1], p[2] - pts[k - 1][2]);
+          const a = vtx(p[0], p[1], p[2], tb, acc); vtx(p[0] + ux * h, p[1] + uy * h, p[2] + uz * h, tb, acc); if (k) quad(a - 2, a, a + 1, a - 1);
+          if (tb.spill && tb.nrm) { const [w, st, dy] = tb.spill, [nx, nz] = tb.nrm[k], y = p[1] + dy;
+            SP.push(p[0], y, p[2], p[0] + nx * w, y, p[2] + nz * w); SC.push(...tb.col, st, ...tb.col, st); SV.push(0, 1);
+            if (k) SI.push(ns - 2, ns, ns + 1, ns - 2, ns + 1, ns - 1); ns += 2; } }
+      } else if (tb.poly || (pts.length === 2 && !tb.closed)) {   // straight edges: a 6-sided prism per edge
+        const r = tb.r || 0.12, E = pts.length - (tb.closed ? 0 : 1); let acc = 0;
+        for (let e = 0; e < E; e++) { const a = pts[e], b = pts[(e + 1) % pts.length];
+          let dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2]; const L = Math.hypot(dx, dy, dz); if (L < 1e-3) continue; dx /= L; dy /= L; dz /= L;
+          let ux = -dz, uy = 0, uz = dx, um = Math.hypot(ux, uz); if (um < 1e-3) { ux = 1; uz = 0; um = 1; } ux /= um; uz /= um;   // (u: horizontal, across the edge)
+          const vx = uy * dz - uz * dy, vy = uz * dx - ux * dz, vz = ux * dy - uy * dx, i0 = nv;
+          for (const [p, s] of [[a, acc], [b, acc + L]]) for (let j = 0; j < 6; j++) { const an = j / 6 * Math.PI * 2, c = Math.cos(an) * r, sn = Math.sin(an) * r;
+            vtx(p[0] + ux * c + vx * sn, p[1] + uy * c + vy * sn, p[2] + uz * c + vz * sn, tb, s); }
+          for (let j = 0; j < 6; j++) { const j1 = (j + 1) % 6; quad(i0 + j, i0 + j1, i0 + 6 + j1, i0 + 6 + j); }
+          acc += L; }
+      } else {   // a curve (sign frames, the Flamingo plumes): Catmull-Rom tube, copied into the merged arrays
+        const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])), !!tb.closed, 'centripetal');
+        const len = curve.getLength(), seg = Math.max(8, Math.round(len * (tb.segK || 1.5))), g = new THREE.TubeGeometry(curve, seg, tb.r || 0.12, 6, !!tb.closed);
+        const gp = g.attributes.position.array, gu = g.attributes.uv.array, gi = g.index.array, i0 = nv;
+        for (let i = 0; i < gp.length / 3; i++) vtx(gp[i * 3], gp[i * 3 + 1], gp[i * 3 + 2], tb, gu[i * 2] * len);
+        for (let i = 0; i < gi.length; i++) I.push(gi[i] + i0);
+        g.dispose();
+      }
     }
-    track('geo', `neon tubes ${tubes.length}`, verts * 56);
-    return { group, update: t => { mat.uniforms.uTime.value = t; } };
+    if (nv) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(C), 4));
+      g.setAttribute('aS', new THREE.BufferAttribute(new Float32Array(S), 2)); g.setIndex(new THREE.BufferAttribute(nv > 65535 ? new Uint32Array(I) : new Uint16Array(I), 1));
+      g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.name = 'lv neon'; group.add(m);
+    }
+    if (ns) {   // (additive, faded with the fog by hand: fog_fragment would add the fog colour)
+      const smat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), fog: true, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
+        vertexShader: `attribute vec4 aC; attribute float aV; varying vec4 vC; varying float vV;
+          #include <fog_pars_vertex>
+          void main(){ vC = aC; vV = aV; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
+          }`,
+        fragmentShader: `varying vec4 vC; varying float vV;
+          #include <fog_pars_fragment>
+          void main(){ float f = 1.0 - vV; vec3 c = vC.rgb * vC.a * f * f;
+            #ifdef USE_FOG
+            #ifdef FOG_EXP2
+            c *= exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+            #else
+            c *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);
+            #endif
+            #endif
+            gl_FragColor = vec4(c, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }` });
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SP), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(SC), 4));
+      g.setAttribute('aV', new THREE.BufferAttribute(new Float32Array(SV), 1)); g.setIndex(new THREE.BufferAttribute(ns > 65535 ? new Uint32Array(SI) : new Uint16Array(SI), 1));
+      g.computeBoundingSphere(); const m = new THREE.Mesh(g, smat); m.name = 'lv neon spill'; m.renderOrder = 2; group.add(m);
+    }
+    track('geo', `neon tubes ${tubes.length} (merged)`, nv * 36 + I.length * (nv > 65535 ? 4 : 2) + ns * 32 + SI.length * 4);
+    return { group, mat, verts: nv, spillVerts: ns, update: t => { mat.uniforms.uTime.value = t; } };
   };
 
   // ---------------------------------------------------------------------------------------------------- facade atlas + city
@@ -85475,21 +86082,33 @@ const LVFX = (() => {
     for (const f of O.water || []) { const P = []; for (let k = 0; k + 1 < f.length; k += 2) P.push([f[k], f[k + 1]]); let wy = Infinity; for (const [x, z] of P) wy = Math.min(wy, GH(x, z));
       const g = new THREE.ShapeGeometry(new THREE.Shape(P.map(([x, z]) => new THREE.Vector2(x, -z)))); g.rotateX(-Math.PI / 2);
       const m = new THREE.MeshStandardMaterial({ color: 0x0b2a3a, roughness: 0.1, metalness: 0.1, emissive: night ? 0x061826 : 0x000000 }); const w = new THREE.Mesh(g, m); w.position.y = wy + 0.25; add(w); reg(g); reg(m); }
+    // every neon tube / LED ribbon goes into NT and ONE merged mesh (U.neon, one draw call) after the landmarks;
+    // NG / NR: the neon green (#39ff14) and neon red (#ff1a2e) of the neon pop (2026-10-25), linear
+    const NT = [], NG = [0.06, 1.0, 0.03], NR = [1.0, 0.02, 0.05], NM = [1.0, 0.12, 0.6], NCY = [0.25, 0.85, 1.0];
     // LED signs + neon chasers (gold bulbs round every sign; the Flamingo's pink plumes)
     if (O.signs && O.signs.length) { const SG = O.signs.map(([x, z, y, w, h, yaw, anim, name]) => ({ x, z, y: GH(x, z) + y, w, h, yaw, anim, name, bright: night ? 1.2 : 0.8 }));
       U.signs = X.Signs(renderer, content, SG, { size: hi ? 1536 : 1024, hz: hi ? 20 : q === 'medium' ? 15 : 10 }); add(U.signs.group); reg(U.signs.rt);
       U.signs.group.traverse(o => { if (o.geometry) reg(o.geometry); if (o.material) reg(o.material); });
-      const tubes = [];
-      for (const s of SG) { const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), hw = s.w / 2 + 1.0, hh = s.h / 2 + 1.0, P = (dx, dy) => [s.x + c * dx, s.y + dy, s.z - sn * dx];
-        tubes.push({ pts: [P(-hw, -hh), P(hw, -hh), P(hw, hh), P(-hw, hh)], closed: true, col: [1.0, 0.7, 0.25], r: 0.25, chase: 1.2, k: night ? 3.5 : 1.2 });
-        if (/Flamingo/.test(s.name)) for (let k = 0; k < 6; k++) tubes.push({ pts: [0, 1, 2, 3, 4, 5].map(j => P(-hw - 4 - j * 1.2, -hh + 4 + k * 3 + Math.sin(j * 0.9 + k) * 2.5)), col: [1.0, 0.15, 0.55], r: 0.3, chase: 0, k: night ? 4 : 1.4 }); }
-      if (!lo || tubes.length) { U.neon = X.Neon(lo ? tubes.filter(t => t.closed) : tubes); add(U.neon.group); U.neon.group.traverse(o => { if (o.geometry) reg(o.geometry); if (o.material) reg(o.material); }); } }
+      for (const [si, s] of SG.entries()) { const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), hw = s.w / 2 + 1.0, hh = s.h / 2 + 1.0, P = (dx, dy) => [s.x + c * dx, s.y + dy, s.z - sn * dx];
+        NT.push({ pts: [P(-hw, -hh), P(hw, -hh), P(hw, hh), P(-hw, hh)], closed: true, col: [1.0, 0.7, 0.25], r: 0.25, chase: 1.2, k: night ? 3.5 : 1.2 });
+        // (the neon pop, 2026-10-25: an inner neon green / red frame between the screen and the gold bulbs; a second, chasing one round the big LED podium)
+        const iw = s.w / 2 + 0.45, ih = s.h / 2 + 0.45; NT.push({ pts: [P(-iw, -ih), P(iw, -ih), P(iw, ih), P(-iw, ih)], closed: true, segK: 0.5, col: si % 2 ? NG : NR, r: 0.17, chase: 0, k: night ? 3.4 : 1.1 });
+        if (s.w > 30) { const ow = s.w / 2 + 1.9, oh = s.h / 2 + 1.9; NT.push({ pts: [P(-ow, -oh), P(ow, -oh), P(ow, oh), P(-ow, oh)], closed: true, segK: 0.5, col: si % 2 ? NR : NG, r: 0.22, chase: 1.6, k: night ? 3.4 : 1.1 }); }
+        if (/Flamingo/.test(s.name) && !lo) for (let k = 0; k < 6; k++) NT.push({ pts: [0, 1, 2, 3, 4, 5].map(j => P(-hw - 4 - j * 1.2, -hh + 4 + k * 3 + Math.sin(j * 0.9 + k) * 2.5)), col: [1.0, 0.15, 0.55], r: 0.3, chase: 0, k: night ? 4 : 1.4 }); } }
     // the Strip's casino podiums: neon along their track-facing roof edges / first floors; the grandstands: an LED ribbon along each
-    // stand's front (night)
-    if (night && ((O.neon && O.neon.length) || (O.standLed && O.standLed.length))) { const NC = [[1.0, 0.25, 0.65], [0.25, 0.85, 1.0], [1.0, 0.72, 0.25], [0.7, 0.35, 1.0], [1.0, 0.22, 0.2], [0.3, 1.0, 0.5]], T2 = [];
-      for (const [x0, z0, x1, z1, y, ci] of O.neon || []) T2.push({ pts: [[x0, GH(x0, z0) + y, z0], [x1, GH(x1, z1) + y, z1]], col: NC[ci % NC.length], r: 0.22, chase: 0, k: 2.6 });
-      for (const f of O.standLed || []) { const P = []; for (let k = 0; k + 1 < f.length; k += 2) P.push([f[k], GH(f[k], f[k + 1]) + 1.5, f[k + 1]]); if (P.length > 1) T2.push({ pts: P, col: [1.0, 0.12, 0.6], r: 0.16, chase: 1.4, k: 2.4 }); }
-      if (T2.length) { U.neon2 = X.Neon(lo ? T2.filter((t, i) => i % 2 === 0) : T2); add(U.neon2.group); U.neon2.group.traverse(o => { if (o.geometry) reg(o.geometry); if (o.material) reg(o.material); }); } }
+    // stand's front (night). The neon pop (2026-10-25): neon red / green in the podium palette, a chasing awning line under every podium
+    // edge and lit verticals at its corners; a second (green / red) ribbon low on each stand front
+    if (night && ((O.neon && O.neon.length) || (O.standLed && O.standLed.length))) { const NC = [[1.0, 0.25, 0.65], [0.25, 0.85, 1.0], [1.0, 0.72, 0.25], [0.7, 0.35, 1.0], NR, NG], T2 = [], seen = new Set();
+      for (const [n, [x0, z0, x1, z1, y, ci]] of (O.neon || []).entries()) { const g0 = GH(x0, z0), g1 = GH(x1, z1);
+        T2.push({ pts: [[x0, g0 + y, z0], [x1, g1 + y, z1]], col: NC[ci % NC.length], r: 0.22, chase: 0, k: 2.6 });
+        if (y < 13) continue;
+        T2.push({ pts: [[x0, g0 + 3.8, z0], [x1, g1 + 3.8, z1]], col: n % 2 ? NG : NR, r: 0.2, chase: 1.5, k: 3.0 });
+        if (n % 3 === 0) T2.push({ pts: [[x0, g0 + y * 0.6, z0], [x1, g1 + y * 0.6, z1]], col: n % 2 ? NR : NG, r: 0.18, chase: 0, k: 2.6 });
+        for (const [x, z, g] of [[x0, z0, g0], [x1, z1, g1]]) { const key = Math.round(x * 2) + ',' + Math.round(z * 2); if (seen.has(key)) continue; seen.add(key);
+          T2.push({ pts: [[x, g + 5.6, z], [x, g + y, z]], col: n % 2 ? NR : NG, r: 0.2, chase: 0, k: 2.8 }); } }
+      for (const [n, f] of (O.standLed || []).entries()) { const P = [], P2 = []; for (let k = 0; k + 1 < f.length; k += 2) { const g = GH(f[k], f[k + 1]); P.push([f[k], g + 1.5, f[k + 1]]); P2.push([f[k], g + 0.7, f[k + 1]]); }
+        if (P.length > 1) T2.push({ pts: P, poly: true, col: [1.0, 0.12, 0.6], r: 0.16, chase: 1.4, k: 2.4 }, { pts: P2, poly: true, col: n % 2 ? NG : NR, r: 0.14, chase: 0.9, k: 2.6 }); }
+      for (const [i, t] of T2.entries()) if (!lo || i % 2 === 0) NT.push(t); }
     // landmarks: one merged kit mesh + the wheel's LED rim + the Eiffel sparkles
     const K = Kit(), km = reg(X.kitMaterial()); setLight(km); const L = O.lm || {}, at = (p, yaw = 0) => p ? { x: p[0], z: p[1], y: GH(p[0], p[1]), yaw: p[2] != null ? p[2] : yaw, night } : null;
     const faceTrack = p => { if (!p || !ctx.T) return 0; const pr = ctx.T.project(p[0], p[1], -1), a = ctx.T.sample(pr.s), sd = pr.d < 0 ? 1 : -1; return Math.atan2(a.nx * sd, a.nz * sd); };
@@ -85508,6 +86127,57 @@ const LVFX = (() => {
     for (const b of O.bridges || []) X.bridgeKit(K, b, GH(b[0], b[1]), GH(b[2], b[3]), night);
     if (!lo) for (const m of O.mono || []) X.monoKit(K, m, GH, ctx.gap || (() => 99), night);
     const kmesh = K.mesh(km); if (kmesh) { add(kmesh); reg(kmesh.geometry); } U.kitTris = K.tris;
+    // ---- the neon pop (2026-10-25, the user: "some neon green and neon red to the strip / track too ... I want to be overwhelmed"; night):
+    // LED ribbons along every street barrier (render3d buildBarriers hands the drawn runs over as ctx.rib: 24 m blocks of green / red /
+    // magenta / blue, most chasing; pit wall too) + a steady line along the catch-fence tops (red on one side, green on the other), green / red tubes
+    // up the light masts and under their heads, glow strips under / along the footbridges, lit outlines on every other tower >= 100 m
+    if (night && ctx.rib && ctx.rib.length) { const BP = [NG, NR, NM, NG, NR, [0.15, 0.55, 1.0]], W = (e, o) => [e[o], GH(e[o], e[o + 2]) + e[o + 1], e[o + 2]];
+      const runs = (o, key) => { let cur = null, last = null, lk = null, nr = null; const out = [];
+        for (const e of ctx.rib) { const k = key(e); if (k == null) { cur = null; continue; } const a = W(e, o), b = W(e, o + 3), n = [e[15] || 0, e[16] || 0];
+          if (!cur || k !== lk || Math.hypot(a[0] - last[0], a[2] - last[2]) > 0.05) { cur = [a]; nr = [n]; out.push({ e, pts: cur, nrm: nr }); }
+          cur.push(b); nr.push(n); last = b; lk = k; }
+        return out; };
+      // (+ a soft additive spill of each block's colour on the ground in front of the barrier, 2.4 m)
+      for (const r of runs(2, e => e[0] + ':' + Math.floor(e[1] / 24))) { const b = Math.floor(r.e[1] / 24);
+        NT.push({ pts: r.pts, nrm: r.nrm, rib: [0, 1, 0, 0.2], spill: lo ? null : [2.4, 0.28, -0.8], col: BP[((b % 6) + 6) % 6], chase: b % 3 === 2 ? 0 : 0.8, k: 1.9 }); }
+      if (!lo) for (const r of runs(9, e => (e[8] ? e[0] : null))) NT.push({ pts: r.pts, rib: [0, 1, 0, 0.1], col: r.e[0] < 0 ? NR : NG, chase: 0, k: 1.8 }); }
+    if (night && ctx.T) { const sc = ctx.T.scenery || {}, OS = sc.osm || {}, M1 = OS.mast || [], ALL = M1.concat(OS.mast2 || []), H1 = +sc.lightsH || 22, H2 = +sc.lightsH2 || 14, sm = {}, po = {};
+      for (let k = 0; k + 1 < ALL.length; k += 2) { const x = ALL[k], z = ALL[k + 1], H = k < M1.length ? H1 : H2, pr = ctx.T.project(x, z, -1, po); if (!pr) continue;
+        const a = ctx.T.sample(pr.s, sm), sd = pr.d < 0 ? 1 : -1, tx = sd * a.nx, tz = sd * a.nz, g = GH(x, z), odd = (k / 2) % 2 === 1;
+        NT.push({ pts: [[x + tx * 0.36, g + 2.5, z + tz * 0.36], [x + tx * 0.36, g + H - 0.5, z + tz * 0.36]], col: odd ? NG : NR, r: 0.11, chase: 1.2, k: 3.0 });
+        NT.push({ pts: [[x + tx * 0.5 - a.tx * 2.2, g + H - 0.2, z + tz * 0.5 - a.tz * 2.2], [x + tx * 0.5 + a.tx * 2.2, g + H - 0.2, z + tz * 0.5 + a.tz * 2.2]], col: odd ? NR : NG, r: 0.1, chase: 0, k: 3.0 }); } }
+    if (night) for (const [n, b] of (O.bridges || []).entries()) { const [ax, az, bx, bz] = b, L = Math.hypot(bx - ax, bz - az); if (L < 1) continue;   // (bridgeKit: deck y + 7.5-8.9, +-3.5; glass to 12.3)
+      const y = (GH(ax, az) + GH(bx, bz)) / 2, px = -(bz - az) / L, pz = (bx - ax) / L, ln = (o, yy) => [[ax + px * o, y + yy, az + pz * o], [bx + px * o, y + yy, bz + pz * o]];
+      for (const sd of [-1, 1]) { const c = (sd > 0) === (n % 2 === 0) ? NG : NR;
+        NT.push({ pts: ln(3.55 * sd, 7.45), col: c, r: 0.22, chase: 1.0, k: 3.2 }, { pts: ln(3.53 * sd, 7.62), rib: [0, 1, 0, 0.32], col: c === NG ? NR : NG, chase: 0.7, k: 2.6 },
+          { pts: ln(3.45 * sd, 12.2), col: sd > 0 ? NM : NCY, r: 0.16, chase: 0, k: 2.6 }); } }
+    if (night && !lo && O.b) O.b.filter(r => r[0] >= 100).sort((a, b) => b[0] - a[0]).forEach((r, n) => { if (n % 2) return;
+      const P = []; for (let k = 5; k + 1 < r.length; k += 2) P.push([r[k], r[k + 1]]);
+      if (P.length > 3 && Math.hypot(P[0][0] - P[P.length - 1][0], P[0][1] - P[P.length - 1][1]) < 0.05) P.pop(); if (P.length < 3) return;
+      let gy = Infinity, cx = 0, cz = 0; for (const p of P) { gy = Math.min(gy, GH(p[0], p[1])); cx += p[0] / P.length; cz += p[1] / P.length; }
+      const top = gy + r[0] - 0.35, bot = gy + r[1] + 6, Q = P.map(([x, z]) => { const f = 1 + 0.3 / (Math.hypot(x - cx, z - cz) || 1); return [cx + (x - cx) * f, cz + (z - cz) * f]; });
+      const c = n % 10 === 8 ? NCY : (n / 2) % 2 ? NR : NG;
+      NT.push({ pts: Q.map(([x, z]) => [x, top, z]), closed: true, poly: true, col: c, r: 0.5, chase: 0.4, k: 3.6 },
+        { pts: Q.map(([x, z]) => [x, (top + bot) / 2, z]), closed: true, poly: true, col: c === NG ? NR : NG, r: 0.4, chase: 0, k: 3.2 });
+      Q.map((q, k) => { const a = Q[(k + Q.length - 1) % Q.length], b = Q[(k + 1) % Q.length];
+        return [Math.abs(angDiff(Math.atan2(q[1] - a[1], q[0] - a[0]), Math.atan2(b[1] - q[1], b[0] - q[0]))), k]; })
+        .filter(o => o[0] > 0.6).sort((a, b) => b[0] - a[0]).slice(0, 8).forEach(([, k]) => NT.push({ pts: [[Q[k][0], bot, Q[k][1]], [Q[k][0], top, Q[k][1]]], col: c, r: 0.45, chase: 0, k: 3.4 })); });
+    // (+ the typed city's buildings within ~110 m of the track, render3d buildOSM -> ctx.roof [ring, y0, h] as drawn: a neon line along each
+    // roof edge that faces the track, and on every other building a chasing line at the first floor, colours in turn)
+    if (night && ctx.roof && ctx.gap) { const RC = [NG, NR, NM, NCY, NG, NR, [1.0, 0.72, 0.25]]; let n = 0;
+      for (const [Q, y0, hh] of ctx.roof) { if (!(hh >= 7) || !Q || Q.length < 3) continue;
+        let cx = 0, cz = 0; for (const q of Q) { cx += q[0] / Q.length; cz += q[1] / Q.length; } if (ctx.gap(cx, cz) > 160) continue;
+        const c = RC[n % RC.length], c2 = RC[(n + 3) % RC.length], top = y0 + hh - 0.25; let used = 0;
+        for (let k = 0; k < Q.length; k++) { const a = Q[k], b = Q[(k + 1) % Q.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 6) continue;
+          let nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L; const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2; if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+          const g0 = ctx.gap(mx, mz); if (g0 > 110 || ctx.gap(mx + nx * 4, mz + nz * 4) > g0 - 1.2) continue;
+          const A = [a[0] + nx * 0.25, a[1] + nz * 0.25], B = [b[0] + nx * 0.25, b[1] + nz * 0.25];
+          NT.push({ pts: [[A[0], top, A[1]], [B[0], top, B[1]]], col: c, r: 0.2, chase: 0, k: 2.8 });
+          if (n % 2 === 0 && hh >= 9) NT.push({ pts: [[A[0], y0 + 4.2, A[1]], [B[0], y0 + 4.2, B[1]]], col: c2, r: 0.18, chase: 1.3, k: 2.8 });
+          used++; }
+        if (used) n++; }
+      U.roofNeon = n; }
+    if (NT.length) { U.neon = X.Neon(NT); add(U.neon.group); U.neon.group.traverse(o => { if (o.geometry) reg(o.geometry); if (o.material) reg(o.material); }); }
     if (O.far && O.far.length) { const KF = Kit(), fm = reg(X.farMaterial()); setLight(fm); X.farKit(KF, O.far, GH, night); const fmesh = KF.mesh(fm); if (fmesh) { fmesh.frustumCulled = false; add(fmesh); reg(fmesh.geometry); } U.kitTris += KF.tris; }
     // the Luxor sky beam (night)
     if (night && O.luxor) { const bm = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
@@ -85521,7 +86191,7 @@ const LVFX = (() => {
       const race = G && G.race, ld = race && race.order && race.order.length ? race.order[0] : null, laps = race && race.laps > 0 ? race.laps : 50, ph = race && race.phase;
       if (U.sphere) {
         // race events: the start lights in sync (lights on / out), the lap board on each new leader lap, the chequered flag on the
-        // leader's last lap, fireworks after the finish; otherwise the shuffled playlist of all 15
+        // leader's last lap, fireworks after the finish; otherwise the shuffled playlist of all 25
         const Lg = race && race.lights, cu = content.U; let force = null; cu.uP.value.set(0, 0, 0, 0);
         const lapN = ld && ld.lap != null ? ld.lap : (G && G.player && G.player.lap) || 0;
         if (Lg && (ph === 'grid' || ph === 'lights' || (ph === 'racing' && Lg.out && outT < 4))) { if (Lg.out) outT += dt; else outT = 0; force = 7; cu.uP.value.set(1, Lg.on | 0, Lg.out ? 1 : 0, outT); }
@@ -85542,7 +86212,7 @@ const LVFX = (() => {
       if (U.rim) U.rim.mat.uniforms.uTime.value = t;
       if (U.spark) U.spark.smat.uniforms.uTime.value = t;
     };
-    U.stats = () => ({ sphereRT: U.sphere && U.sphere.rt.width, sphereUps: U.sphere && U.sphere.updates, particles: U.fount && U.fount.total, signs: O.signs && O.signs.length, kitTris: U.kitTris, mem: X.mem.list.slice(-12) });
+    U.stats = () => ({ sphereRT: U.sphere && U.sphere.rt.width, sphereUps: U.sphere && U.sphere.updates, particles: U.fount && U.fount.total, signs: O.signs && O.signs.length, kitTris: U.kitTris, neonVerts: U.neon && U.neon.verts, roofNeon: U.roofNeon, mem: X.mem.list.slice(-12) });
     return U;
   };
   return X;
@@ -85592,6 +86262,8 @@ const Render3D = (() => {
   let world = null;                         // THREE.Group with all per-track objects
   let trackRes = [];                        // per-track disposables
   let LVX = null;                           // the Las Vegas night spectacle (lvfx.js LVFX.build over scenery.osm.lv; null elsewhere)
+  let LVROOF = null;                        // (Las Vegas: the typed city's buildings as drawn, buildOSM -> buildLV's neon roof edges; then dropped)
+  let LVRIB = null;                         // (Las Vegas: the street barrier runs as drawn, buildBarriers -> buildLV's LED ribbons; then dropped)
   let farList = [], lodList = [];           // per-track fog-culled parts / tree LOD cells (cullWorld)
   let skyFar = [], skyRect = null;          // far skyline sectors + where the mirror / puddle cameras can't reach them (buildSkyline)
   const SKY_NEAR = 700;
@@ -88980,6 +89652,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       for (let k = i0; k <= i0 + 6; k++) { const i = ((k % N) + N) % N; if (Math.abs(T.deltaS(p.gs, i * step + step / 2)) < RaceControl.GAP_W / 2) c[i] = 1; }
     }
     barReset();
+    LVRIB = street && ((T.scenery || {}).osm || {}).lv ? [] : null;   // (Las Vegas: [side, s, barrier face a xyz, b xyz, fence?, fence top a xyz, b xyz, nx, nz to the track] per drawn segment; y above the ground)
     const BKs = typeof RaceControl !== 'undefined' && T.corners && RaceControl.bars ? RaceControl.bars(T) : null;
     // (race control, phase 6: a movable tyre wall / TecPro quad goes to the instanced barriers instead, barQ; true = taken)
     const barQ = (side, i, eI, eJ, k) => { const si = side > 0 ? 1 : 0; if (!BKs || BKs.segOf[si][i] < 0 || BKs.kind[si][i] !== k) return false; BRD.q[k === 4 ? 1 : 0].push(side, i, eI, eJ); return true; };
@@ -89050,6 +89723,8 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
             top(wI, wI + th, wJ, wJ + th, hgt, scaled(cConc, 1.05));
             wall(wI + th, wJ + th, 0, hgt, scaled(cConc, 0.8), -1);
           }
+          if (LVRIB) { const a = P(i, wI - 0.03, 0.84), b = P(j, wJ - 0.03, 0.84), fa = P(i, wI - 0.37, hgt + 3.05), fb = P(j, wJ - 0.37, hgt + 3.05);
+            LVRIB.push([side, sI, ...a, ...b, inTunnel(sI) ? 0 : 1, ...fa, ...fb, nI[0], nI[2]]); }
           if (inTunnel(sI)) continue;
           const fa = F.vert(...P(i, wI + 0.25, hgt), ...nI, cConc, sI, 0), fb = F.vert(...P(j, wJ + 0.25, hgt), ...nJ, cConc, sJ, 0);
           const fc = F.vert(...P(j, wJ + 0.25 - 0.6, hgt + 3.2), ...nJ, cConc, sJ, 3.2), fd = F.vert(...P(i, wI + 0.25 - 0.6, hgt + 3.2), ...nI, cConc, sI, 3.2);
@@ -89380,7 +90055,9 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
         F.quad([prev.p.x, H, prev.p.z], [p.x, H, p.z], [p.x, 4.0, p.z], [prev.p.x, 4.0, prev.p.z], n, cConc, [u - step, 0, u, 0, u, 2.9, u - step, 2.9]);
         if (Math.round(u / step) % 3 === 0) S.box(p.x, 2.55, p.z, 0.1, 2.9, 0.1, yawAt(i), cPost);
       }
-      prev = { p, pb };
+      const r = LVRIB ? T.toWorld(s, sd * (e0 - 0.03)) : null;   // (Las Vegas: the LED ribbons along the pit wall + its fence top, buildLV)
+      if (r && prev && prev.r) LVRIB.push([sd, s, prev.r.x, 0.84, prev.r.z, r.x, 0.84, r.z, 1, prev.r.x, 3.85, prev.r.z, r.x, 3.85, r.z, -sd * T.nx[i], -sd * T.nz[i]]);
+      prev = { p, pb, r };
     }
     // sponsor boards on the track face (scenery.boards: the track's own boards, end to end)
     let k = 0;
@@ -93701,8 +94378,9 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
   function buildLV() {
     const O = ((T.scenery || {}).osm || {}).lv; if (!O || typeof LVFX === 'undefined') return;
     const g = lastG || globalG(), seed = g && g.race && g.race.seed != null ? g.race.seed : 0;
-    LVX = LVFX.build({ renderer, world, T, O, q: quality, tod: ENV.tod, GH: (x, z) => (HF ? GH(x, z) : 0), gap: trackGap, res: trackRes,
+    LVX = LVFX.build({ renderer, world, T, O, q: quality, tod: ENV.tod, GH: (x, z) => (HF ? GH(x, z) : 0), gap: trackGap, res: trackRes, rib: LVRIB, roof: LVROOF,
       sun: { d: sunDir.clone().normalize(), c: sun.color.clone().multiplyScalar(sun.intensity) }, seed });
+    LVRIB = LVROOF = null;
   }
 
   function buildOSM() {
@@ -93877,6 +94555,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const OB = { fw: Fb, fg: Fg, gs: S, em: Em, bea: BEA };
     // (osm.bty, Monaco: the typed city on facade atlas M (cityBuildM); street edges = beside the track or an osm.road)
     const BTY = Array.isArray(O.bty) && O.bty.length === (O.b || []).length * 5 ? O.bty : null, JOBM = [];
+    LVROOF = O.lv ? [] : null;   // (Las Vegas: the typed buildings as drawn [ring, y0, h] -> buildLV's neon roof edges facing the track)
     let OM = null;
     if (BTY) {
       const RG = new Map(), rk = (x, z) => Math.floor(x / 16) * 4096 + Math.floor(z / 16);
@@ -94195,7 +94874,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       // overlapping footprints (fpResolve), drawn on its cleaned ring (inset where it would share a face), at its resolved height
       const fq = FPq[bi]; if (fq.drop) { occFill(P, 2); continue; }   // (mostly inside a bigger, taller building: merged into it)
       const gq = fq.rf, gsd = gq.cx * 0.131 + gq.cz * 0.377, Q = fq.Q || fpRing(fq), hh = fq.h + fq.dy, bco = BCOL.get(bi);
-      if (BTY && BTY[bi * 5] >= 0 && kind === 0) { JOBM.push([Q, y0, hh, bi, gsd, gq.cx, gq.cz]); occFill(P, 2); continue; }   // (built below, cell by cell)
+      if (BTY && BTY[bi * 5] >= 0 && kind === 0) { JOBM.push([Q, y0, hh, bi, gsd, gq.cx, gq.cz]); if (LVROOF) LVROOF.push([Q, y0, hh]); occFill(P, 2); continue; }   // (built below, cell by cell)
       let wc = WALLS[Math.floor(hash(gsd) * WALLS.length)], rc = ROOFS[Math.floor(hash(gsd + 7.3) * ROOFS.length)];
       if (bco) { wc = col(bco[1]); rc = col(bco[2] || bco[1]); }
       OSMC.set(bi, kind === 5 && !bco ? C.white : wc); blog('o', Q, y0, y0 + hh, OSMC.get(bi), kind, bi);
@@ -109531,6 +110210,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-25 10:29 -->
+<!-- Apex GP build 2026-10-25 11:43 -->
 </body>
 </html>
