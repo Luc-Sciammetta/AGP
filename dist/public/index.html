@@ -72553,6 +72553,7 @@ const Race = (() => {
     if (rc.dist > prev) rc.tyreDist += rc.dist - prev;
     if (car.finished) return;
     car.raceDist = rc.dist;
+    if (racing && car.dnf) dnfLine(G, race, car, prev, dt);
     if (!racing || car.dnf) return;
     if (rc.dist > rc.maxDist) {
       const m1 = rc.dist;
@@ -72745,6 +72746,19 @@ const Race = (() => {
     if (car.isPlayer && race.phase === 'racing' && race.laps > 1 && car.lap === race.laps) note(race, 'FINAL LAP');   // (not in qualifying)
   }
 
+  // (the user, 2026-10-25) a car retired on its last lap that still rolls over the line (its momentum, no power) is classified
+  // there: finished at that crossing - its place in the order and the results' position (a car past it before the line is
+  // ahead) - its status still DNF (classify: r.dnf + r.cls). Not a car carried by a recovery vehicle or in the pit lane.
+  function dnfLine(G, race, car, prev, dt) {
+    const rc = car._race, L = G.track.length;
+    if (car.finished || !race.laps || car.kinematic || car.inPitLane || !(car.lap >= 1) || !car.retired || (car.retired.lap | 0) !== (car.lap | 0)) return;
+    if (!(race.leaderFinished || car.lap >= race.laps)) return;
+    const p = rc.lineDist + L;
+    if (!(prev < p && rc.dist >= p)) return;
+    const tc = race.t - dt + U.clamp((p - prev) / Math.max(1e-9, rc.dist - prev), 0, 1) * dt;
+    rc.lineDist = p; car.lapsDone = car.lap;
+    finishCar(G, race, car, p, tc);
+  }
   function finishCar(G, race, car, p, tc) {
     const rc = car._race;
     car.finished = true; car.finishTime = tc; rc.finishKey = p; car.raceDist = p;
@@ -72766,13 +72780,13 @@ const Race = (() => {
     let pos = 1;
     const me = tc + car.penalty;
     for (const o of G.cars) {
-      if (o === car || o.dnf) continue;
+      if (o === car || (o.dnf && !o.finished)) continue;   // (a DNF over the line: dnfLine - classified there)
       const q = o._race;
       if (o.finished ? q.finishKey > p || (q.finishKey === p && effT(o) <= me) : q.dist > p) pos++;
     }
     rc.finPos = pos;
     car.penPending = car.penalty > 0;
-    if (car.isPlayer) { race.playerFinishT = race.t; note(race, 'FINISHED P' + pos); }
+    if (car.isPlayer) { race.playerFinishT = race.t; note(race, (car.dnf ? 'DNF · CLASSIFIED P' : 'FINISHED P') + pos); }
     emit(G, { type: 'finish', car, pos });
     if (race.playerFinishT != null) { race.results = classify(G, false); race.resultsT = 0; }
   }
@@ -72821,19 +72835,20 @@ const Race = (() => {
         }
       }
       const time = raw == null ? null : raw + car.penalty;
-      return { car, laps, rawTime: raw, penalty: car.penalty, time, dnf: !!car.dnf, estimated: est };
+      // (cls: a DNF classified where it rolled over the line on its last lap, dnfLine; out: a DNF anywhere else, at the back)
+      return { car, laps, rawTime: raw, penalty: car.penalty, time, dnf: !!car.dnf, cls: !!car.dnf && !!car.finished, out: !!car.dnf && !car.finished, estimated: est };
     });
-    rows.sort((a, b) => (a.dnf - b.dnf) || (b.laps - a.laps) || ((a.time == null ? 1e12 : a.time) - (b.time == null ? 1e12 : b.time))
+    rows.sort((a, b) => (a.out - b.out) || (b.laps - a.laps) || ((a.time == null ? 1e12 : a.time) - (b.time == null ? 1e12 : b.time))
       || ((a.rawTime || 0) - (b.rawTime || 0)));   // (same tie-break as the tower: equal totals -> first across the line)
     const w = rows[0], fl = race.fastestLap && race.fastestLap.car;
     rows.forEach((r, i) => {
       const c = r.car;
       r.pos = i + 1;
-      r.lapsDown = r.dnf ? 0 : w.laps - r.laps;
+      r.lapsDown = r.out ? 0 : w.laps - r.laps;
       r.gap = i === 0 || r.dnf || r.lapsDown > 0 ? null : r.time - w.time;
       r.gapText = r.dnf ? 'DNF' : i === 0 ? U.fmtTime(r.time) : r.lapsDown > 0 ? '+' + r.lapsDown + (r.lapsDown > 1 ? ' LAPS' : ' LAP') : U.fmtGap(r.gap);
       r.bestLap = c.bestLap;
-      r.points = !r.dnf && i < POINTS.length ? POINTS[i] : 0;
+      r.points = !r.out && i < POINTS.length ? POINTS[i] : 0;   // (a classified DNF scores its place)
       r.fastestLap = fl === c;
       r.teamIndex = c.teamIndex; r.code = c.code; r.grid = c.grid; r.pitStops = c.pitStops; r.penaltyServed = c.penaltyServed || 0;
       r.name = c.driver ? (c.driver.first ? c.driver.first + ' ' : '') + c.driver.last : c.name; r.firstName = c.firstName; r.lastName = c.lastName;
@@ -72917,7 +72932,8 @@ const Race = (() => {
   // ---------- positions & gaps ----------
   const orderKey = car => (car.finished ? car._race.finishKey : car._race.dist);
   function aheadOf(a, b) {
-    if (a.dnf !== b.dnf) return b.dnf;
+    const oa = a.dnf && !a.finished, ob = b.dnf && !b.finished;   // (a DNF over the line on its last lap: dnfLine - finished there)
+    if (oa !== ob) return ob;
     const ka = orderKey(a), kb = orderKey(b);
     if (a.finished && b.finished) return ka > kb || (ka === kb && (effT(a) < effT(b) || (effT(a) === effT(b) && a.finishTime < b.finishTime)));
     if (a.finished || b.finished) return ka > kb;
@@ -75972,7 +75988,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-25 09:44';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-25 10:29';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -97721,8 +97737,13 @@ const HUD = (() => {
       rcTri(g, u, v.h || 0, v.k ? '#ff2a1a' : '#aeb4be');
     }
   }
-  // the flagged zones on the full minimap: yellow (double: thicker), slippery red, slow car white
-  const RCM = { track: null, pts: [] };
+  // the flag colours on every minimap (2026-10-25, the user: all of them alike - the full map, the pause screen's, the zoomed one, the
+  // session / race-control screens'): the red flag -> the whole track red; the SC / VSC -> the whole track yellow; else the flagged
+  // zones (yellow, double: thicker; slippery red; slow car white) and the player's purple sector (PURP_T s after it was set)
+  const RCM = { track: null, pts: null, loop: null, sec: null }, MPS = { i: -1, t: 0 }, PURP_T = 5;
+  const flagAll = rc => !rc ? '' : rc.rf ? 'r' : rc.sp === 1 || rc.sp === 2 || rc.vs ? 'y' : '';
+  function purpleSec(G) { const t = G.race && G.race.t; return MPS.i >= 0 && isNum(t) && t >= MPS.t && t - MPS.t < PURP_T ? MPS.i : -1; }
+  const secSpans = tr => { const S = (tr.sectorS || []).filter(isNum), b = [0, ...S, tr.length], out = []; for (let k = 0; k + 1 < b.length; k++) out.push([b[k], b[k + 1]]); return out; };
   // contact damage (damage.js): a loose wheel (race.debris k 3, large debris) = a dark tyre ring with a yellow rim, under the dots
   function looseWheels(g, G, u, X, Y, inside) {
     const D = G.race && G.race.debris;
@@ -97735,21 +97756,29 @@ const HUD = (() => {
       g.lineWidth = 1.1 * u; g.strokeStyle = COL.yellow; g.stroke();
     }
   }
-  function rcMap(g, G, u, sc, ox, oz) {
+  // (north-up maps: world (x, z) -> (ox + x * sc, oz + z * sc); lw: the map's track line width, px)
+  function rcMap(g, G, u, sc, ox, oz, lw) {
     const rc = G.race && G.race.rc, tr = G.track;
-    if (!rc || !rc.any || typeof RaceControl === 'undefined' || !tr) return;
+    if (!tr || !tr.toWorld) return;
+    if (RCM.track !== tr) { RCM.track = tr; RCM.pts = null; RCM.loop = spanPoints(tr, 0, tr.length, () => 0); RCM.sec = secSpans(tr).map(([a, b]) => spanPoints(tr, a, b, () => 0)); }
+    const line = (p, w, c, closed) => { if (!p || p.length < 4) return; g.beginPath(); g.moveTo(ox + p[0] * sc, oz + p[1] * sc);
+      for (let k = 2; k < p.length; k += 2) g.lineTo(ox + p[k] * sc, oz + p[k + 1] * sc); if (closed) g.closePath(); g.lineWidth = w; g.strokeStyle = c; g.stroke(); };
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const all = flagAll(rc);
+    if (all) { line(RCM.loop, lw * 1.25, all === 'r' ? COL.red : COL.yellow, true); return; }
+    const ps = purpleSec(G); if (ps >= 0 && RCM.sec[ps]) line(RCM.sec[ps], lw * 1.25, COL.purple, false);
+    if (!rc || !rc.any || typeof RaceControl === 'undefined') return;
     const Lo = RaceControl.layout(tr), F = RaceControl.F;
-    if (RCM.track !== tr) { RCM.track = tr; RCM.pts = Lo.zones.map(z => spanPoints(tr, z.s0, z.s1, () => 0)); }
-    g.lineCap = 'round';
+    if (!RCM.pts) RCM.pts = Lo.zones.map(z => spanPoints(tr, z.s0, z.s1, () => 0));
     for (let z = 0; z < rc.n; z++) {
-      const f = rc.zf[z], p = RCM.pts[z];
-      if (!(f & 15) || !p || p.length < 4) continue;
-      g.beginPath(); g.moveTo(ox + p[0] * sc, oz + p[1] * sc);
-      for (let k = 2; k < p.length; k += 2) g.lineTo(ox + p[k] * sc, oz + p[k + 1] * sc);
-      g.lineWidth = (f & F.YY ? 2.6 : 1.7) * u;
-      g.strokeStyle = f & 3 ? COL.yellow : f & F.SLIP ? COL.red : COL.white;
-      g.stroke();
+      const f = rc.zf[z];
+      if (f & 15) line(RCM.pts[z], (f & F.YY ? 1.8 : 1.17) * lw, f & 3 ? COL.yellow : f & F.SLIP ? COL.red : COL.white, false);
     }
+  }
+  // (the session / race-control screens' maps, menu.js: the same flags + race control's vehicles as the HUD's full map)
+  function mapRC(g, G, u, sc, ox, oz, lw) {
+    rcMap(g, G, u, sc, ox, oz, lw);
+    rcActs(g, G, u, (x, z) => { RCXY.x = ox + x * sc; RCXY.y = oz + z * sc; RCXY.r = 0; return true; });
   }
 
   // ---------- status messages, pit prompt, braking guide, race-state banners ----------
@@ -98407,7 +98436,7 @@ const HUD = (() => {
     const u = M.u * (M.k || 1), sc = M.sc, ox = M.ox, oz = M.oz;
     const cars = G.cars || [], me = G.player;
     const qFly = !!(G.race && G.race.qs && G.race.phase === 'quali');   // (flying-lap cars get a purple ring)
-    rcMap(g, G, u, sc, ox, oz);   // (race control: flagged zones under the dots)
+    rcMap(g, G, u, sc, ox, oz, 1.45 * M.u);   // (race control: the flags under the dots - the track line is 1.45 u wide)
     rcActs(g, G, u, (x, z) => { RCXY.x = ox + x * sc; RCXY.y = oz + z * sc; RCXY.r = 0; return true; });   // (its vehicles out)
     looseWheels(g, G, u, o => ox + o.x * sc, o => oz + o.z * sc, null);
     g.lineWidth = 0.55 * u; g.strokeStyle = 'rgba(0,0,0,0.85)';
@@ -98567,7 +98596,10 @@ const HUD = (() => {
     const secT = new Path2D(), sfT = new Path2D();
     for (const s of tr.sectorS || []) tick(secT, s);
     tick(sfT, 0);
-    Object.assign(ZM, { track: tr, chunks, zones, pit, secT, sfT, h: null });
+    // (the flag colours: the three sectors, race control's zones)
+    const secB = secSpans(tr).map(([s0, s1]) => ribbon(span(s0, s1)));
+    const rcz = typeof RaceControl !== 'undefined' && RaceControl.layout ? RaceControl.layout(tr).zones.map(z => ribbon(span(z.s0, z.s1))) : [];
+    Object.assign(ZM, { track: tr, chunks, zones, pit, secT, sfT, secB, rcz, h: null });
     return true;
   }
   function drawZoom(G, dt) {
@@ -98611,6 +98643,17 @@ const HUD = (() => {
     // Straight-mode zones: green tint + green edges (as the full map's green stretches)
     g.fillStyle = 'rgba(25,224,106,0.24)'; g.strokeStyle = COL.green; g.lineWidth = 0.62 * U;
     for (const zn of ZM.zones) if (near(zn)) { g.fill(zn.surf); g.stroke(zn.edge); }
+    // the flag colours (as the full map's): the whole track red / yellow, else the flagged zones and the player's purple sector
+    const rcF = G.race && G.race.rc, fa = flagAll(rcF);
+    const tint = (b, fill, edge, w) => { if (!b || !near(b)) return; g.fillStyle = fill; g.fill(b.surf); g.strokeStyle = edge; g.lineWidth = w * U; g.stroke(b.edge); };
+    if (fa) { const red = fa === 'r'; for (const c of vis) tint(c, red ? 'rgba(255,42,58,0.5)' : 'rgba(255,212,0,0.42)', red ? COL.red : COL.yellow, 0.62); }
+    else {
+      const ps = purpleSec(G); if (ps >= 0) tint(ZM.secB && ZM.secB[ps], 'rgba(180,76,255,0.42)', COL.purple, 0.62);
+      if (rcF && rcF.any && typeof RaceControl !== 'undefined' && ZM.rcz) { const F = RaceControl.F;
+        for (let z = 0; z < rcF.n; z++) { const f = rcF.zf[z]; if (!(f & 15)) continue; const yy = f & F.YY;
+          if (f & 3) tint(ZM.rcz[z], yy ? 'rgba(255,212,0,0.58)' : 'rgba(255,212,0,0.36)', COL.yellow, yy ? 1.1 : 0.62);
+          else if (f & F.SLIP) tint(ZM.rcz[z], 'rgba(255,42,58,0.32)', COL.red, 0.62); else tint(ZM.rcz[z], 'rgba(244,246,250,0.28)', COL.white, 0.62); } }
+    }
     // sector lines (yellow) + start / finish (white), dark casing
     g.lineCap = 'butt';
     g.strokeStyle = 'rgba(0,0,0,0.8)'; g.lineWidth = 1.7 * U; g.stroke(ZM.secT);
@@ -98844,6 +98887,7 @@ const HUD = (() => {
     const qu = !!(G && G.race && G.race.qs && G.race.phase === 'quali');
     if (ev.type === 'sector' && ev.i >= 0 && ev.i < 3) {
       if (qu && ev.car && /^(out|lane|in)$/.test(ev.car.qSt || '')) return;   // (qualifying: an out / in lap's sectors are not shown)
+      if (ev.flag === 'purple' && G.race && isNum(G.race.t)) { MPS.i = ev.i; MPS.t = G.race.t; }   // (the minimaps: the sector purple)
       if (ev.i === 2 && st.held && st.hold > HOLD - 0.5) { st.held.t[2] = ev.time; st.held.f[2] = ev.flag; }
       else { st.sec.t[ev.i] = ev.time; st.sec.f[ev.i] = ev.flag; }
       tTiming = 9;
@@ -99493,7 +99537,7 @@ const HUD = (() => {
     prox: () => (PX.s || []).map(s => ({ v: s.v, r: s.r, arm: s.arm, hit: s.hit, held: !!s.car, vis: s.vis, op: s.ov, red: s.or, bd: s.b * PX_DEG, x: s.x, y: s.y, th: s.th })),   // proximity arrows: eased opacity / red blend / bearing + what is written
   };
 
-  return { init, update, setVisible, flash, onEvent, rewound, teamColor, teamColor2, teamBar, mapInfo, pauseMap,
+  return { init, update, setVisible, flash, onEvent, rewound, teamColor, teamColor2, teamBar, mapInfo, pauseMap, mapRC,
     qWeather, qTimeline, qWxHead, _int };   // (Q1 / Q2 / Q3: minute weather cells, session timeline, headline; the garage uses them too)
 })();
 
@@ -102169,7 +102213,7 @@ const Menu = (() => {
     if (race.mode === 'championship' && G.champ && Array.isArray(G.champ.rounds)) bits.push('ROUND ' + Math.max(1, Math.min(G.champ.rounds.length, G.champ.round)) + ' OF ' + G.champ.rounds.length);
     E.rsSub.textContent = bits.filter(Boolean).join('  ·  ');
     E.rsMe.innerHTML = tt ? (me && me.bestLap ? `<span>${race.pb ? 'PERSONAL BEST' : 'BEST LAP'}</span><b>${fmtT(me.bestLap)}</b>` : '') :   // (time trial: a saved PB counts)
-      myRes ? `<span>YOU FINISHED</span><b>${myRes.dnf ? 'DNF' : 'P' + myRes.pos}</b>` : '';
+      myRes ? `<span>YOU FINISHED</span><b>${myRes.cls ? 'P' + myRes.pos + ' · DNF' : myRes.dnf ? 'DNF' : 'P' + myRes.pos}</b>` : '';   // (cls: a DNF over the line, Race.classify)
 
     rsPick = null; rsDotd = null;
     E.rsTable.classList.toggle('has-laps', !tt);
@@ -102210,7 +102254,7 @@ const Menu = (() => {
       if (rcSum) sum.push(`<div class="is-rc"><span>RACE CONTROL</span><b>${esc(rcSum)}</b></div>`);
       if (myRes) {
         const g0 = isNum(myRes.grid) ? myRes.grid : me && isNum(me.grid) ? me.grid : null;
-        if (g0 != null && !myRes.dnf) { const d = g0 - myRes.pos; sum.push(`<div><span>GRID \u2192 FINISH</span><b>P${g0} \u2192 P${myRes.pos}${d ? ` <em class="${d > 0 ? 'up' : 'dn'}">${d > 0 ? '+' : '\u2212'}${Math.abs(d)}</em>` : ''}</b></div>`); }
+        if (g0 != null && (!myRes.dnf || myRes.cls)) { const d = g0 - myRes.pos; sum.push(`<div><span>GRID \u2192 FINISH</span><b>P${g0} \u2192 P${myRes.pos}${d ? ` <em class="${d > 0 ? 'up' : 'dn'}">${d > 0 ? '+' : '\u2212'}${Math.abs(d)}</em>` : ''}</b></div>`); }
         const stops = isNum(myRes.pitStops) ? myRes.pitStops : me && me.pitStops;
         if (isNum(stops)) sum.push(`<div><span>PIT STOPS</span><b>${stops}</b></div>`);
         if (isNum(myRes.points) && race.mode !== 'timetrial') sum.push(`<div><span>POINTS</span><b>${myRes.points}</b></div>`);
@@ -102358,7 +102402,7 @@ const Menu = (() => {
         // (contact damage, damage.js: why the car retired, short; the full reason on hover)
         if (r.dnf && c.retired && c.retired.why) { const w = String(c.retired.why), sw = { 'Crashed': 'CRASH', 'Collision damage': 'DAMAGE', 'Suspension': 'SUSP', 'Hydraulics': 'HYDRAULICS', 'Power unit': 'POWER UNIT', 'Electrics': 'ELECTRICS' }[w] || w.toUpperCase().slice(0, 8); tg += `<em class="agp-rs-why" title="${esc(w)}">${esc(sw)}</em>`; }
         if (r.penalty > 0 && !r.dnf) tg += `<em class="agp-pt-pen">+${Math.round(r.penalty)}s</em>`;
-        const grid = isNum(r.grid) ? r.grid : isNum(c.grid) ? c.grid : null, dPos = grid != null && !r.dnf ? grid - (r.pos || i + 1) : null;
+        const grid = isNum(r.grid) ? r.grid : isNum(c.grid) ? c.grid : null, dPos = grid != null && (!r.dnf || r.cls) ? grid - (r.pos || i + 1) : null;
         const pts = isNum(r.points) ? r.points : (race.mode !== 'timetrial' && !r.dnf && typeof POINTS !== 'undefined' ? (POINTS[(r.pos || 99) - 1] || 0) : 0);
         return [esc((team.name || '').toUpperCase()), grid == null ? '\u2014' : `${grid}${dPos ? `<em class="${dPos > 0 ? 'up' : 'dn'}">${dPos > 0 ? '\u25B2' : '\u25BC'}${Math.abs(dPos)}</em>` : ''}`,
           tg, bestTxt(r), String(isNum(r.pitStops) ? r.pitStops : isNum(c.pitStops) ? c.pitStops : '\u2014'), pts ? String(pts) : ''];
@@ -102393,7 +102437,7 @@ const Menu = (() => {
       res.map((r, i) => {
         const c = r.car || {}, team = rsTeam(c), drv = team.driver || {}, num = c.number != null ? c.number : drv.number;
         return `<div class="agp-pt-row${c === me ? ' is-me' : ''}${r.dnf ? ' is-out' : ''}${i === P.i ? ' is-sel' : ''}${first ? ' is-in' : ''}" data-i="${i}"${first ? ` style="animation-delay:${i * 45}ms"` : ''}>` +
-          `<span>${r.dnf ? '\u2014' : r.pos || i + 1}</span><i style="background:${teamBg(team)}"></i>` +
+          `<span>${r.dnf && !r.cls ? '\u2014' : r.pos || i + 1}</span><i style="background:${teamBg(team)}"></i>` +
           `<span class="agp-pt-drv agp-rs-pdrv"><b>${esc(c.code || r.code || '')}</b>${nameHTML(carName(c, drv))}${num != null ? `<small>${num}</small>` : ''}${c === rsDotd ? '<em class="agp-rs-dotd" title="Driver of the Day">\u2605</em>' : ''}</span>` +
           cells(r, i).map((x, k) => `<span${lc(V[0][k])}>${x}</span>`).join('') + '</div>';
       }).join('');
@@ -103289,12 +103333,9 @@ const Menu = (() => {
     g.drawImage(QM.bg, 0, 0);
     const on = G.race && G.race.qs ? c => c.qSt && c.qSt !== 'garage' && c.qSt !== 'parked' && isNum(c.x) && isNum(c.z)
       : c => isNum(c.x) && isNum(c.z) && !c.finished && !(c.dnf && c.kinematic && c !== me);   // (a race: the race control screen)
-    if (!(G.race && G.race.qs) && typeof RaceControl !== 'undefined' && G.race && G.race.rc && G.race.rc.on) {   // (race control's marshals / vehicles out on a job)
-      const A = RaceControl.actors(G, QM.act || (QM.act = []));
-      g.fillStyle = '#ff8a1e';
-      for (const a of A) if (a.k === 0 || a.on) { const X = ox + a.x * sc, Y = oz + a.z * sc, r = (a.k ? 2.2 : 1.2) * u; g.fillRect(X - r, Y - r, 2 * r, 2 * r); }
-      if (RaceControl.vehicles) for (const v of RaceControl.vehicles(G)) if (v.on) { const X = ox + v.x * sc, Y = oz + v.z * sc, r = 3 * u; g.fillStyle = v.k ? '#ffffff' : '#ffb21f'; g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.fill(); }   // (the safety car / medical car)
-    }
+    // (the flags - the whole track red / yellow, the flagged zones, the player's purple sector - and race control's vehicles as triangles,
+    // as on the HUD's minimaps: HUD.mapRC; the track line here is 2.6 u wide)
+    if (Hd && Hd.mapRC) Hd.mapRC(g, G, u, sc, ox, oz, 2.6 * u);
     for (let i = G.cars.length - 1; i >= 0; i--) {
       const c = G.cars[i];
       if (c === me || !on(c)) continue;
@@ -109490,6 +109531,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-25 09:44 -->
+<!-- Apex GP build 2026-10-25 10:29 -->
 </body>
 </html>

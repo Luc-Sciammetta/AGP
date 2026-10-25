@@ -17488,6 +17488,7 @@ const Race = (() => {
     if (rc.dist > prev) rc.tyreDist += rc.dist - prev;
     if (car.finished) return;
     car.raceDist = rc.dist;
+    if (racing && car.dnf) dnfLine(G, race, car, prev, dt);
     if (!racing || car.dnf) return;
     if (rc.dist > rc.maxDist) {
       const m1 = rc.dist;
@@ -17680,6 +17681,19 @@ const Race = (() => {
     if (car.isPlayer && race.phase === 'racing' && race.laps > 1 && car.lap === race.laps) note(race, 'FINAL LAP');   // (not in qualifying)
   }
 
+  // (the user, 2026-10-25) a car retired on its last lap that still rolls over the line (its momentum, no power) is classified
+  // there: finished at that crossing - its place in the order and the results' position (a car past it before the line is
+  // ahead) - its status still DNF (classify: r.dnf + r.cls). Not a car carried by a recovery vehicle or in the pit lane.
+  function dnfLine(G, race, car, prev, dt) {
+    const rc = car._race, L = G.track.length;
+    if (car.finished || !race.laps || car.kinematic || car.inPitLane || !(car.lap >= 1) || !car.retired || (car.retired.lap | 0) !== (car.lap | 0)) return;
+    if (!(race.leaderFinished || car.lap >= race.laps)) return;
+    const p = rc.lineDist + L;
+    if (!(prev < p && rc.dist >= p)) return;
+    const tc = race.t - dt + U.clamp((p - prev) / Math.max(1e-9, rc.dist - prev), 0, 1) * dt;
+    rc.lineDist = p; car.lapsDone = car.lap;
+    finishCar(G, race, car, p, tc);
+  }
   function finishCar(G, race, car, p, tc) {
     const rc = car._race;
     car.finished = true; car.finishTime = tc; rc.finishKey = p; car.raceDist = p;
@@ -17701,13 +17715,13 @@ const Race = (() => {
     let pos = 1;
     const me = tc + car.penalty;
     for (const o of G.cars) {
-      if (o === car || o.dnf) continue;
+      if (o === car || (o.dnf && !o.finished)) continue;   // (a DNF over the line: dnfLine - classified there)
       const q = o._race;
       if (o.finished ? q.finishKey > p || (q.finishKey === p && effT(o) <= me) : q.dist > p) pos++;
     }
     rc.finPos = pos;
     car.penPending = car.penalty > 0;
-    if (car.isPlayer) { race.playerFinishT = race.t; note(race, 'FINISHED P' + pos); }
+    if (car.isPlayer) { race.playerFinishT = race.t; note(race, (car.dnf ? 'DNF · CLASSIFIED P' : 'FINISHED P') + pos); }
     emit(G, { type: 'finish', car, pos });
     if (race.playerFinishT != null) { race.results = classify(G, false); race.resultsT = 0; }
   }
@@ -17756,19 +17770,20 @@ const Race = (() => {
         }
       }
       const time = raw == null ? null : raw + car.penalty;
-      return { car, laps, rawTime: raw, penalty: car.penalty, time, dnf: !!car.dnf, estimated: est };
+      // (cls: a DNF classified where it rolled over the line on its last lap, dnfLine; out: a DNF anywhere else, at the back)
+      return { car, laps, rawTime: raw, penalty: car.penalty, time, dnf: !!car.dnf, cls: !!car.dnf && !!car.finished, out: !!car.dnf && !car.finished, estimated: est };
     });
-    rows.sort((a, b) => (a.dnf - b.dnf) || (b.laps - a.laps) || ((a.time == null ? 1e12 : a.time) - (b.time == null ? 1e12 : b.time))
+    rows.sort((a, b) => (a.out - b.out) || (b.laps - a.laps) || ((a.time == null ? 1e12 : a.time) - (b.time == null ? 1e12 : b.time))
       || ((a.rawTime || 0) - (b.rawTime || 0)));   // (same tie-break as the tower: equal totals -> first across the line)
     const w = rows[0], fl = race.fastestLap && race.fastestLap.car;
     rows.forEach((r, i) => {
       const c = r.car;
       r.pos = i + 1;
-      r.lapsDown = r.dnf ? 0 : w.laps - r.laps;
+      r.lapsDown = r.out ? 0 : w.laps - r.laps;
       r.gap = i === 0 || r.dnf || r.lapsDown > 0 ? null : r.time - w.time;
       r.gapText = r.dnf ? 'DNF' : i === 0 ? U.fmtTime(r.time) : r.lapsDown > 0 ? '+' + r.lapsDown + (r.lapsDown > 1 ? ' LAPS' : ' LAP') : U.fmtGap(r.gap);
       r.bestLap = c.bestLap;
-      r.points = !r.dnf && i < POINTS.length ? POINTS[i] : 0;
+      r.points = !r.out && i < POINTS.length ? POINTS[i] : 0;   // (a classified DNF scores its place)
       r.fastestLap = fl === c;
       r.teamIndex = c.teamIndex; r.code = c.code; r.grid = c.grid; r.pitStops = c.pitStops; r.penaltyServed = c.penaltyServed || 0;
       r.name = c.driver ? (c.driver.first ? c.driver.first + ' ' : '') + c.driver.last : c.name; r.firstName = c.firstName; r.lastName = c.lastName;
@@ -17852,7 +17867,8 @@ const Race = (() => {
   // ---------- positions & gaps ----------
   const orderKey = car => (car.finished ? car._race.finishKey : car._race.dist);
   function aheadOf(a, b) {
-    if (a.dnf !== b.dnf) return b.dnf;
+    const oa = a.dnf && !a.finished, ob = b.dnf && !b.finished;   // (a DNF over the line on its last lap: dnfLine - finished there)
+    if (oa !== ob) return ob;
     const ka = orderKey(a), kb = orderKey(b);
     if (a.finished && b.finished) return ka > kb || (ka === kb && (effT(a) < effT(b) || (effT(a) === effT(b) && a.finishTime < b.finishTime)));
     if (a.finished || b.finished) return ka > kb;
