@@ -280,6 +280,13 @@ const CFG = {
     baseUse: 0.45,        // wear-rate factor = (baseUse + loadUse * tyreUsage^2 + lockups/spin/off-track) / usageNorm
     loadUse: 1.0,
     usageNorm: 0.8,       // calibrated so an average lap ≈ 1.0
+    // (2026-10-25, the user: far less wear under the SC / VSC and when driving slowly, scaled by how hard the tyre is worked;
+    // racing unchanged) physics x f(q): q = the car's speed / the reference speed (an effT s average) over its own racing pace
+    // (that average in green-flag running out of the pit lane, rising over effUp s, falling over effDn s: a short slow spell keeps
+    // it). Green: f = gLo + (1 - gLo) x clamp((q - g0) / (g1 - g0))^gP (racing: 1); under a VSC / SC / red flag: nLo + (1 - nLo)
+    // x clamp((q - n0) / (n1 - n0))^nP (a car catching up at racing pace wears as racing). Measured (vortex, 10 AI cars, an SC and
+    // a VSC, wear per km against the green laps): racing x0.999, SC 25 % (was 95 %), VSC 22 % (was 90 %); HANDOFF 2026-10-25
+    pace: { effT: 8, effUp: 20, effDn: 120, gLo: 0.25, g0: 0.5, g1: 0.8, gP: 1.5, nLo: 0.2, n0: 0.85, n1: 1.1, nP: 2 },
   },
 
   // AI tyre strategy (Race: planOptions / choosePlan). Every plan of up to 3 stops (4 only if nothing shorter covers the
@@ -710,12 +717,15 @@ CFG.grass = {
 // after each SC / red-flag restart. w: the pick of the car (x weights): battle (a car within ~35 m), cold (lap 1, an out-lap,
 // an SC restart), worn (past 75 % of the cliff), slide (x the wrong tyres' wet slide). quali: Q1-Q3 offs on AI push laps (x
 // MK.qRate per km; Normal / High only, none at Low / Off).
+// (2026-10-25, the user: "AI cars should crash less on Normal", about half the self-made crashes: crash [0.6, 0.6] -> [0.3, 0.3],
+// spin [0.8, 3] -> [0.4, 1.5] (a spin / off ends a race too: ~half the 'Accident' retirements came from it); Low / High follow
+// (x levels); Extreme left as it was: diff.extreme 0.8 -> 1.6. Measured: HANDOFF "AI crashes on Normal, 2026-10-25")
 CFG.aiCrash = {
-  crash: [0.6, 0.6],
-  spin: [0.8, 3],
+  crash: [0.3, 0.3],
+  spin: [0.4, 1.5],
   levels: { off: 0, low: 0.5, normal: 1, high: 2 },
   ref: 9, fieldExp: 0.5,
-  diff: { easy: 1.25, medium: 1, adaptive: 1, hard: 0.9, extreme: 0.8 },
+  diff: { easy: 1.25, medium: 1, adaptive: 1, hard: 0.9, extreme: 1.6 },   // (extreme 1.6 on the halved table = its old 0.8, 2026-10-25)
   wet: 1.5,
   hot: { lap1: 0.45, restart: 0.25, laps: 2 },
   w: { battle: 1.8, cold: 1.6, worn: 1.5, slide: 2 },
@@ -2939,8 +2949,22 @@ const TRACK_DATA = {
     turns: [[30,3.707],[35,0.273],[43,2.75],[51,1.82],[57,2.201],[62,72.939],[68,0.223],[72,0.23],[80,2.005],[86,102.962],[92,7.823],[100,0.105],[124,104.958],[10,0.207],[14,0.215],[18,0.975],[24,6.496]],   // T1-T17 at the FIA 2024 circuit map's labels (registered onto the OSM lap); T6-T10 / T14-T16 at the designed arcs
     // the planned widths (plan/README.md: 12.5 m round the Sphere - 16 m on the Strip), one width per straight
     widthProfile: [[0,15],[494.4,15],[574.4,14],[1503.3,14],[1529.3,13],[1783.3,13],[1863.3,12.5],[2157.2,12.5],[2209.2,14],[3165,14],[3195,16],[5110.7,16],[5154.7,14],[5956.6,14],[6008.6,15],[6223,15]],
-    zones: [{ s0: 646, s1: 1396 }, { s0: 3325, s1: 5019 }, { s0: 5302, s1: 109 }],   // Straight mode (2026 default, plan): T4-T5, T12-T13, T13-T14, T16-T17, T17-T1
-    detect: 3875,   // Overtake detection: the FIA 2024 DRS detection 2 (T12 + 710 m)
+    // (the Strip zone opens ON the sector 3 line, s 3305: one line on the asphalt, was 20 m past it - the user, 2026-10-25)
+    zones: [{ s0: 646, s1: 1396 }, { s0: 3305, s1: 5019 }, { s0: 5302, s1: 109 }],   // Straight mode (2026 default, plan): T4-T5, T12-T13, T13-T14, T16-T17, T17-T1
+    // Overtake detection at the entry to T14, the last braking corner (the final T14-T17 sequence; the game arms Overtake there and opens
+    // it at the line). The FIA's 2026 Las Vegas notes are not out (2026-10-25); 2026 practice so far puts the point at the entry to
+    // the final corner complex (Montreal 'Entry T13', Melbourne before T13, Monaco before Rascasse). Was 3875 (the 2023-25 DRS
+    // detection 2, T12 + 710 m, mid-Strip)
+    detect: 5110,
+    // race-line hints (track.js lineDelta, from tools/line_opt.mjs on this lap, 2026-10-25): offsets to the solved line where it was
+    // clearly slower than a min-time line on the game's speed model (-0.60 s a lap: T5 -0.04, T6-T9 -0.28 (the T6 kink, a tighter T7
+    // entry), T10-T12 -0.22 (a deeper T12 apex), T14-T16 -0.06)
+    lineDelta: [[1350,1700,20,[0,0,0,0,0,0,0.13,0.63,-0.25,-0.25,-0.25,0,0,0,0,0,0,0,0]],[1750,2300,20,[0,0,-0.25,-1.5,-0.37,0,0,-0.5,-1.12,-1,0.25,0,0.5,-0.12,0,0.13,0,0,0.88,0,0,0,0,-0.12,0,0,0,0]],
+      [2550,3300,20,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.13,0,0,0,0.13,0,0,0.25,0,0,0,-0.12,-0.25,0.38,-0.5,-0.12,-0.12,0,0,0,0]],[5000,5450,20,[0,0,0,-0.12,-0.5,-0.5,0,0,0.25,0.25,0.13,0.63,-0.12,-0.12,0,0,0,0,0,0,0,0,0]]],
+    // the solver keeps the line (track.js lineKeep, 2026-10-26): off the pit-exit merge (the lane joins the track's left edge at s 281,
+    // its cars at d -5.8; the line swung back there to d -5.7 for T3: now d >= -2.5, >= 3.3 m clear; 0.06 s a lap on the speed model,
+    // ~0.1 s for the Extreme AI), and T5's track-out 3.2 m in from the left edge (it ran wide into the wall there above pace 1.0)
+    lineKeep: [[275, 410, -2.5, 7.5], [1540, 1580, -3.3, 7.5]],
     sectors: [1593,3305],   // FIA 2024: S1 90 m after T5, S2 140 m after T12
     pit: {side: -1, entry: 5985.1, exit: 281, laneHalfW: 3.5, wallGap: 2, boxSpacing: 12, laneCenterD: 13.6, limiterIn: 90, limiterOut: 60, speedLimit: 80, boxTurn: 12, path: [[5990.1, 5.78], [5995.1, 5.82], [6000.1, 5.92], [6005.1, 6.09], [6010.1, 6.34], [6015.1, 6.68], [6020.1, 7.1], [6025.1, 7.59], [6030.1, 8.15], [6035.1, 8.75], [6040.1, 9.37], [6045.1, 10.01], [6050.1, 10.64], [6055.1, 11.24], [6060.1, 11.79], [6065.1, 12.28], [6070.1, 12.7], [6075.1, 13.04], [6080.1, 13.29], [6085.1, 13.46], [6090.1, 13.56], [6095.1, 13.59], [6100, 13.6], [190, 13.6], [205.2, 15], [219.2, 16.8], [239.2, 15.6], [256, 13.5]]},
     // OpenTopoData ned10m (USGS 3DEP 1/3 arc-second) along the lap, the plan's smoothed profile (628.6-644.6 m: 16 m range)
@@ -3428,6 +3452,16 @@ const buildTrack = (() => {
       lo[i] = -(halfW[i] - margin) - (kerbL[i] ? kerbUse : 0);
       hi[i] = (halfW[i] - margin) + (kerbR[i] ? kerbUse : 0);
     }
+    // optional data.lineKeep [[s0, s1, lo, hi], ...]: the solver keeps the line within d [lo, hi] from s0 to s1 (15 m ramps), e.g.
+    // off a pit-exit merge (Las Vegas); tools/line_opt.mjs --bound takes the same windows
+    for (const kp of (Array.isArray(data.lineKeep) ? data.lineKeep : [])) {
+      const a = +kp[0], b = +kp[1], kl = +kp[2], kh = +kp[3];
+      for (let s = a - 15; s <= b + 15; s += step) {
+        const i = ((Math.round(s / step) % N) + N) % N, w = s < a ? (s - a + 15) / 15 : s > b ? (b + 15 - s) / 15 : 1;
+        const L = -(halfW[i] - margin), H = halfW[i] - margin;
+        lo[i] = Math.max(lo[i], L + (kl - L) * w); hi[i] = Math.min(hi[i], H + (kh - H) * w);
+      }
+    }
     // optional data.raceLineFrom (at-spec or s): the sample the solver's lattice and sweeps start from (default the line).
     // tools/shift_line.mjs sets it to the old line when it moves a circuit's line, so the racing line stays exactly as it was
     let dl;
@@ -3439,6 +3473,19 @@ const buildTrack = (() => {
     } else dl = racingLine(N, px, pz, nx, nz, lo, hi, data.lineIters || 45);
     dl = blur(dl, 2, 2);
     for (let i = 0; i < N; i++) dl[i] = clamp(dl[i], lo[i], hi[i]);
+    // optional data.lineDelta [[s0, s1, cp, [c0 .. cn]], ...] (race-line hints): offsets added to the solved line from s0 to s1 (s1 may
+    // pass the lap's end), control points every ~cp m (n = round((s1 - s0) / cp), c0 = cn = 0), smoothstep between them; the result
+    // stays within [lo, hi] (or the solved line where that lies outside). Where this min-curvature line is clearly slower than a
+    // min-time one: tools/line_opt.mjs searches the offsets on this same lap-time model and prints them (relative to the solved
+    // line: re-run it when a circuit's centre line, widths or kerbs change)
+    for (const h of (Array.isArray(data.lineDelta) ? data.lineDelta : [])) {
+      const i0 = Math.round(+h[0] / step), i1 = Math.round(+h[1] / step), c = h[3] || [], nc = c.length - 1;
+      if (!(i1 > i0 && nc >= 1)) continue;
+      for (let i = i0; i <= i1; i++) {
+        const u = (i - i0) / (i1 - i0) * nc, k = Math.min(nc - 1, Math.floor(u)), f = u - k, w = f * f * (3 - 2 * f), j = ((i % N) + N) % N;
+        dl[j] = clamp(dl[j] + c[k] * (1 - w) + c[k + 1] * w, Math.min(dl[j], lo[j]), Math.max(dl[j], hi[j]));
+      }
+    }
     const raceLine = Float32Array.from(dl);
     const qx = new Float64Array(N), qz = new Float64Array(N);
     for (let i = 0; i < N; i++) { qx[i] = px[i] + dl[i] * nx[i]; qz[i] = pz[i] + dl[i] * nz[i]; }
@@ -6852,7 +6899,19 @@ const Physics = (() => {
       const use = 0.5 * (uF * uF + uR * uR);
       const dryK = comp.dryWear ? U.lerp(comp.dryWear, 1, Math.min(1, wet * 2)) : 1;
       const k = dryK * (CFG.tyre.baseUse + CFG.tyre.loadUse * use + 2.0 * (lockF + lockR + spinR) + 0.5 * (offF + offR)) / CFG.tyre.usageNorm;
-      car.tyre.wear = Math.min(1, car.tyre.wear + wpm / comp.life * k * speed * dt);
+      // how hard the car runs against its own racing pace (CFG.tyre.pace, user 2026-10-25): far less wear under the VSC / SC / red
+      // flag and when driving slowly; racing unchanged. car._wq: speed / reference speed (effT s average), car._wr: its green-flag pace
+      const PC = CFG.tyre.pace, vr = PC && track.raceSpeed ? track.raceSpeed[car.idx >= 0 ? car.idx : 0] : 0;
+      let pf = 1;
+      if (vr > 0) {
+        const rc = world.race && world.race.rc, neu = !!(rc && rc.on && (rc.vs || rc.sp || rc.rf)), r = speed / Math.max(8, vr);
+        car._wq = car._wq == null ? r : car._wq + (r - car._wq) * Math.min(1, dt / PC.effT);
+        if (!neu && !car.inPitLane) car._wr = car._wr == null ? car._wq : car._wr + (car._wq - car._wr) * Math.min(1, dt / (car._wq > car._wr ? PC.effUp : PC.effDn));
+        const q = car._wr > 0.05 ? car._wq / car._wr : 1;
+        pf = neu ? PC.nLo + (1 - PC.nLo) * Math.pow(clamp((q - PC.n0) / (PC.n1 - PC.n0), 0, 1), PC.nP)
+          : PC.gLo + (1 - PC.gLo) * Math.pow(clamp((q - PC.g0) / (PC.g1 - PC.g0), 0, 1), PC.gP);
+      }
+      car.tyre.wear = Math.min(1, car.tyre.wear + wpm / comp.life * k * pf * speed * dt);
     }
 
     // --- gearbox / revs
@@ -7806,8 +7865,8 @@ const Damage = (() => {
 // in Node tests and on the multiplayer server (the server decides, clients only draw: pack / unpack).
 // Built so far (phases 0-2): marshal zones (~200-350 m, boundaries on straights), corner names, marshal posts (light
 // panels, 30-60 a track, each with a gap in the wall), SC lines 1 / 2 + the SC deploy point, settings, an incident scan
-// (cars off / spun / stopped / slow / retired, debris) with escalation (severity + modelled clear-up time -> wanted level,
-// steps up, never drops mid-period), zone flags (yellow, double yellow, white, slippery, green), overtaking under yellow
+// (cars off / spun / stopped / slow / retired, debris), each incident's level set when it starts (severity + modelled clear-up
+// time -> wanted level; no escalation: a running VSC never becomes an SC, an SC never a red flag - user 2026-10-25), zone flags (yellow, double yellow, white, slippery, green), overtaking under yellow
 // allowed (user 2026-10-18; none under the VSC / SC), slowing under double yellow (AI ~80 %; humans: a warning, then 5 s), events for the
 // HUD / engineer / renderers. Phase 2: marshals, tractors (permanent circuits), crane trucks (street circuits) and a
 // sweeper, parked at depots behind the wall; a job queue (rc.jobs: each job a timeline of phases with modelled times, the
@@ -7850,7 +7909,8 @@ const RaceControl = (() => {
   const POST_MAX = 135, POST_MIN = 70, GAP_W = 5, GAP_OFF = 6, DEP_GAP = 800, ROAD = 4.5;
   // a post: POST_OUT m behind the barrier, then out by POST_EX m / along by POST_DS m until clear of every run-off
   const POST_OUT = 1.2, POST_EX = [0, 1, 2.5, 5, 8, 12, 18, 25], POST_DS = [0, 3, -3, 6, -6, 10, -10, 15, -15];
-  const MV = { run: 4.5, push: 2.0, road: 11, off: 6, tow: 4, crane: 9, sweep: 4, sweepRoad: 15 };
+  // (user 2026-10-25, faster marshal work: was run 4.5, push 2.0, road 11, off 6, tow 4, crane 9, sweep 4, sweepRoad 15)
+  const MV = { run: 6, push: 2.6, road: 14, off: 7.5, tow: 5, crane: 11, sweep: 5, sweepRoad: 17 };
   const M = { WAIT: 0, GO: 1, WORK: 2, CARRY: 3, ROAD: 4, TOW: 5, LIFT: 6, HOOK: 7 };
   const KJ = { push: 0, tow: 1, lift: 2, pick: 3, sweep: 4, fix: 5 };
   const PASS_SLOW = 0.6, PASS_VSC = 0.45; // a car below this share of the reference speed may be passed under yellow / the VSC (it has a problem)
@@ -8511,7 +8571,7 @@ const RaceControl = (() => {
         if (Math.abs(q.d) > hw + 0.5) continue;
         const z = zoneAt(Lo, q.s);
         on[z] = (on[z] | 0) + 1;
-        (pz[z] || (pz[z] = [])).push([p.id, q.s, q.d]);
+        (pz[z] || (pz[z] = [])).push([p.id, q.s, q.d, p.k]);
         const u = q.d / Math.max(1, hw);   // (across the track: -1 .. 1)
         dlo[z] = Math.min(dlo[z] == null ? 9 : dlo[z], u); dhi[z] = Math.max(dhi[z] == null ? -9 : dhi[z], u);
         if (Math.abs(q.d - T.raceLine[q.idx]) < 2.2) line[z] = (line[z] | 0) + 1;
@@ -8529,11 +8589,9 @@ const RaceControl = (() => {
           o = { id: ++rc.seq, car: null, kind: 'debris', zone: z, s: zs.s0 + zs.len / 2, d: 0, lvl, want, why: W.debris, white: false, slip: true, t0: t, until: null, est: 0 };
           rc.inc.push(o);
         }
-        if (lvl > o.lvl) o.lvl = lvl;
-        if (want > o.want) o.want = want;
-        if (field) o.why = W.field;
+        if (t - o.t0 < LV_SET) { if (lvl > o.lvl) o.lvl = lvl; if (want > o.want) o.want = want; if (field) o.why = W.field; }   // (its level set as it starts: no escalation later, user 2026-10-25)
         o.seen = t; o.until = null; o.sx = 0; for (const q of pz[z]) o.sx = Math.max(o.sx, T.deltaS(Lo.zones[z].s0, q[1]));   // (sx: the farthest piece from the zone's start - the double yellow's scope)
-        if (!jobOf(rc, o.id) && !o.noJob) {   // (marshals / the sweeper; again while pieces are left after a job)
+        if (!jobOf(rc, o.id) && !o.noJob && t - o.t0 >= LV_SET) {   // (marshals / the sweeper, once its pieces have landed (LV_SET s): one trip; again while pieces are left after a job)
           const J = debrisJob(G, race, rc, Lo, o, pz[z]);
           if (J) { o.est = J.clr - o.t0; o.clr = J.clr; } else { o.noJob = 1; o.est = (lvl === LV.yy ? 30 + 60 * rnd(race, o.id, 7) : 20 + 10 * rnd(race, o.id, 7)); }
         }
@@ -8560,7 +8618,10 @@ const RaceControl = (() => {
       }
       if (o.until != null && t >= o.until) { rc.inc.splice(j, 1); if (o.car && rc.cs[o.car.id]) rc.cs[o.car.id].ic = 0; }
     }
-    // 4. race level: steps up, never down while its incidents last; 3+ stranded cars (not those recovered well clear under a double yellow) = red; never red in the last ~lap
+    // 4. race level: the max over the live incidents (it drops only when they have all ended); 3+ stranded cars (not those recovered
+    // well clear under a double yellow) = red; never red in the last ~lap. No escalation (user 2026-10-25): once a VSC / SC is out the
+    // level never goes above it (neutral(): a new incident runs under it), so a VSC never becomes an SC, an SC never a red flag; an
+    // incident from green goes straight to its level (the deployment delay picks the highest one decided meanwhile)
     let want = 0, ww = 0, out = 0, wo = null;
     for (const o of rc.inc) { const ow = o.cap != null && o.want > o.cap ? o.cap : o.want; if (o.kind === 'retired' && !(o.est > 0 && ow <= LV.yy)) out++; if (ow > want) { want = ow; ww = o.why; wo = o; } }   // (o.cap: dev tools' end, endStep)
     if (pileUp(G, rc)) { want = LV.red; ww = W.pile; wo = null; }   // (user 2026-10-20: a real 3+ car crash, wherever the cars sit)
@@ -8582,6 +8643,8 @@ const RaceControl = (() => {
     if (want === LV.red && left <= 1) want = LV.yy;   // (user: no red flag in the last ~lap - the race finishes under (double) yellows)
     if (rc.scCap) { if (want >= LV.sc && want < LV.red) want = LV.vsc; else if (want < LV.sc) rc.scCap = 0; }   // (a short race's SC is in after ~1 lap: a VSC for the rest of its incident)
     want = effLevel(want, cfg);   // (the max over the live incidents: it drops only once every incident behind it has ended)
+    const nl = neutral(rc);
+    if (nl && want > nl && ww !== W.rain) want = nl;   // (no escalation; the rain's red flag is the weather, not an incident)
     if (want !== rc.want) {
       rc.want = want; rc.wantWhy = ww;
       rc.wantZ = wo && ww === wo.why ? wo.zone : -1; rc.wantC = wo && ww === wo.why ? (wo.car ? wo.car.id : wo.by != null ? wo.by : -1) : -1;   // (the incident behind it: the engineer's why)
@@ -8594,8 +8657,13 @@ const RaceControl = (() => {
     vscLevel(G, race, rc, Lo, H);
     flags(G, race, rc, Lo, H);
   }
-  // (user 2026-10-19) a VSC / SC / red flag is deployed DEP_T..+DEP_R s after it is decided (seeded per decision, rc.dpN;
-  // a VSC -> SC escalation waits its own delay); meanwhile the local flags (rc.lvl at most double yellow). A drop, or a level
+  // the neutralisation out now (its level: no incident takes the race above it, user 2026-10-25) | 0: the SC (out, the restart),
+  // the VSC (and VSC ENDING), the SC's hold (scH: the VSC delta until the SC can come out ahead of the leader, shown as the SC)
+  function neutral(rc) { return rc.sp ? LV.sc : rc.vs ? (rc.vs === 1 && rc.scH ? LV.sc : LV.vsc) : 0; }
+  // the SC called, held (a client too: rc.want is packed): the field on the delta until the SC can come out ahead of the leader
+  function scHeld(rc) { return !!rc && rc.vs === 1 && !rc.sp && rc.want >= LV.sc; }
+  // (user 2026-10-19) a VSC / SC / red flag is deployed DEP_T..+DEP_R s after it is decided (seeded per decision, rc.dpN);
+  // meanwhile the local flags (rc.lvl at most double yellow). A drop, or a level
   // with its own timing (now: rain, qualifying's stranded car), at once. The deployment (vsc / scLevel, red) brings the banner
   // and the engineer's call.
   function deploy(race, rc, tg, now, t) {
@@ -8618,7 +8686,7 @@ const RaceControl = (() => {
   // (2026-10-24, fewer AI crashes: a crash that stops within ~10 m of the edge - a gravel trap, a near barrier - brings the SC,
   // a VSC further out to 25 m, beyond it a double yellow; was [2.5, 11.5, 0.5] / [1, 8.5, 1]: 2 of 3 crashes on permanent
   // circuits stopped > 8.5 m out, double yellow only, the rest mostly VSCs. [3] = barFar's distance, as before)
-  const ESC = { street: [6, 15, 0.5, 11.5], perm: [10, 25, 1, 8.5] }, DEB_V = 2;   // (DEB_V: sharp pieces on the line for a VSC)
+  const ESC = { street: [6, 15, 0.5, 11.5], perm: [10, 25, 1, 8.5] }, DEB_V = 2, LV_SET = 2;   // (LV_SET: s a debris incident's level may still rise after it starts - its pieces landing)   // (DEB_V: sharp pieces on the line for a VSC)
   // (user 2026-10-20) the red flag: a heavy debris field (DEB_RED+ sharp pieces on the asphalt in a zone, spread across >= DEB_SPAN
   // of the track's width either side of its middle); a pile-up - PILE_N+ cars retired within PILE_T s and PILE_S m of each other
   // (one incident; wherever they stopped, the 'well clear' rule of 2026-10-19 not applied)
@@ -8749,12 +8817,12 @@ const RaceControl = (() => {
     const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, hs = p.hs, out = p.hd, mouth = sd * (wd - 1.4), beh = sd * (p.cd != null ? p.cd : wd + 3.4), r = rnd(race, o.id, 31), r2 = rnd(race, o.id, 32);
     const J = newJob(race, rc, o, KJ.push, c, sd, gi, -1, c.h), cs = c.s, cd = c.d || 0;
     J.n = 4; J.hf = nearH(c.h, Math.atan2(sd * T.nz[T.idxAt(gs)], sd * T.nx[T.idxAt(gs)]));
-    ph(J, M.WAIT, 3 + 3 * r, hs, out);
+    ph(J, M.WAIT, 1.5 + 1.5 * r, hs, out);   // (2026-10-25 faster: was 3-6 s ready, 6-12 s at the car, 6 s through the gap)
     go(T, J, M.GO, MV.run, 0, hs, out, gs, mouth);
     go(T, J, M.GO, MV.run, 0, gs, mouth, cs, cd);
-    ph(J, M.WORK, 6 + 6 * r2, cs, cd);
-    go(T, J, M.CARRY, MV.push, 2, cs, cd, gs, mouth);
-    ph(J, M.CARRY, 6, gs, mouth, gs, beh);
+    ph(J, M.WORK, 3 + 3 * r2, cs, cd);
+    go(T, J, M.CARRY, MV.push, 1.5, cs, cd, gs, mouth);
+    ph(J, M.CARRY, 4, gs, mouth, gs, beh);
     go(T, J, M.GO, MV.run, 1, gs, beh, hs, out);
     J.ci = J.P.length - 1;
     return J;
@@ -8768,14 +8836,14 @@ const RaceControl = (() => {
     J.n = 2; J.vh = headSD(T, gs, mouth, cs, cd, trackH(T, gs));
     let bs = gs, bd = beh;   // (the tractor backs out until the car on its arm (3.6 m ahead) is on the post's car spot)
     if (g.cd != null) { const w = T.toWorld(gs, sd * g.cd), q = T.project(w.x - Math.cos(J.vh) * 3.6, w.z - Math.sin(J.vh) * 3.6, T.idxAt(gs)); bs = q.s; bd = q.d; }
-    ph(J, M.WAIT, 6 + 6 * r, D.s, D.d);
-    if (D.side !== sd) go(T, J, M.GO, MV.off, 3, D.s, D.d, D.s, road);   // (the depot across the track: over it)
-    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, gs)) / MV.road + 2, D.s, ROAD, gs, ROAD);
-    go(T, J, M.GO, MV.off, 3, gs, road, as, ad);
-    ph(J, M.HOOK, 18 + 10 * r2, as, ad);
-    go(T, J, M.TOW, MV.tow, 2, as, ad, bs, bd);
+    ph(J, M.WAIT, 3 + 3 * r, D.s, D.d);   // (2026-10-25 faster: was 6-12 s to start, 18-28 s hooking, 8 s setting down)
+    if (D.side !== sd) go(T, J, M.GO, MV.off, 2, D.s, D.d, D.s, road);   // (the depot across the track: over it)
+    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, gs)) / MV.road + 1.5, D.s, ROAD, gs, ROAD);
+    go(T, J, M.GO, MV.off, 2, gs, road, as, ad);
+    ph(J, M.HOOK, 12 + 6 * r2, as, ad);
+    go(T, J, M.TOW, MV.tow, 1.5, as, ad, bs, bd);
     J.ci = J.P.length - 1;
-    ph(J, M.WORK, 8, bs, bd);
+    ph(J, M.WORK, 5, bs, bd);
     go(T, J, M.GO, MV.off, 0, bs, bd, gs - 12, road);
     ph(J, M.ROAD, Math.abs(T.deltaS(gs - 12, D.s)) / MV.road + 2, gs - 12, ROAD, D.s, ROAD);
     return J;
@@ -8791,29 +8859,52 @@ const RaceControl = (() => {
       if (fpClear(T, w.x, w.z, trackH(T, q), 2.75, 0.98)) { fs = cs + k * away; fd = sd * (wallD(T, q, sd) + 3.4 + ex); break lift; }
     }
     J.n = 2; J.hf = nearH(c.h, trackH(T, fs)); J.fs = fs; J.fd = fd;
-    ph(J, M.WAIT, 6 + 6 * r, D.s, D.d);
-    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, cs)) / MV.crane + 3, D.s, ROAD, cs, ROAD);
-    ph(J, M.WORK, 20 + 10 * r2, cs, sd * (wd + ROAD));
-    ph(J, M.HOOK, 20 + 10 * r3, cs, sd * (wd + ROAD));
-    ph(J, M.LIFT, 22, cs, sd * (wd + ROAD));   // (the crane stands; the car flies J.cs, J.cd -> J.fs, J.fd)
+    ph(J, M.WAIT, 3 + 3 * r, D.s, D.d);   // (2026-10-25 faster: was 6-12 s to start, outriggers 20-30 s, strapping 20-30 s, the lift 22 s, stowing 20 s)
+    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, cs)) / MV.crane + 2, D.s, ROAD, cs, ROAD);
+    ph(J, M.WORK, 12 + 6 * r2, cs, sd * (wd + ROAD));
+    ph(J, M.HOOK, 12 + 6 * r3, cs, sd * (wd + ROAD));
+    ph(J, M.LIFT, 16, cs, sd * (wd + ROAD));   // (the crane stands; the car flies J.cs, J.cd -> J.fs, J.fd)
     J.ci = J.P.length - 1;
-    ph(J, M.WORK, 20, cs, sd * (wd + ROAD));
+    ph(J, M.WORK, 12, cs, sd * (wd + ROAD));
     ph(J, M.ROAD, Math.abs(T.deltaS(cs, D.s)) / MV.crane + 3, cs, ROAD, D.s, ROAD);
     return J;
   }
-  // marshals (n 2) pick the pieces up one by one (1.5-2.5 s each), from the gap nearest them, then back
+  // marshals (n 2) collect the zone's pieces in one trip and carry them back (user 2026-10-25; was one by one, 1.5-2.5 s each, then
+  // back the same way): out through the gap, along the pieces from the nearer end (a scoop of PICK_W s each), off the asphalt
+  // beside the last one, along the verge to the gap, to the post. In a job of PICK_MN+ pieces they may miss up to PICK_MISS
+  // small ones (k 1, a seeded PICK_P chance each, J.miss): left dull (harmless: no puncture, no flag) once the others are
+  // collected and swept later (Damage drops them PICK_SW s on) - no new job, no neutralisation
+  const PICK_W = 0.5, PICK_MN = 3, PICK_MISS = 2, PICK_P = 0.25, PICK_SW = 90, EDGE_K = 0.8;
+  // where the marshals move along the track on the gap's side: just off the asphalt (+ ASF_M), never past the barrier; a leg there whose every point is >= EDGE_K m beyond the asphalt is off the asphalt (q[7] 2: not a sortie, onAsph)
+  const pickEdge = (T, s, sd) => sd * Math.max(0.3, Math.min(T.halfW[T.idxAt(s)] + ASF_M + 0.3, wallD(T, s, sd) - 0.5));
+  function edgeLeg(T, J, s0, d0, s1, d1) {
+    go(T, J, M.GO, MV.run, 0, s0, d0, s1, d1);
+    let ok = true;
+    for (let k = 0; k <= 6 && ok; k++) { const u = k / 6, x = T.wrapS(s0 + T.deltaS(s0, s1) * u), y = d0 + (d1 - d0) * u; if (Math.abs(y) < T.halfW[T.idxAt(x)] + EDGE_K) ok = false; }
+    if (ok) J.P[J.P.length - 1][7] = 2;
+  }
   function planPick(T, Lo, race, rc, o, gi, pcs) {
     const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, hs = p.hs, out = p.hd, mouth = sd * (wd - 1.4);
     const J = newJob(race, rc, o, KJ.pick, null, sd, gi, -1, 0);
     J.n = 2;
-    ph(J, M.WAIT, 2 + 2 * rnd(race, o.id, 38), hs, out);
+    ph(J, M.WAIT, 0.5 + 0.5 * rnd(race, o.id, 38), hs, out);
     go(T, J, M.GO, MV.run, 0, hs, out, gs, mouth);
-    let s = gs, d = mouth;
     const L = pcs.slice().sort((a, b) => T.deltaS(gs, a[1]) - T.deltaS(gs, b[1]));
-    for (const q of L) { go(T, J, M.GO, MV.run, 0, s, d, q[1], q[2]); ph(J, M.WORK, 1.5 + rnd(race, q[0], 39), q[1], q[2], null, null, q[0]); s = q[1]; d = q[2]; }
+    if (L.length > 1 && Math.abs(T.deltaS(gs, L[L.length - 1][1])) < Math.abs(T.deltaS(gs, L[0][1]))) L.reverse();   // (from the end nearer the gap)
+    const miss = [];
+    if (L.length >= PICK_MN) for (const q of L) if (miss.length < PICK_MISS && q[3] === 1 && rnd(race, q[0], 42) < PICK_P) miss.push(q[0]);
+    let s = gs, d = mouth;
+    const P1 = L.filter(q => !miss.includes(q[0]));
+    if (P1.length && Math.abs(T.deltaS(gs, P1[0][1])) > 6) { const e = pickEdge(T, P1[0][1], sd); edgeLeg(T, J, gs, mouth, P1[0][1], e); s = P1[0][1]; d = e; }   // (along the edge / barrier to beside the first piece)
+    for (const q of P1) { go(T, J, M.GO, MV.run, 0, s, d, q[1], q[2]); ph(J, M.WORK, PICK_W * (0.8 + 0.4 * rnd(race, q[0], 39)), q[1], q[2], null, null, q[0]); s = q[1]; d = q[2]; }
+    if (Math.abs(T.deltaS(s, gs)) > 6) {   // (straight off the asphalt on the gap's side, then along the edge back to the gap: the sortie ends sooner)
+      const e = pickEdge(T, s, sd);
+      go(T, J, M.GO, MV.run, 0, s, d, s, e); edgeLeg(T, J, s, e, gs, pickEdge(T, gs, sd)); s = gs; d = J.P[J.P.length - 1][4];
+    }
     go(T, J, M.GO, MV.run, 0, s, d, gs, mouth);
     go(T, J, M.GO, MV.run, 0, gs, mouth, hs, out);
     J.ci = J.P.length - 1;
+    if (miss.length) J.miss = miss;
     return J;
   }
   // the sweeper: the service road to the gap before the pieces, over them in the race direction (each cleared as it
@@ -8939,9 +9030,10 @@ const RaceControl = (() => {
   // GAP_T s (gapT: a car slow in the SC queue doesn't count; a VSC doesn't help); out, a car that would come before they are off
   // again (+ 1 s): back to where they stepped on (not once the car is being moved: they finish), wait, return. The job's end /
   // clear-up (the incident's flags / VSC / SC) and its crew's next job move with it.
-  const GAP_T = 7, ASF_M = 1.5, CARM = [M.CARRY, M.HOOK, M.TOW, M.LIFT];
+  // (user 2026-10-25, one trip: the marshals collecting debris wait for a gap their whole sortie fits in + 1 s, GAP_T .. GAP_MAX s)
+  const GAP_T = 7, GAP_MAX = 14, ASF_M = 1.5, CARM = [M.CARRY, M.HOOK, M.TOW, M.LIFT];
   function onAsph(T, q) {
-    if (q[5] === M.ROAD || q[7]) return false;   // (q[7]: a wait for a gap, off the asphalt)
+    if (q[5] === M.ROAD || q[7]) return false;   // (q[7]: 1 a wait for a gap, 2 a debris job's leg along the edge / barrier; off the asphalt)
     for (let k = 0; k <= 4; k++) { const u = k / 4, s = q[1] + T.deltaS(q[1], q[3]) * u, d = q[2] + (q[4] - q[2]) * u; if (Math.abs(d) < T.halfW[T.idxAt(s)] + ASF_M) return true; }
     return false;
   }
@@ -8977,7 +9069,9 @@ const RaceControl = (() => {
     if (!J.oa || J.oaN !== J.P.length) { J.oa = J.P.map(q => onAsph(T, q)); J.oaN = J.P.length; if (J.hw == null) J.hw = -1; if (J.ok == null) J.ok = -1; }
     if (J.hw >= 0) {   // waiting for a gap
       const S = sortie(T, J, J.hw + 1);
-      if (J.hw + 1 < J.P.length && gapT(G, rc, T, S[0], S[1]) >= GAP_T) { J.P[J.hw][0] = Math.max(0, t - startOf(J, J.hw)); J.ok = J.hw + 1; J.hw = -1; rc.rev++; }
+      let need = GAP_T;
+      if (J.k === KJ.pick) { need = 1; for (let k = J.hw + 1; k <= S[2] && k < J.P.length; k++) need += J.P[k][0]; need = clamp(need, GAP_T, GAP_MAX); }   // (debris: the whole sortie in one go, + 1 s)
+      if (J.hw + 1 < J.P.length && gapT(G, rc, T, S[0], S[1]) >= need) { J.P[J.hw][0] = Math.max(0, t - startOf(J, J.hw)); J.ok = J.hw + 1; J.hw = -1; rc.rev++; }
       else J.P[J.hw][0] = t - startOf(J, J.hw) + 0.05;
       restamp(race, rc, J);
       return;
@@ -9012,6 +9106,11 @@ const RaceControl = (() => {
     restamp(race, rc, J);
     rc.log.push([+t.toFixed(2), 'gapBack', J.k, J.id]);
   }
+  function missed(race, ids) {
+    const D = race.debris, life = typeof Damage !== 'undefined' && Damage.DEBRIS ? Damage.DEBRIS.life : 600;
+    if (!D) return;
+    for (const p of D) if (ids.includes(p.id) && p.sh > 0) { p.sh = 0; p.t = race.t - Math.max(0, life - PICK_SW); race.debrisRev = (race.debrisRev | 0) + 1; }
+  }
   function jobsStep(G, race, rc) {
     const T = G.track, t = race.t;
     for (let j = rc.jobs.length - 1; j >= 0; j--) {
@@ -9020,6 +9119,7 @@ const RaceControl = (() => {
       gapStep(G, race, rc, T, J, t);
       phaseAt(J, t, _ph);
       while (J.pk + 1 < Math.min(_ph.i, J.P.length)) { const q = J.P[++J.pk]; if (q[6] && typeof Damage !== 'undefined' && Damage.clearDebris) { const id = q[6]; Damage.clearDebris(race, p => p.id === id); } }
+      if (J.miss && _ph.i >= J.ci) { missed(race, J.miss); J.miss = null; }   // (the pieces they missed: harmless now, swept later)
       if (J.car >= 0 && J.parked !== 2) {
         const c = G.cars.find(x => x.id === J.car);
         if (c) { carAt(T, J, _ph.i, _ph.u, _cp); if (_cp.k) { placeCar(T, c, _cp); if (_cp.k === 2 && (J.k !== KJ.tow || _ph.i > J.ci + 1)) { J.parked = 2; c.kinematic = true; c.rcLift = 0; } } }
@@ -10538,7 +10638,7 @@ const RaceControl = (() => {
   function panelState(rc, post) {
     const f = rc ? rc.zf[post.zone] : 0;
     if (rc && (rc.rf === 1 || rc.rf === 2 || rc.qr)) return 8;
-    return f & YY ? 2 : f & Y ? 1 : rc && (rc.sp === 1 || rc.sp === 2) ? 7 : rc && rc.vs ? 6 : f & SLIP ? 3 : f & WHITE ? 4 : f & GREEN ? 5 : 0;
+    return f & YY ? 2 : f & Y ? 1 : rc && (rc.sp === 1 || rc.sp === 2 || scHeld(rc)) ? 7 : rc && rc.vs ? 6 : f & SLIP ? 3 : f & WHITE ? 4 : f & GREEN ? 5 : 0;
   }
 
   // ---------- phase 5: the red flag ----------
@@ -11122,7 +11222,7 @@ const RaceControl = (() => {
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar,
-    bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet };
+    bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral };
 })();
 
 ;
@@ -12002,7 +12102,7 @@ const AI = (() => {
   // X_PACE_T: the pace in a pack - lap 1, a car alongside, or one within PK_DS m setting the follow limit (b.xT): those solo
   // paces hit walls in the lap-1 pack (ai_sim 0.1-0.4 a car at harbour / kettle / mexico / montreal), ULTRA's old U_PACE
   // (race-validated) did not)
-  const X_PACE = { vortex: 1.05, harbour: 1.10, kotori: 1.06, mirage: 1.08, serrano: 1.02, leman: 1.12, dorado: 1.06, kettle: 1.10, sepang: 1.01, montreal: 1.14, albertpark: 1.14, bahrain: 1.06, jeddah: 1.01, mexico: 1.08, singapore: 1.02, silverstone: 1.08, monaco: 1.03, lasvegas: 1.0 };
+  const X_PACE = { vortex: 1.05, harbour: 1.10, kotori: 1.06, mirage: 1.08, serrano: 1.02, leman: 1.12, dorado: 1.06, kettle: 1.10, sepang: 1.01, montreal: 1.14, albertpark: 1.14, bahrain: 1.06, jeddah: 1.01, mexico: 1.08, singapore: 1.02, silverstone: 1.08, monaco: 1.03, lasvegas: 1.10 };   // (lasvegas 1.0 -> 1.10, 2026-10-26: the T5 exit line (tracks_data lineKeep) now holds clean to 1.14; ai_pace_k --sweep: quickest 1.12)
   const X_PACE_T = { vortex: 1.04, harbour: 1.04, kotori: 1.05, mirage: 1.04, serrano: 1.02, leman: 1.04, dorado: 1.03, kettle: 1.03, sepang: 1.01, montreal: 1.05, albertpark: 1.04, bahrain: 1.03, jeddah: 1.01, mexico: 1.03, singapore: 1.02, silverstone: 1.08, monaco: 1.0, lasvegas: 1.0 };
   const PK_DS = 50;
   // ---------- brain ----------

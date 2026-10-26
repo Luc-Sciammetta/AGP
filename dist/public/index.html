@@ -55345,6 +55345,13 @@ const CFG = {
     baseUse: 0.45,        // wear-rate factor = (baseUse + loadUse * tyreUsage^2 + lockups/spin/off-track) / usageNorm
     loadUse: 1.0,
     usageNorm: 0.8,       // calibrated so an average lap \u2248 1.0
+    // (2026-10-25, the user: far less wear under the SC / VSC and when driving slowly, scaled by how hard the tyre is worked;
+    // racing unchanged) physics x f(q): q = the car's speed / the reference speed (an effT s average) over its own racing pace
+    // (that average in green-flag running out of the pit lane, rising over effUp s, falling over effDn s: a short slow spell keeps
+    // it). Green: f = gLo + (1 - gLo) x clamp((q - g0) / (g1 - g0))^gP (racing: 1); under a VSC / SC / red flag: nLo + (1 - nLo)
+    // x clamp((q - n0) / (n1 - n0))^nP (a car catching up at racing pace wears as racing). Measured (vortex, 10 AI cars, an SC and
+    // a VSC, wear per km against the green laps): racing x0.999, SC 25 % (was 95 %), VSC 22 % (was 90 %); HANDOFF 2026-10-25
+    pace: { effT: 8, effUp: 20, effDn: 120, gLo: 0.25, g0: 0.5, g1: 0.8, gP: 1.5, nLo: 0.2, n0: 0.85, n1: 1.1, nP: 2 },
   },
 
   // AI tyre strategy (Race: planOptions / choosePlan). Every plan of up to 3 stops (4 only if nothing shorter covers the
@@ -55775,12 +55782,15 @@ CFG.grass = {
 // after each SC / red-flag restart. w: the pick of the car (x weights): battle (a car within ~35 m), cold (lap 1, an out-lap,
 // an SC restart), worn (past 75 % of the cliff), slide (x the wrong tyres' wet slide). quali: Q1-Q3 offs on AI push laps (x
 // MK.qRate per km; Normal / High only, none at Low / Off).
+// (2026-10-25, the user: "AI cars should crash less on Normal", about half the self-made crashes: crash [0.6, 0.6] -> [0.3, 0.3],
+// spin [0.8, 3] -> [0.4, 1.5] (a spin / off ends a race too: ~half the 'Accident' retirements came from it); Low / High follow
+// (x levels); Extreme left as it was: diff.extreme 0.8 -> 1.6. Measured: HANDOFF "AI crashes on Normal, 2026-10-25")
 CFG.aiCrash = {
-  crash: [0.6, 0.6],
-  spin: [0.8, 3],
+  crash: [0.3, 0.3],
+  spin: [0.4, 1.5],
   levels: { off: 0, low: 0.5, normal: 1, high: 2 },
   ref: 9, fieldExp: 0.5,
-  diff: { easy: 1.25, medium: 1, adaptive: 1, hard: 0.9, extreme: 0.8 },
+  diff: { easy: 1.25, medium: 1, adaptive: 1, hard: 0.9, extreme: 1.6 },   // (extreme 1.6 on the halved table = its old 0.8, 2026-10-25)
   wet: 1.5,
   hot: { lap1: 0.45, restart: 0.25, laps: 2 },
   w: { battle: 1.8, cold: 1.6, worn: 1.5, slide: 2 },
@@ -58004,8 +58014,22 @@ const TRACK_DATA = {
     turns: [[30,3.707],[35,0.273],[43,2.75],[51,1.82],[57,2.201],[62,72.939],[68,0.223],[72,0.23],[80,2.005],[86,102.962],[92,7.823],[100,0.105],[124,104.958],[10,0.207],[14,0.215],[18,0.975],[24,6.496]],   // T1-T17 at the FIA 2024 circuit map's labels (registered onto the OSM lap); T6-T10 / T14-T16 at the designed arcs
     // the planned widths (plan/README.md: 12.5 m round the Sphere - 16 m on the Strip), one width per straight
     widthProfile: [[0,15],[494.4,15],[574.4,14],[1503.3,14],[1529.3,13],[1783.3,13],[1863.3,12.5],[2157.2,12.5],[2209.2,14],[3165,14],[3195,16],[5110.7,16],[5154.7,14],[5956.6,14],[6008.6,15],[6223,15]],
-    zones: [{ s0: 646, s1: 1396 }, { s0: 3325, s1: 5019 }, { s0: 5302, s1: 109 }],   // Straight mode (2026 default, plan): T4-T5, T12-T13, T13-T14, T16-T17, T17-T1
-    detect: 3875,   // Overtake detection: the FIA 2024 DRS detection 2 (T12 + 710 m)
+    // (the Strip zone opens ON the sector 3 line, s 3305: one line on the asphalt, was 20 m past it - the user, 2026-10-25)
+    zones: [{ s0: 646, s1: 1396 }, { s0: 3305, s1: 5019 }, { s0: 5302, s1: 109 }],   // Straight mode (2026 default, plan): T4-T5, T12-T13, T13-T14, T16-T17, T17-T1
+    // Overtake detection at the entry to T14, the last braking corner (the final T14-T17 sequence; the game arms Overtake there and opens
+    // it at the line). The FIA's 2026 Las Vegas notes are not out (2026-10-25); 2026 practice so far puts the point at the entry to
+    // the final corner complex (Montreal 'Entry T13', Melbourne before T13, Monaco before Rascasse). Was 3875 (the 2023-25 DRS
+    // detection 2, T12 + 710 m, mid-Strip)
+    detect: 5110,
+    // race-line hints (track.js lineDelta, from tools/line_opt.mjs on this lap, 2026-10-25): offsets to the solved line where it was
+    // clearly slower than a min-time line on the game's speed model (-0.60 s a lap: T5 -0.04, T6-T9 -0.28 (the T6 kink, a tighter T7
+    // entry), T10-T12 -0.22 (a deeper T12 apex), T14-T16 -0.06)
+    lineDelta: [[1350,1700,20,[0,0,0,0,0,0,0.13,0.63,-0.25,-0.25,-0.25,0,0,0,0,0,0,0,0]],[1750,2300,20,[0,0,-0.25,-1.5,-0.37,0,0,-0.5,-1.12,-1,0.25,0,0.5,-0.12,0,0.13,0,0,0.88,0,0,0,0,-0.12,0,0,0,0]],
+      [2550,3300,20,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.13,0,0,0,0.13,0,0,0.25,0,0,0,-0.12,-0.25,0.38,-0.5,-0.12,-0.12,0,0,0,0]],[5000,5450,20,[0,0,0,-0.12,-0.5,-0.5,0,0,0.25,0.25,0.13,0.63,-0.12,-0.12,0,0,0,0,0,0,0,0,0]]],
+    // the solver keeps the line (track.js lineKeep, 2026-10-26): off the pit-exit merge (the lane joins the track's left edge at s 281,
+    // its cars at d -5.8; the line swung back there to d -5.7 for T3: now d >= -2.5, >= 3.3 m clear; 0.06 s a lap on the speed model,
+    // ~0.1 s for the Extreme AI), and T5's track-out 3.2 m in from the left edge (it ran wide into the wall there above pace 1.0)
+    lineKeep: [[275, 410, -2.5, 7.5], [1540, 1580, -3.3, 7.5]],
     sectors: [1593,3305],   // FIA 2024: S1 90 m after T5, S2 140 m after T12
     pit: {side: -1, entry: 5985.1, exit: 281, laneHalfW: 3.5, wallGap: 2, boxSpacing: 12, laneCenterD: 13.6, limiterIn: 90, limiterOut: 60, speedLimit: 80, boxTurn: 12, path: [[5990.1, 5.78], [5995.1, 5.82], [6000.1, 5.92], [6005.1, 6.09], [6010.1, 6.34], [6015.1, 6.68], [6020.1, 7.1], [6025.1, 7.59], [6030.1, 8.15], [6035.1, 8.75], [6040.1, 9.37], [6045.1, 10.01], [6050.1, 10.64], [6055.1, 11.24], [6060.1, 11.79], [6065.1, 12.28], [6070.1, 12.7], [6075.1, 13.04], [6080.1, 13.29], [6085.1, 13.46], [6090.1, 13.56], [6095.1, 13.59], [6100, 13.6], [190, 13.6], [205.2, 15], [219.2, 16.8], [239.2, 15.6], [256, 13.5]]},
     // OpenTopoData ned10m (USGS 3DEP 1/3 arc-second) along the lap, the plan's smoothed profile (628.6-644.6 m: 16 m range)
@@ -58493,6 +58517,16 @@ const buildTrack = (() => {
       lo[i] = -(halfW[i] - margin) - (kerbL[i] ? kerbUse : 0);
       hi[i] = (halfW[i] - margin) + (kerbR[i] ? kerbUse : 0);
     }
+    // optional data.lineKeep [[s0, s1, lo, hi], ...]: the solver keeps the line within d [lo, hi] from s0 to s1 (15 m ramps), e.g.
+    // off a pit-exit merge (Las Vegas); tools/line_opt.mjs --bound takes the same windows
+    for (const kp of (Array.isArray(data.lineKeep) ? data.lineKeep : [])) {
+      const a = +kp[0], b = +kp[1], kl = +kp[2], kh = +kp[3];
+      for (let s = a - 15; s <= b + 15; s += step) {
+        const i = ((Math.round(s / step) % N) + N) % N, w = s < a ? (s - a + 15) / 15 : s > b ? (b + 15 - s) / 15 : 1;
+        const L = -(halfW[i] - margin), H = halfW[i] - margin;
+        lo[i] = Math.max(lo[i], L + (kl - L) * w); hi[i] = Math.min(hi[i], H + (kh - H) * w);
+      }
+    }
     // optional data.raceLineFrom (at-spec or s): the sample the solver's lattice and sweeps start from (default the line).
     // tools/shift_line.mjs sets it to the old line when it moves a circuit's line, so the racing line stays exactly as it was
     let dl;
@@ -58504,6 +58538,19 @@ const buildTrack = (() => {
     } else dl = racingLine(N, px, pz, nx, nz, lo, hi, data.lineIters || 45);
     dl = blur(dl, 2, 2);
     for (let i = 0; i < N; i++) dl[i] = clamp(dl[i], lo[i], hi[i]);
+    // optional data.lineDelta [[s0, s1, cp, [c0 .. cn]], ...] (race-line hints): offsets added to the solved line from s0 to s1 (s1 may
+    // pass the lap's end), control points every ~cp m (n = round((s1 - s0) / cp), c0 = cn = 0), smoothstep between them; the result
+    // stays within [lo, hi] (or the solved line where that lies outside). Where this min-curvature line is clearly slower than a
+    // min-time one: tools/line_opt.mjs searches the offsets on this same lap-time model and prints them (relative to the solved
+    // line: re-run it when a circuit's centre line, widths or kerbs change)
+    for (const h of (Array.isArray(data.lineDelta) ? data.lineDelta : [])) {
+      const i0 = Math.round(+h[0] / step), i1 = Math.round(+h[1] / step), c = h[3] || [], nc = c.length - 1;
+      if (!(i1 > i0 && nc >= 1)) continue;
+      for (let i = i0; i <= i1; i++) {
+        const u = (i - i0) / (i1 - i0) * nc, k = Math.min(nc - 1, Math.floor(u)), f = u - k, w = f * f * (3 - 2 * f), j = ((i % N) + N) % N;
+        dl[j] = clamp(dl[j] + c[k] * (1 - w) + c[k + 1] * w, Math.min(dl[j], lo[j]), Math.max(dl[j], hi[j]));
+      }
+    }
     const raceLine = Float32Array.from(dl);
     const qx = new Float64Array(N), qz = new Float64Array(N);
     for (let i = 0; i < N; i++) { qx[i] = px[i] + dl[i] * nx[i]; qz[i] = pz[i] + dl[i] * nz[i]; }
@@ -61917,7 +61964,19 @@ const Physics = (() => {
       const use = 0.5 * (uF * uF + uR * uR);
       const dryK = comp.dryWear ? U.lerp(comp.dryWear, 1, Math.min(1, wet * 2)) : 1;
       const k = dryK * (CFG.tyre.baseUse + CFG.tyre.loadUse * use + 2.0 * (lockF + lockR + spinR) + 0.5 * (offF + offR)) / CFG.tyre.usageNorm;
-      car.tyre.wear = Math.min(1, car.tyre.wear + wpm / comp.life * k * speed * dt);
+      // how hard the car runs against its own racing pace (CFG.tyre.pace, user 2026-10-25): far less wear under the VSC / SC / red
+      // flag and when driving slowly; racing unchanged. car._wq: speed / reference speed (effT s average), car._wr: its green-flag pace
+      const PC = CFG.tyre.pace, vr = PC && track.raceSpeed ? track.raceSpeed[car.idx >= 0 ? car.idx : 0] : 0;
+      let pf = 1;
+      if (vr > 0) {
+        const rc = world.race && world.race.rc, neu = !!(rc && rc.on && (rc.vs || rc.sp || rc.rf)), r = speed / Math.max(8, vr);
+        car._wq = car._wq == null ? r : car._wq + (r - car._wq) * Math.min(1, dt / PC.effT);
+        if (!neu && !car.inPitLane) car._wr = car._wr == null ? car._wq : car._wr + (car._wq - car._wr) * Math.min(1, dt / (car._wq > car._wr ? PC.effUp : PC.effDn));
+        const q = car._wr > 0.05 ? car._wq / car._wr : 1;
+        pf = neu ? PC.nLo + (1 - PC.nLo) * Math.pow(clamp((q - PC.n0) / (PC.n1 - PC.n0), 0, 1), PC.nP)
+          : PC.gLo + (1 - PC.gLo) * Math.pow(clamp((q - PC.g0) / (PC.g1 - PC.g0), 0, 1), PC.gP);
+      }
+      car.tyre.wear = Math.min(1, car.tyre.wear + wpm / comp.life * k * pf * speed * dt);
     }
 
     // --- gearbox / revs
@@ -62871,8 +62930,8 @@ const Damage = (() => {
 // in Node tests and on the multiplayer server (the server decides, clients only draw: pack / unpack).
 // Built so far (phases 0-2): marshal zones (~200-350 m, boundaries on straights), corner names, marshal posts (light
 // panels, 30-60 a track, each with a gap in the wall), SC lines 1 / 2 + the SC deploy point, settings, an incident scan
-// (cars off / spun / stopped / slow / retired, debris) with escalation (severity + modelled clear-up time -> wanted level,
-// steps up, never drops mid-period), zone flags (yellow, double yellow, white, slippery, green), overtaking under yellow
+// (cars off / spun / stopped / slow / retired, debris), each incident's level set when it starts (severity + modelled clear-up
+// time -> wanted level; no escalation: a running VSC never becomes an SC, an SC never a red flag - user 2026-10-25), zone flags (yellow, double yellow, white, slippery, green), overtaking under yellow
 // allowed (user 2026-10-18; none under the VSC / SC), slowing under double yellow (AI ~80 %; humans: a warning, then 5 s), events for the
 // HUD / engineer / renderers. Phase 2: marshals, tractors (permanent circuits), crane trucks (street circuits) and a
 // sweeper, parked at depots behind the wall; a job queue (rc.jobs: each job a timeline of phases with modelled times, the
@@ -62915,7 +62974,8 @@ const RaceControl = (() => {
   const POST_MAX = 135, POST_MIN = 70, GAP_W = 5, GAP_OFF = 6, DEP_GAP = 800, ROAD = 4.5;
   // a post: POST_OUT m behind the barrier, then out by POST_EX m / along by POST_DS m until clear of every run-off
   const POST_OUT = 1.2, POST_EX = [0, 1, 2.5, 5, 8, 12, 18, 25], POST_DS = [0, 3, -3, 6, -6, 10, -10, 15, -15];
-  const MV = { run: 4.5, push: 2.0, road: 11, off: 6, tow: 4, crane: 9, sweep: 4, sweepRoad: 15 };
+  // (user 2026-10-25, faster marshal work: was run 4.5, push 2.0, road 11, off 6, tow 4, crane 9, sweep 4, sweepRoad 15)
+  const MV = { run: 6, push: 2.6, road: 14, off: 7.5, tow: 5, crane: 11, sweep: 5, sweepRoad: 17 };
   const M = { WAIT: 0, GO: 1, WORK: 2, CARRY: 3, ROAD: 4, TOW: 5, LIFT: 6, HOOK: 7 };
   const KJ = { push: 0, tow: 1, lift: 2, pick: 3, sweep: 4, fix: 5 };
   const PASS_SLOW = 0.6, PASS_VSC = 0.45; // a car below this share of the reference speed may be passed under yellow / the VSC (it has a problem)
@@ -63576,7 +63636,7 @@ const RaceControl = (() => {
         if (Math.abs(q.d) > hw + 0.5) continue;
         const z = zoneAt(Lo, q.s);
         on[z] = (on[z] | 0) + 1;
-        (pz[z] || (pz[z] = [])).push([p.id, q.s, q.d]);
+        (pz[z] || (pz[z] = [])).push([p.id, q.s, q.d, p.k]);
         const u = q.d / Math.max(1, hw);   // (across the track: -1 .. 1)
         dlo[z] = Math.min(dlo[z] == null ? 9 : dlo[z], u); dhi[z] = Math.max(dhi[z] == null ? -9 : dhi[z], u);
         if (Math.abs(q.d - T.raceLine[q.idx]) < 2.2) line[z] = (line[z] | 0) + 1;
@@ -63594,11 +63654,9 @@ const RaceControl = (() => {
           o = { id: ++rc.seq, car: null, kind: 'debris', zone: z, s: zs.s0 + zs.len / 2, d: 0, lvl, want, why: W.debris, white: false, slip: true, t0: t, until: null, est: 0 };
           rc.inc.push(o);
         }
-        if (lvl > o.lvl) o.lvl = lvl;
-        if (want > o.want) o.want = want;
-        if (field) o.why = W.field;
+        if (t - o.t0 < LV_SET) { if (lvl > o.lvl) o.lvl = lvl; if (want > o.want) o.want = want; if (field) o.why = W.field; }   // (its level set as it starts: no escalation later, user 2026-10-25)
         o.seen = t; o.until = null; o.sx = 0; for (const q of pz[z]) o.sx = Math.max(o.sx, T.deltaS(Lo.zones[z].s0, q[1]));   // (sx: the farthest piece from the zone's start - the double yellow's scope)
-        if (!jobOf(rc, o.id) && !o.noJob) {   // (marshals / the sweeper; again while pieces are left after a job)
+        if (!jobOf(rc, o.id) && !o.noJob && t - o.t0 >= LV_SET) {   // (marshals / the sweeper, once its pieces have landed (LV_SET s): one trip; again while pieces are left after a job)
           const J = debrisJob(G, race, rc, Lo, o, pz[z]);
           if (J) { o.est = J.clr - o.t0; o.clr = J.clr; } else { o.noJob = 1; o.est = (lvl === LV.yy ? 30 + 60 * rnd(race, o.id, 7) : 20 + 10 * rnd(race, o.id, 7)); }
         }
@@ -63625,7 +63683,10 @@ const RaceControl = (() => {
       }
       if (o.until != null && t >= o.until) { rc.inc.splice(j, 1); if (o.car && rc.cs[o.car.id]) rc.cs[o.car.id].ic = 0; }
     }
-    // 4. race level: steps up, never down while its incidents last; 3+ stranded cars (not those recovered well clear under a double yellow) = red; never red in the last ~lap
+    // 4. race level: the max over the live incidents (it drops only when they have all ended); 3+ stranded cars (not those recovered
+    // well clear under a double yellow) = red; never red in the last ~lap. No escalation (user 2026-10-25): once a VSC / SC is out the
+    // level never goes above it (neutral(): a new incident runs under it), so a VSC never becomes an SC, an SC never a red flag; an
+    // incident from green goes straight to its level (the deployment delay picks the highest one decided meanwhile)
     let want = 0, ww = 0, out = 0, wo = null;
     for (const o of rc.inc) { const ow = o.cap != null && o.want > o.cap ? o.cap : o.want; if (o.kind === 'retired' && !(o.est > 0 && ow <= LV.yy)) out++; if (ow > want) { want = ow; ww = o.why; wo = o; } }   // (o.cap: dev tools' end, endStep)
     if (pileUp(G, rc)) { want = LV.red; ww = W.pile; wo = null; }   // (user 2026-10-20: a real 3+ car crash, wherever the cars sit)
@@ -63647,6 +63708,8 @@ const RaceControl = (() => {
     if (want === LV.red && left <= 1) want = LV.yy;   // (user: no red flag in the last ~lap - the race finishes under (double) yellows)
     if (rc.scCap) { if (want >= LV.sc && want < LV.red) want = LV.vsc; else if (want < LV.sc) rc.scCap = 0; }   // (a short race's SC is in after ~1 lap: a VSC for the rest of its incident)
     want = effLevel(want, cfg);   // (the max over the live incidents: it drops only once every incident behind it has ended)
+    const nl = neutral(rc);
+    if (nl && want > nl && ww !== W.rain) want = nl;   // (no escalation; the rain's red flag is the weather, not an incident)
     if (want !== rc.want) {
       rc.want = want; rc.wantWhy = ww;
       rc.wantZ = wo && ww === wo.why ? wo.zone : -1; rc.wantC = wo && ww === wo.why ? (wo.car ? wo.car.id : wo.by != null ? wo.by : -1) : -1;   // (the incident behind it: the engineer's why)
@@ -63659,8 +63722,13 @@ const RaceControl = (() => {
     vscLevel(G, race, rc, Lo, H);
     flags(G, race, rc, Lo, H);
   }
-  // (user 2026-10-19) a VSC / SC / red flag is deployed DEP_T..+DEP_R s after it is decided (seeded per decision, rc.dpN;
-  // a VSC -> SC escalation waits its own delay); meanwhile the local flags (rc.lvl at most double yellow). A drop, or a level
+  // the neutralisation out now (its level: no incident takes the race above it, user 2026-10-25) | 0: the SC (out, the restart),
+  // the VSC (and VSC ENDING), the SC's hold (scH: the VSC delta until the SC can come out ahead of the leader, shown as the SC)
+  function neutral(rc) { return rc.sp ? LV.sc : rc.vs ? (rc.vs === 1 && rc.scH ? LV.sc : LV.vsc) : 0; }
+  // the SC called, held (a client too: rc.want is packed): the field on the delta until the SC can come out ahead of the leader
+  function scHeld(rc) { return !!rc && rc.vs === 1 && !rc.sp && rc.want >= LV.sc; }
+  // (user 2026-10-19) a VSC / SC / red flag is deployed DEP_T..+DEP_R s after it is decided (seeded per decision, rc.dpN);
+  // meanwhile the local flags (rc.lvl at most double yellow). A drop, or a level
   // with its own timing (now: rain, qualifying's stranded car), at once. The deployment (vsc / scLevel, red) brings the banner
   // and the engineer's call.
   function deploy(race, rc, tg, now, t) {
@@ -63683,7 +63751,7 @@ const RaceControl = (() => {
   // (2026-10-24, fewer AI crashes: a crash that stops within ~10 m of the edge - a gravel trap, a near barrier - brings the SC,
   // a VSC further out to 25 m, beyond it a double yellow; was [2.5, 11.5, 0.5] / [1, 8.5, 1]: 2 of 3 crashes on permanent
   // circuits stopped > 8.5 m out, double yellow only, the rest mostly VSCs. [3] = barFar's distance, as before)
-  const ESC = { street: [6, 15, 0.5, 11.5], perm: [10, 25, 1, 8.5] }, DEB_V = 2;   // (DEB_V: sharp pieces on the line for a VSC)
+  const ESC = { street: [6, 15, 0.5, 11.5], perm: [10, 25, 1, 8.5] }, DEB_V = 2, LV_SET = 2;   // (LV_SET: s a debris incident's level may still rise after it starts - its pieces landing)   // (DEB_V: sharp pieces on the line for a VSC)
   // (user 2026-10-20) the red flag: a heavy debris field (DEB_RED+ sharp pieces on the asphalt in a zone, spread across >= DEB_SPAN
   // of the track's width either side of its middle); a pile-up - PILE_N+ cars retired within PILE_T s and PILE_S m of each other
   // (one incident; wherever they stopped, the 'well clear' rule of 2026-10-19 not applied)
@@ -63814,12 +63882,12 @@ const RaceControl = (() => {
     const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, hs = p.hs, out = p.hd, mouth = sd * (wd - 1.4), beh = sd * (p.cd != null ? p.cd : wd + 3.4), r = rnd(race, o.id, 31), r2 = rnd(race, o.id, 32);
     const J = newJob(race, rc, o, KJ.push, c, sd, gi, -1, c.h), cs = c.s, cd = c.d || 0;
     J.n = 4; J.hf = nearH(c.h, Math.atan2(sd * T.nz[T.idxAt(gs)], sd * T.nx[T.idxAt(gs)]));
-    ph(J, M.WAIT, 3 + 3 * r, hs, out);
+    ph(J, M.WAIT, 1.5 + 1.5 * r, hs, out);   // (2026-10-25 faster: was 3-6 s ready, 6-12 s at the car, 6 s through the gap)
     go(T, J, M.GO, MV.run, 0, hs, out, gs, mouth);
     go(T, J, M.GO, MV.run, 0, gs, mouth, cs, cd);
-    ph(J, M.WORK, 6 + 6 * r2, cs, cd);
-    go(T, J, M.CARRY, MV.push, 2, cs, cd, gs, mouth);
-    ph(J, M.CARRY, 6, gs, mouth, gs, beh);
+    ph(J, M.WORK, 3 + 3 * r2, cs, cd);
+    go(T, J, M.CARRY, MV.push, 1.5, cs, cd, gs, mouth);
+    ph(J, M.CARRY, 4, gs, mouth, gs, beh);
     go(T, J, M.GO, MV.run, 1, gs, beh, hs, out);
     J.ci = J.P.length - 1;
     return J;
@@ -63833,14 +63901,14 @@ const RaceControl = (() => {
     J.n = 2; J.vh = headSD(T, gs, mouth, cs, cd, trackH(T, gs));
     let bs = gs, bd = beh;   // (the tractor backs out until the car on its arm (3.6 m ahead) is on the post's car spot)
     if (g.cd != null) { const w = T.toWorld(gs, sd * g.cd), q = T.project(w.x - Math.cos(J.vh) * 3.6, w.z - Math.sin(J.vh) * 3.6, T.idxAt(gs)); bs = q.s; bd = q.d; }
-    ph(J, M.WAIT, 6 + 6 * r, D.s, D.d);
-    if (D.side !== sd) go(T, J, M.GO, MV.off, 3, D.s, D.d, D.s, road);   // (the depot across the track: over it)
-    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, gs)) / MV.road + 2, D.s, ROAD, gs, ROAD);
-    go(T, J, M.GO, MV.off, 3, gs, road, as, ad);
-    ph(J, M.HOOK, 18 + 10 * r2, as, ad);
-    go(T, J, M.TOW, MV.tow, 2, as, ad, bs, bd);
+    ph(J, M.WAIT, 3 + 3 * r, D.s, D.d);   // (2026-10-25 faster: was 6-12 s to start, 18-28 s hooking, 8 s setting down)
+    if (D.side !== sd) go(T, J, M.GO, MV.off, 2, D.s, D.d, D.s, road);   // (the depot across the track: over it)
+    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, gs)) / MV.road + 1.5, D.s, ROAD, gs, ROAD);
+    go(T, J, M.GO, MV.off, 2, gs, road, as, ad);
+    ph(J, M.HOOK, 12 + 6 * r2, as, ad);
+    go(T, J, M.TOW, MV.tow, 1.5, as, ad, bs, bd);
     J.ci = J.P.length - 1;
-    ph(J, M.WORK, 8, bs, bd);
+    ph(J, M.WORK, 5, bs, bd);
     go(T, J, M.GO, MV.off, 0, bs, bd, gs - 12, road);
     ph(J, M.ROAD, Math.abs(T.deltaS(gs - 12, D.s)) / MV.road + 2, gs - 12, ROAD, D.s, ROAD);
     return J;
@@ -63856,29 +63924,52 @@ const RaceControl = (() => {
       if (fpClear(T, w.x, w.z, trackH(T, q), 2.75, 0.98)) { fs = cs + k * away; fd = sd * (wallD(T, q, sd) + 3.4 + ex); break lift; }
     }
     J.n = 2; J.hf = nearH(c.h, trackH(T, fs)); J.fs = fs; J.fd = fd;
-    ph(J, M.WAIT, 6 + 6 * r, D.s, D.d);
-    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, cs)) / MV.crane + 3, D.s, ROAD, cs, ROAD);
-    ph(J, M.WORK, 20 + 10 * r2, cs, sd * (wd + ROAD));
-    ph(J, M.HOOK, 20 + 10 * r3, cs, sd * (wd + ROAD));
-    ph(J, M.LIFT, 22, cs, sd * (wd + ROAD));   // (the crane stands; the car flies J.cs, J.cd -> J.fs, J.fd)
+    ph(J, M.WAIT, 3 + 3 * r, D.s, D.d);   // (2026-10-25 faster: was 6-12 s to start, outriggers 20-30 s, strapping 20-30 s, the lift 22 s, stowing 20 s)
+    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, cs)) / MV.crane + 2, D.s, ROAD, cs, ROAD);
+    ph(J, M.WORK, 12 + 6 * r2, cs, sd * (wd + ROAD));
+    ph(J, M.HOOK, 12 + 6 * r3, cs, sd * (wd + ROAD));
+    ph(J, M.LIFT, 16, cs, sd * (wd + ROAD));   // (the crane stands; the car flies J.cs, J.cd -> J.fs, J.fd)
     J.ci = J.P.length - 1;
-    ph(J, M.WORK, 20, cs, sd * (wd + ROAD));
+    ph(J, M.WORK, 12, cs, sd * (wd + ROAD));
     ph(J, M.ROAD, Math.abs(T.deltaS(cs, D.s)) / MV.crane + 3, cs, ROAD, D.s, ROAD);
     return J;
   }
-  // marshals (n 2) pick the pieces up one by one (1.5-2.5 s each), from the gap nearest them, then back
+  // marshals (n 2) collect the zone's pieces in one trip and carry them back (user 2026-10-25; was one by one, 1.5-2.5 s each, then
+  // back the same way): out through the gap, along the pieces from the nearer end (a scoop of PICK_W s each), off the asphalt
+  // beside the last one, along the verge to the gap, to the post. In a job of PICK_MN+ pieces they may miss up to PICK_MISS
+  // small ones (k 1, a seeded PICK_P chance each, J.miss): left dull (harmless: no puncture, no flag) once the others are
+  // collected and swept later (Damage drops them PICK_SW s on) - no new job, no neutralisation
+  const PICK_W = 0.5, PICK_MN = 3, PICK_MISS = 2, PICK_P = 0.25, PICK_SW = 90, EDGE_K = 0.8;
+  // where the marshals move along the track on the gap's side: just off the asphalt (+ ASF_M), never past the barrier; a leg there whose every point is >= EDGE_K m beyond the asphalt is off the asphalt (q[7] 2: not a sortie, onAsph)
+  const pickEdge = (T, s, sd) => sd * Math.max(0.3, Math.min(T.halfW[T.idxAt(s)] + ASF_M + 0.3, wallD(T, s, sd) - 0.5));
+  function edgeLeg(T, J, s0, d0, s1, d1) {
+    go(T, J, M.GO, MV.run, 0, s0, d0, s1, d1);
+    let ok = true;
+    for (let k = 0; k <= 6 && ok; k++) { const u = k / 6, x = T.wrapS(s0 + T.deltaS(s0, s1) * u), y = d0 + (d1 - d0) * u; if (Math.abs(y) < T.halfW[T.idxAt(x)] + EDGE_K) ok = false; }
+    if (ok) J.P[J.P.length - 1][7] = 2;
+  }
   function planPick(T, Lo, race, rc, o, gi, pcs) {
     const p = Lo.posts[gi], sd = p.side, gs = p.gs, wd = p.gw, hs = p.hs, out = p.hd, mouth = sd * (wd - 1.4);
     const J = newJob(race, rc, o, KJ.pick, null, sd, gi, -1, 0);
     J.n = 2;
-    ph(J, M.WAIT, 2 + 2 * rnd(race, o.id, 38), hs, out);
+    ph(J, M.WAIT, 0.5 + 0.5 * rnd(race, o.id, 38), hs, out);
     go(T, J, M.GO, MV.run, 0, hs, out, gs, mouth);
-    let s = gs, d = mouth;
     const L = pcs.slice().sort((a, b) => T.deltaS(gs, a[1]) - T.deltaS(gs, b[1]));
-    for (const q of L) { go(T, J, M.GO, MV.run, 0, s, d, q[1], q[2]); ph(J, M.WORK, 1.5 + rnd(race, q[0], 39), q[1], q[2], null, null, q[0]); s = q[1]; d = q[2]; }
+    if (L.length > 1 && Math.abs(T.deltaS(gs, L[L.length - 1][1])) < Math.abs(T.deltaS(gs, L[0][1]))) L.reverse();   // (from the end nearer the gap)
+    const miss = [];
+    if (L.length >= PICK_MN) for (const q of L) if (miss.length < PICK_MISS && q[3] === 1 && rnd(race, q[0], 42) < PICK_P) miss.push(q[0]);
+    let s = gs, d = mouth;
+    const P1 = L.filter(q => !miss.includes(q[0]));
+    if (P1.length && Math.abs(T.deltaS(gs, P1[0][1])) > 6) { const e = pickEdge(T, P1[0][1], sd); edgeLeg(T, J, gs, mouth, P1[0][1], e); s = P1[0][1]; d = e; }   // (along the edge / barrier to beside the first piece)
+    for (const q of P1) { go(T, J, M.GO, MV.run, 0, s, d, q[1], q[2]); ph(J, M.WORK, PICK_W * (0.8 + 0.4 * rnd(race, q[0], 39)), q[1], q[2], null, null, q[0]); s = q[1]; d = q[2]; }
+    if (Math.abs(T.deltaS(s, gs)) > 6) {   // (straight off the asphalt on the gap's side, then along the edge back to the gap: the sortie ends sooner)
+      const e = pickEdge(T, s, sd);
+      go(T, J, M.GO, MV.run, 0, s, d, s, e); edgeLeg(T, J, s, e, gs, pickEdge(T, gs, sd)); s = gs; d = J.P[J.P.length - 1][4];
+    }
     go(T, J, M.GO, MV.run, 0, s, d, gs, mouth);
     go(T, J, M.GO, MV.run, 0, gs, mouth, hs, out);
     J.ci = J.P.length - 1;
+    if (miss.length) J.miss = miss;
     return J;
   }
   // the sweeper: the service road to the gap before the pieces, over them in the race direction (each cleared as it
@@ -64004,9 +64095,10 @@ const RaceControl = (() => {
   // GAP_T s (gapT: a car slow in the SC queue doesn't count; a VSC doesn't help); out, a car that would come before they are off
   // again (+ 1 s): back to where they stepped on (not once the car is being moved: they finish), wait, return. The job's end /
   // clear-up (the incident's flags / VSC / SC) and its crew's next job move with it.
-  const GAP_T = 7, ASF_M = 1.5, CARM = [M.CARRY, M.HOOK, M.TOW, M.LIFT];
+  // (user 2026-10-25, one trip: the marshals collecting debris wait for a gap their whole sortie fits in + 1 s, GAP_T .. GAP_MAX s)
+  const GAP_T = 7, GAP_MAX = 14, ASF_M = 1.5, CARM = [M.CARRY, M.HOOK, M.TOW, M.LIFT];
   function onAsph(T, q) {
-    if (q[5] === M.ROAD || q[7]) return false;   // (q[7]: a wait for a gap, off the asphalt)
+    if (q[5] === M.ROAD || q[7]) return false;   // (q[7]: 1 a wait for a gap, 2 a debris job's leg along the edge / barrier; off the asphalt)
     for (let k = 0; k <= 4; k++) { const u = k / 4, s = q[1] + T.deltaS(q[1], q[3]) * u, d = q[2] + (q[4] - q[2]) * u; if (Math.abs(d) < T.halfW[T.idxAt(s)] + ASF_M) return true; }
     return false;
   }
@@ -64042,7 +64134,9 @@ const RaceControl = (() => {
     if (!J.oa || J.oaN !== J.P.length) { J.oa = J.P.map(q => onAsph(T, q)); J.oaN = J.P.length; if (J.hw == null) J.hw = -1; if (J.ok == null) J.ok = -1; }
     if (J.hw >= 0) {   // waiting for a gap
       const S = sortie(T, J, J.hw + 1);
-      if (J.hw + 1 < J.P.length && gapT(G, rc, T, S[0], S[1]) >= GAP_T) { J.P[J.hw][0] = Math.max(0, t - startOf(J, J.hw)); J.ok = J.hw + 1; J.hw = -1; rc.rev++; }
+      let need = GAP_T;
+      if (J.k === KJ.pick) { need = 1; for (let k = J.hw + 1; k <= S[2] && k < J.P.length; k++) need += J.P[k][0]; need = clamp(need, GAP_T, GAP_MAX); }   // (debris: the whole sortie in one go, + 1 s)
+      if (J.hw + 1 < J.P.length && gapT(G, rc, T, S[0], S[1]) >= need) { J.P[J.hw][0] = Math.max(0, t - startOf(J, J.hw)); J.ok = J.hw + 1; J.hw = -1; rc.rev++; }
       else J.P[J.hw][0] = t - startOf(J, J.hw) + 0.05;
       restamp(race, rc, J);
       return;
@@ -64077,6 +64171,11 @@ const RaceControl = (() => {
     restamp(race, rc, J);
     rc.log.push([+t.toFixed(2), 'gapBack', J.k, J.id]);
   }
+  function missed(race, ids) {
+    const D = race.debris, life = typeof Damage !== 'undefined' && Damage.DEBRIS ? Damage.DEBRIS.life : 600;
+    if (!D) return;
+    for (const p of D) if (ids.includes(p.id) && p.sh > 0) { p.sh = 0; p.t = race.t - Math.max(0, life - PICK_SW); race.debrisRev = (race.debrisRev | 0) + 1; }
+  }
   function jobsStep(G, race, rc) {
     const T = G.track, t = race.t;
     for (let j = rc.jobs.length - 1; j >= 0; j--) {
@@ -64085,6 +64184,7 @@ const RaceControl = (() => {
       gapStep(G, race, rc, T, J, t);
       phaseAt(J, t, _ph);
       while (J.pk + 1 < Math.min(_ph.i, J.P.length)) { const q = J.P[++J.pk]; if (q[6] && typeof Damage !== 'undefined' && Damage.clearDebris) { const id = q[6]; Damage.clearDebris(race, p => p.id === id); } }
+      if (J.miss && _ph.i >= J.ci) { missed(race, J.miss); J.miss = null; }   // (the pieces they missed: harmless now, swept later)
       if (J.car >= 0 && J.parked !== 2) {
         const c = G.cars.find(x => x.id === J.car);
         if (c) { carAt(T, J, _ph.i, _ph.u, _cp); if (_cp.k) { placeCar(T, c, _cp); if (_cp.k === 2 && (J.k !== KJ.tow || _ph.i > J.ci + 1)) { J.parked = 2; c.kinematic = true; c.rcLift = 0; } } }
@@ -65603,7 +65703,7 @@ const RaceControl = (() => {
   function panelState(rc, post) {
     const f = rc ? rc.zf[post.zone] : 0;
     if (rc && (rc.rf === 1 || rc.rf === 2 || rc.qr)) return 8;
-    return f & YY ? 2 : f & Y ? 1 : rc && (rc.sp === 1 || rc.sp === 2) ? 7 : rc && rc.vs ? 6 : f & SLIP ? 3 : f & WHITE ? 4 : f & GREEN ? 5 : 0;
+    return f & YY ? 2 : f & Y ? 1 : rc && (rc.sp === 1 || rc.sp === 2 || scHeld(rc)) ? 7 : rc && rc.vs ? 6 : f & SLIP ? 3 : f & WHITE ? 4 : f & GREEN ? 5 : 0;
   }
 
   // ---------- phase 5: the red flag ----------
@@ -66187,7 +66287,7 @@ const RaceControl = (() => {
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar,
-    bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet };
+    bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral };
 })();
 
 
@@ -67067,7 +67167,7 @@ const AI = (() => {
   // X_PACE_T: the pace in a pack - lap 1, a car alongside, or one within PK_DS m setting the follow limit (b.xT): those solo
   // paces hit walls in the lap-1 pack (ai_sim 0.1-0.4 a car at harbour / kettle / mexico / montreal), ULTRA's old U_PACE
   // (race-validated) did not)
-  const X_PACE = { vortex: 1.05, harbour: 1.10, kotori: 1.06, mirage: 1.08, serrano: 1.02, leman: 1.12, dorado: 1.06, kettle: 1.10, sepang: 1.01, montreal: 1.14, albertpark: 1.14, bahrain: 1.06, jeddah: 1.01, mexico: 1.08, singapore: 1.02, silverstone: 1.08, monaco: 1.03, lasvegas: 1.0 };
+  const X_PACE = { vortex: 1.05, harbour: 1.10, kotori: 1.06, mirage: 1.08, serrano: 1.02, leman: 1.12, dorado: 1.06, kettle: 1.10, sepang: 1.01, montreal: 1.14, albertpark: 1.14, bahrain: 1.06, jeddah: 1.01, mexico: 1.08, singapore: 1.02, silverstone: 1.08, monaco: 1.03, lasvegas: 1.10 };   // (lasvegas 1.0 -> 1.10, 2026-10-26: the T5 exit line (tracks_data lineKeep) now holds clean to 1.14; ai_pace_k --sweep: quickest 1.12)
   const X_PACE_T = { vortex: 1.04, harbour: 1.04, kotori: 1.05, mirage: 1.04, serrano: 1.02, leman: 1.04, dorado: 1.03, kettle: 1.03, sepang: 1.01, montreal: 1.05, albertpark: 1.04, bahrain: 1.03, jeddah: 1.01, mexico: 1.03, singapore: 1.02, silverstone: 1.08, monaco: 1.0, lasvegas: 1.0 };
   const PK_DS = 50;
   // ---------- brain ----------
@@ -75988,7 +76088,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-25 11:43';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-26 02:56';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -77513,7 +77613,8 @@ const Engineer = (() => {
       wx: { keys: {}, pend: {}, prevR: null, rival: {} },
       finalSaid: false, finSaid: false,
       // qualifying (a fresh state at the switch to the race: race.t restarts at 0 there, every timer here is on the quali clock)
-      qk: !!(G.race && G.race.phase === 'quali'), ql: { left: {}, r: null },
+      qk: !!(G.race && G.race.phase === 'quali'), ql: { left: {}, r: null }, qp: false, qtr: new Map(),
+      yz: {},   // (yellow zones called on this approach: zone -> the flag level said; flagStep)
     };
     for (const c of cars) if (c && c._race) S.ct.set(c, newCT());
     return S;
@@ -77876,6 +77977,7 @@ const Engineer = (() => {
             () => msg(vary('rc:me3', [['Stay off the racing line, cars coming through.'], ['Keep it off the line, traffic behind.']]), { short: 'STAY OFF THE LINE', sub: 'TRAFFIC COMING' })][k]()) });
           break;
         }
+        if ((f & 3) && yWin(G, P, Lo, e.zone)) break;   // (a yellow / double yellow close ahead: flagStep's approach call says it)
         const slowY = (f & 3) && /SLOW/.test(e.why);   // (a slow car's yellow moves with it: one call per 30 s)
         queue({ key: slowY ? 'rcs' : 'rcf', cat: 'rc', pri: yy ? 0 : 1, verb: f & 3 ? 0 : 1, urgent: true, vis: false, maxAge: 6, cool: slowY ? 30 : yy ? 0 : 6, build: () => {
           if (!lit()) return null;
@@ -77900,7 +78002,13 @@ const Engineer = (() => {
       // the VSC (racecontrol.js): deployed (a box call when a stop is due: it costs about half as much), ending
       case 'rcVsc': {
         if (!P || race.phase !== 'racing' || P.finished || P.dnf) break;
-        if (e.on === 1) {
+        if (e.on === 1 && e.sc) {   // (the SC called but held until it can come out ahead of the leader: the field on the delta - it IS the SC, user 2026-10-25: a VSC never turns into an SC)
+          const mine = e.cid != null && e.cid === P.id, wy = mine ? '' : rcWhy(e);
+          S.vscWhy = wy;
+          queue({ key: 'sc', cat: 'rc', pri: 0, verb: 0, urgent: true, vis: false, maxAge: 6, build: () => (!race.rc || race.rc.vs !== 1 ? null
+            : mine ? msg(vary('rc:scme', [['Safety car, that\'s for your car. Rejoin safely, cars coming.'], ['Safety car for you. Careful, traffic coming, then stay above the delta.']]), { short: 'SAFETY CAR', sub: 'REJOIN SAFELY' })
+            : msg(vary('rc:sc', [['Safety car, safety car', wy, '. Keep the delta positive until it\'s out, no overtaking.'], ['Safety car is out', wy, '. Keep the delta positive, no overtaking.']]), { short: 'SC DEPLOYED', sub: 'KEEP THE DELTA POSITIVE · NO OVERTAKING' })) });
+        } else if (e.on === 1) {
           const mine = e.cid != null && e.cid === P.id, wy = mine ? '' : rcWhy(e), c = callOf();
           S.vscWhy = wy;
           if (!(c && c.reason === 'vsc')) queue({ key: 'vsc', cat: 'rc', pri: 0, verb: 0, urgent: true, vis: false, maxAge: 6, build: () => (!race.rc || race.rc.vs !== 1 ? null
@@ -77937,7 +78045,8 @@ const Engineer = (() => {
         const si = () => RaceControl.scInfo(G, P), up = n => () => !!(race.rc && race.rc.sp === n);
         if (e.red) break;   // (the restart behind the SC after a rain red flag: rcRed said it)
         const mine = e.cid != null && e.cid === P.id, wy = mine ? '' : rcWhy(e);   // (why it came out; the player's own: rejoin lines)
-        if (e.on === 1 && !e.again) {
+        if (e.on === 1 && e.vsc && !e.again) { /* (the SC held until now: announced at the call, rcVsc sc) */ }
+        else if (e.on === 1 && !e.again) {
           const c = callOf();
           S.vscWhy = wy;
           if (!(c && c.reason === 'sc')) queue({ key: 'sc', cat: 'rc', pri: 0, verb: 0, urgent: true, vis: false, maxAge: 6, build: () => (!up(1)() ? null
@@ -78026,6 +78135,54 @@ const Engineer = (() => {
       default: break;
     }
   }
+  // ---------- yellow zones ahead: always a call (user 2026-10-25: a quali lap deleted for a yellow with no warning) ----------
+  // Races and qualifying: a yellow / double yellow zone within Y_SEE s of driving (at least Y_MIN m) or the zone we are in gets
+  // one critical call per approach (again if it goes up to a double yellow); forgotten once we are past it or it clears. Not our
+  // own incident, not in the pit lane. The race's rcFlag event call is left to this inside the window (yWin), so never twice.
+  const Y_SEE = 7, Y_MIN = 400, Y_SLOW = 25;
+  const yRange = P => Math.max(Y_MIN, (P.speed || 0) * Y_SEE);
+  function yWin(G, P, Lo, z) {
+    if (!onTrackP(P)) return false;
+    const zs = Lo.zones[z];
+    return RaceControl.zoneAt(Lo, P.s) === z || ((zs.s0 - P.s) % Lo.L + Lo.L) % Lo.L <= yRange(P);
+  }
+  function flagStep(G) {
+    const race = S.race, P = G.player, rc = race.rc, T = G.track;
+    if (!P || !rc || !rc.on || !rc.zf || typeof RaceControl === 'undefined' || !T || !(race.phase === 'racing' || race.phase === 'quali')) return;
+    const Lo = RaceControl.layout(T), F = RaceControl.F, R = yRange(P), z0 = RaceControl.zoneAt(Lo, P.s), seen = {};
+    if (onTrackP(P) && !P.dnf && !(P._race && P._race.pit) && (P.speed || 0) > 5) {
+      let best = null;   // (one call per pass: the most severe new zone - a double yellow and the yellow before it = one call)
+      for (let k = 0, z = z0; k < rc.n; k++, z = (z + 1) % rc.n) {
+        const ds = k === 0 ? 0 : ((Lo.zones[z].s0 - P.s) % Lo.L + Lo.L) % Lo.L;
+        if (ds > R) break;
+        const lv = rc.zf[z] & F.YY ? 2 : rc.zf[z] & F.Y ? 1 : 0;
+        if (!lv) continue;
+        seen[z] = 1;
+        if ((S.yz[z] || 0) >= lv) continue;
+        S.yz[z] = lv;
+        if (rc.inc && rc.inc.some(o => o.zone === z && o.car === P)) continue;   // (our own incident: the rejoin lines)
+        const slowY = lv === 1 && RaceControl.WHY[rc.zw ? rc.zw[z] : 0] === 'SLOW CAR';   // (a slow car's yellow moves with it: one call per Y_SLOW s)
+        if (slowY && race.t - (S.ySlow || -1e9) < Y_SLOW) continue;
+        if (!best || lv > best.lv) best = { z, lv, ds, slowY };
+      }
+      if (best) { if (best.slowY) S.ySlow = race.t; yCall(G, best.z, best.lv, best.ds); }
+    }
+    for (const z in S.yz) if (!seen[z]) delete S.yz[z];   // (past it, or cleared: the next approach is called again)
+  }
+  function yCall(G, z, lv, ds) {
+    const race = S.race, P = G.player, rc = race.rc, Lo = RaceControl.layout(G.track), zs = Lo.zones[z], F = RaceControl.F;
+    const turn = zs.turn || '', m = /^T(\d+)/.exec(turn), tn = m ? X(turn, 'turn ' + wn(+m[1])) : turn, q = race.phase === 'quali';
+    const why = RaceControl.WHY[rc.zw ? rc.zw[z] : 0] || '', w = RC_SAY[why] || '';
+    queue({ key: 'yz' + z, cat: 'rc', pri: 0, verb: 0, urgent: true, vis: false, maxAge: 6, data: { zone: z, lvl: lv, ds }, build: () => {
+      const f = rc.zf[z] || 0;
+      if (!(f & (lv === 2 ? F.YY : 3))) return null;   // (cleared meanwhile)
+      const at = tn ? [' ', tn] : ' ahead';
+      if (lv === 2) return msg(['Double yellow', at, w ? ', ' + w : '', '. ', q ? vary('rc:yyq', ['Slow down, or the lap is deleted.', 'Big lift, or we lose the lap.']) : vary('rc:yy', ['Slow down.', 'Big lift there.'])],
+        { short: 'DOUBLE YELLOW ' + turn, sub: q ? 'SLOW DOWN · OR THE LAP IS DELETED' : 'SLOW DOWN' + (why ? ' · ' + why : '') });
+      return msg(['Yellow flag', at, w ? ', ' + w : '', '. ', q ? 'Careful, no fast lap through there.' : 'Careful.'], { short: 'YELLOW FLAG ' + turn, sub: why || 'CAREFUL' });
+    } });
+  }
+
   // ---------- qualifying (Q1 / Q2 / Q3: race.qs; Quali.status = position, the cut, the time left) ----------
   const QS = () => (typeof Quali !== 'undefined' && S && S.race.qs && S.race.phase === 'quali' ? Quali : null);
   const sessN = i => { const qs = S.race.qs; return (qs && qs.fmt && qs.fmt.names[i]) || 'qualifying'; };
@@ -78060,6 +78217,43 @@ const Engineer = (() => {
         { short: 'P' + st.pos + ' · ' + fmtLap(time), sub: imp ? c[1] : 'NO IMPROVEMENT' + (c[1] ? ' · ' + c[1] : '') });
     } });
   }
+  // (user 2026-10-25: more talk in qualifying) the push lap starting (pole / the cut to beat), traffic ahead on a push lap (a car
+  // on a slow lap within Q_TR s), a car on a push lap behind us while we are not on one (quali.js qBehind: let him by)
+  const Q_TR = 5, Q_TRC = 25;
+  function qTalk(G, Q, P, qs) {
+    const T = G.track, t = S.race.t, push = !!P.qPush;
+    if (push && !S.qp && qs.st === 'green') queue({ key: 'qgo', cat: 'lap', pri: 2, verb: 1, urgent: true, maxAge: 6, build: () => {
+      if (!P.qPush) return null;
+      const st = qStat(qs.idx, P), rows = (st && st.rows) || (qs.res[qs.idx] || []), pole = rows[0] && rows[0].best;
+      const cut = st && st.cut && rows[st.cut - 1] && rows[st.cut - 1].best;
+      return msg(['Push lap. ', cut ? ['The cut is ', lapTP(cut), '.'] : pole ? ['Provisional pole is ', lapTP(pole), '.'] : 'Go, go.'],
+        { short: 'PUSH LAP', sub: cut ? 'CUT ' + fmtLap(cut) : pole ? 'POLE ' + fmtLap(pole) : '' });
+    } });
+    S.qp = push;
+    const v = P.speed || 0;
+    if (push && v > 20) for (const c of G.cars) {   // traffic ahead
+      if (c === P || c.qPush || c.inPitLane || c.kinematic || c.finished || (c._race && c._race.pit) || (c.qSt && c.qSt === 'parked')) continue;
+      const ds = T.deltaS(P.s, c.s), cv = c.speed || 0;
+      if (!(ds > 25 && ds < Math.max(250, v * Q_TR)) || cv > v - 3) continue;
+      const last = S.qtr.get(c.id);
+      if (last != null && t - last < Q_TRC) continue;
+      S.qtr.set(c.id, t);
+      queue({ key: 'qtr', cat: 'blue', pri: 1, verb: 0, urgent: true, maxAge: 4, build: () => {
+        const d2 = T.deltaS(P.s, c.s), Tn = turnAt(T, c.s);
+        if (!P.qPush || !(d2 > 10 && d2 < 600) || c.inPitLane) return null;
+        return msg(vary('q:tr', [['Traffic ahead, ', nm(c), ' on a slow lap', Tn ? [' at ', turnP(Tn)] : '', '.'], ['Car ahead on a slow lap, ', nm(c), '. Careful.']]), { short: 'TRAFFIC AHEAD', sub: NM(c) + (Tn ? ' · ' + Tn : '') });
+      } });
+      break;
+    }
+    if (!push && P.qBehind >= 0) {   // a car on a push lap behind
+      const c = G.cars.find(x => x.id === P.qBehind), last = S.qtr.get('b' + P.qBehind);
+      if (c && (last == null || t - last > 20)) {
+        S.qtr.set('b' + P.qBehind, t);
+        queue({ key: 'qbh', cat: 'blue', pri: 1, verb: 0, urgent: true, maxAge: 4, build: () => (P.qPush || P.qBehind !== c.id ? null
+          : msg(vary('q:bh', [[nm(c), ' behind on a push lap, let him through.'], ['Car behind on a fast lap, ', nm(c), '. Stay off the line.']]), { short: 'CAR BEHIND ON A PUSH LAP', sub: 'LET ' + NM(c) + ' THROUGH' })) });
+      }
+    }
+  }
   function qFlag(G) {
     const Q = QS(), P = G.player;
     if (!onTrackP(P)) return;
@@ -78081,9 +78275,10 @@ const Engineer = (() => {
       return msg(["We're through to ", sessN(idx + 1), ', ', posP(i + 1), '.'], { short: 'THROUGH TO ' + sessN(idx + 1).toUpperCase(), sub: 'P' + (i + 1) });
     } });
   }
-  function qStep(G) {   // every 0.25 s on track: time left in the session, rain
+  function qStep(G) {   // every 0.25 s on track: time left in the session, rain, the push lap, traffic
     const Q = QS(), P = G.player, qs = S.race.qs, X2 = S.ql;
-    if (!Q || !onTrackP(P)) { if (Q && qs.W) X2.r = +qs.W.rain || 0; return; }
+    if (!Q || !onTrackP(P)) { if (Q && qs.W) X2.r = +qs.W.rain || 0; S.qp = false; return; }
+    qTalk(G, Q, P, qs);
     if (qs.st === 'green') {
       const left = qs.len[qs.idx] - qs.t;
       for (const k of [120, 60]) {
@@ -78172,9 +78367,10 @@ const Engineer = (() => {
       else if (rsn === 'weather') { v = vary('box:wx', [['Box this lap for ', tn, '.'], ["Box this lap, we're going to ", tn, '.'], ['Box this lap. ', Tn, ' ready.']]); why = 'for the conditions'; }
       else if (rsn === 'damage') { v = vary('box:dmg', [['Box this lap for repairs, ', tn, ' ready.'], ["Box this lap, we'll fix the car. ", Tn, '.']]); why = 'repairs'; }
       else if (chp) {
-        const said = S.lastKey[rsn] != null && race.t - S.lastKey[rsn] < 30, nmC = rsn === 'sc' ? 'safety car' : 'VSC';
+        const sk = rsn === 'sc' || (typeof RaceControl !== 'undefined' && RaceControl.scHeld && RaceControl.scHeld(race.rc)) ? 'sc' : 'vsc';   // (the SC held: the VSC's delta, called the SC)
+        const said = S.lastKey[sk] != null && race.t - S.lastKey[sk] < 30, nmC = sk === 'sc' ? 'safety car' : 'VSC';
         v = said ? ['Box this lap for ', tn, ", it's a cheap stop under the ", nmC, '.']
-          : rsn === 'sc' ? vary('rc:scb', [['Safety car, safety car', S.vscWhy, ". Box this lap, it's a cheap stop."], ['Safety car', S.vscWhy, '. Box this lap, the stop costs half.']])
+          : sk === 'sc' ? vary('rc:scb', [['Safety car, safety car', S.vscWhy, ". Box this lap, it's a cheap stop."], ['Safety car', S.vscWhy, '. Box this lap, the stop costs half.']])
           : vary('rc:vscb', [['VSC, VSC', S.vscWhy, ". Box this lap, it's a cheap stop."], ['Virtual safety car', S.vscWhy, '. Box this lap, the stop costs half.']]);
         why = 'cheap stop';
       } else if (rsn === 'undercut' && tgt) {
@@ -78427,6 +78623,13 @@ const Engineer = (() => {
   function onPlayerSector(G, e) {
     const race = S.race, P = G.player, t = race.t;
     S.slotT = t;
+    if (QS() && P.qPush && e.i < 2 && isNum(e.time)) {   // (user 2026-10-25, more in qualifying: each split of a push lap)
+      const i = e.i, pb = P.bestSectors && P.bestSectors[i], dl = e.flag === 'yellow' && pb > 0 ? e.time - pb : null;
+      queue({ key: 'qsec', cat: 'lap', pri: 2, verb: 1, urgent: true, maxAge: 4, build: () => (!P.qPush ? null
+        : e.flag === 'purple' ? msg(vary('q:sp', [['Purple sector ', wn(i + 1), '.'], ['Fastest of anyone in sector ', wn(i + 1), '.']]), { short: 'PURPLE S' + (i + 1) })
+        : e.flag === 'green' ? msg(vary('q:sg', [['Personal best, sector ', wn(i + 1), '.'], ['Green sector ', wn(i + 1), ', keep it going.']]), { short: 'PERSONAL BEST S' + (i + 1) })
+        : dl != null && dl > 0.05 ? msg(['Sector ', wn(i + 1), ', ', gapP(dl), ' down.'], { short: 'S' + (i + 1) + ' +' + dl.toFixed(1), sub: 'DOWN ON YOUR BEST' }) : null) });
+    }
     if (e.flag === 'purple' && e.i < 2 && race.phase === 'racing' && (P.lap | 0) >= 2) {
       const i = e.i;
       queue({ key: 'purple', cat: 'lap', pri: 3, verb: 2, maxAge: 5, cool: 45, build: () => msg(vary('purple', [['Purple sector ', wn(i + 1), '.'], ['Purple in sector ', wn(i + 1), ', nice.']]), { short: 'PURPLE S' + (i + 1) }) });
@@ -79066,7 +79269,7 @@ const Engineer = (() => {
     if (race.phase === 'racing' || race.phase === 'finished' || race.phase === 'quali') cornerStep(G, t);
     if ((S.slow += dt) >= 0.25) {
       const d = S.slow; S.slow = 0;
-      posStep(G); boxStep(G); energyStep(G, d); rcStep(G, d); scStep(G); obStep(G); qStep(G);
+      posStep(G); boxStep(G); energyStep(G, d); rcStep(G, d); scStep(G); obStep(G); qStep(G); flagStep(G);
       if ((S.wxT -= d) <= 0) { S.wxT = 0.5; wxStep(G); }
     }
     smStep(G, dt);
@@ -83544,6 +83747,7 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
 //   its end line, clear of the lane's centre line (the driving line), the boxes and the track edge / kerbs. No room on the plain
 //   lane (Monaco: pit roads): on a pit road, road: 1 (d in road coordinates; render3d stands them on T.elevAt, the road's surface).
 // RCModels.geos = { kind: [BufferGeometry, ...] } (render3d keeps their CPU arrays: they live across tracks).
+// RCModels.crewKit() -> the pit crew's shared geometries { crew (jointed mechanic), tyre, gun, jack, wing, rig } (pitcrew.js).
 const RCModels = (() => {
   const KINDS = ['safetycar', 'medicalcar', 'marshal', 'tractor', 'crane', 'sweeper', 'panel'];
   const GEOS = {}, DEFS = {}, MATS = {};
@@ -84192,6 +84396,77 @@ const RCModels = (() => {
     return { parts: [['body', M, 'cloth']] };
   }
 
+  // ------------------------------------------------------------------ the pit crew (pitcrew.js): a mechanic in team overalls + helmet with
+  // knees and elbows (~1.78 m, facing +x, left = -z), and the kit: tyre (axle z, centre at the origin), wheel gun (grip at the origin,
+  // nozzle +x), jack (head at the origin, bar along +x to the handle at JACK_L), front wing (centre at the origin, span z).
+  // Crew `limb` attribute = id + 16 * mask: ids 0 torso / head, 1 thigh L, 2 shin L, 3 thigh R, 4 shin R, 5 upper arm L, 6 forearm L,
+  // 7 upper arm R, 8 forearm R; mask 1 / 2 = the team's primary / secondary times the vertex colour (a grey shade), 0 = own colour.
+  // Kit: a white vertex (1, 1, 1) takes the instance colour (team / compound). rig = the joints (x, y) the shader and the IK use.
+  const CREW_RIG = { hip: [0, .93], knee: [.03, .51], sh: [0, 1.41], el: [.01, 1.13], hand: [.07, .82], handZ: .245, jackL: 1.32 };
+  function defCrew() {
+    const P1 = s => [-1, s, 0], P2 = s => [-2, s, 0];
+    const SK = C('#c48d66'), BK = C('#16181b'), VIS = C('#0b0e13');
+    const A = [G(), G(), G(), G(), G(), G(), G(), G(), G()];
+    const ringXZ = (y, cx, rx, rz, e, n) => { const o = []; for (let k = 0; k < n; k++) { const a = k / n * TAU, c = Math.cos(a), s = Math.sin(a); o.push([cx + rx * sgn(c) * Math.pow(Math.abs(c), 2 / e), y, rz * sgn(s) * Math.pow(Math.abs(s), 2 / e)]); } return o; };
+    const TS = [[.83, .0, .07, .09, 2.2], [.9, .005, .115, .175, 2.4], [1.02, .0, .11, .16, 2.4], [1.16, .01, .12, .17, 2.5], [1.3, .015, .13, .195, 2.6], [1.4, .0, .12, .215, 2.8], [1.46, -.01, .09, .17, 2.4], [1.5, -.01, .06, .07, 2.2]];
+    const P = TS.map(t => ringXZ(t[0], t[1], t[2], t[3], t[4], 12)), T = A[0];
+    grid(T, p => (p[1] > 1.37 ? P2(.95) : P1(.92)), P, { closed: true }); fan(T, P1(.92), P[0], [0, -1, 0]); fan(T, P2(.95), P[P.length - 1], [0, 1, 0]);
+    grid(T, P2(.9), [ringXZ(.985, 0, .117, .167, 2.4, 12), ringXZ(1.04, 0, .12, .17, 2.4, 12)], { closed: true });   // belt
+    tube(T, BK, [[.0, 1.49, 0], [.01, 1.58, 0]], [.05, .047], 7);                                                         // neck (balaclava)
+    ell(T, P2(.95), [.005, 1.67, 0], [.13, .135, .118], 2.3, 6, 12);                                                    // helmet
+    ell(T, VIS, [.085, 1.665, 0], [.062, .045, .092], 2.4, 5, 10);                                                      // visor
+    ell(T, BK, [.075, 1.575, 0], [.06, .035, .075], 2.2, 4, 8);                                                         // chin guard
+    for (const [k, sd] of [[0, -1], [1, 1]]) {
+      const z = sd * .1, TH = A[1 + 2 * k], SH = A[2 + 2 * k], UA = A[5 + 2 * k], FA = A[6 + 2 * k];
+      tube(TH, P1(.9), [[0, .97, z], [.005, .72, z * 1.04], [.03, .51, z * 1.05]], [.095, .08, .066], 9);
+      ell(SH, P1(.86), [.03, .51, z * 1.05], [.07, .07, .068], 2, 5, 8);                                                  // knee
+      tube(SH, P1(.9), [[.03, .51, z * 1.05], [0, .28, z * 1.03], [-.01, .12, z]], [.066, .058, .056], 9);
+      grid(SH, P2(.95), [.25, .21].map(y => ringXZ(y, -.004, .062, .062, 2, 9).map(p => [p[0], p[1], p[2] + z * 1.03])), { closed: true });
+      ell(SH, BK, [.055, .055, z], [.135, .055, .06], 2.8, 5, 8);                                                          // boot
+      tube(UA, P1(.9), [[0, 1.42, sd * .225], [.005, 1.28, sd * .24], [.01, 1.13, sd * .25]], [.06, .053, .046], 8);
+      ell(FA, P1(.88), [.01, 1.13, sd * .25], [.047, .047, .047], 2, 4, 7);                                              // elbow
+      tube(FA, P1(.9), [[.01, 1.13, sd * .25], [.04, .99, sd * .25], [.06, .87, sd * .245]], [.046, .043, .04], 8);
+      ell(FA, BK, [.07, .82, sd * .245], [.045, .07, .038], 2.4, 5, 7);                                                   // glove
+    }
+    const M = G(); M.l = [];
+    A.forEach((B, id) => {
+      const o = M.p.length / 3;
+      for (let k = 0; k < B.p.length / 3; k++) {
+        const c = B.c.slice(3 * k, 3 * k + 3), m = c[0] < 0 ? -c[0] : 0;
+        M.p.push(B.p[3 * k], B.p[3 * k + 1], B.p[3 * k + 2]); M.n.push(B.n[3 * k], B.n[3 * k + 1], B.n[3 * k + 2]);
+        if (m) M.c.push(c[1], c[1], c[1]); else M.c.push(c[0], c[1], c[2]);
+        M.l.push(id + 16 * m);
+      }
+      for (const q of B.i) M.i.push(q + o);
+    });
+    return M;
+  }
+  function defKit() {
+    const W = [1, 1, 1], RUB = C('#141517'), RIM = C('#5d636b'), DK = C('#25282d'), ST = C('#b9bec6'), CF = C('#1c1e22');
+    const ty = G();   // tyre: tread + shoulders + sidewalls (a white compound band), rim, nut
+    const pr = [[.23, -.185], [.285, -.2], [.3, -.2], [.315, -.2], [.345, -.185], [.36, -.15], [.36, .15], [.345, .185], [.315, .2], [.3, .2], [.285, .2], [.23, .185]];
+    lathe(ty, p => { const r = Math.hypot(p[0], p[1]); return r > .29 && r < .31 && Math.abs(p[2]) > .19 ? W : RUB; }, pr, 0, 0, 0, 1, 20);
+    cyl(ty, RIM, 'z', [0, 0, 0], .23, .23, .37, 14, true); cyl(ty, DK, 'z', [0, 0, 0], .05, .05, .42, 8, true);
+    const gun = G();
+    box(gun, DK, .08, .02, 0, .2, .085, .08); box(gun, DK, -.005, -.06, 0, .045, .13, .045);
+    cyl(gun, ST, 'x', [.21, .02, 0], .028, .028, .06, 8, true); cyl(gun, W, 'x', [.255, .02, 0], .036, .036, .05, 8, true);
+    const jk = G(), L = CREW_RIG.jackL;
+    box(jk, DK, .02, .04, 0, .16, .05, .3); beam(jk, W, [.08, .05, 0], [L, .05, 0], .055, .055);
+    box(jk, CF, L, .05, 0, .045, .045, .46); cyl(jk, RUB, 'z', [.22, -.02, 0], .055, .055, .3, 8, true);
+    const wg = G();   // front wing: three elements, endplates
+    box(wg, CF, 0, 0, 0, .3, .022, 1.8); box(wg, W, .08, .05, 0, .2, .018, 1.72); box(wg, CF, .15, .1, 0, .14, .016, 1.66);
+    box(wg, W, .02, .07, .9, .44, .2, .02); box(wg, W, .02, .07, -.9, .44, .2, .02);
+    return { tyre: ty, gun, jack: jk, wing: wg };
+  }
+  let KIT = null;
+  // -> { crew, tyre, gun, jack, wing: BufferGeometry, rig } (built once, shared)
+  function crewKit() {
+    if (KIT) return KIT;
+    const k = defKit();
+    KIT = { crew: toGeo(defCrew()), tyre: toGeo(k.tyre), gun: toGeo(k.gun), jack: toGeo(k.jack), wing: toGeo(k.wing), rig: CREW_RIG };
+    return KIT;
+  }
+
   // ------------------------------------------------------------------ glazed cab (telehandler / crane carrier / operator): posts, roof, glass all round
   function glassCab(body, glass, trim, x0, x1, z0, z1, y0, y1, col, o = {}) {
     const K = C(DARK), GL = C(GLS), rk = o.rake || 0, xm = (x0 + x1) / 2, zm = (z0 + z1) / 2;
@@ -84437,7 +84712,458 @@ const RCModels = (() => {
   // ------------------------------------------------------------------ the parking spot (race control's: the same on the server)
   function parkSpot(T) { return typeof RaceControl !== 'undefined' && RaceControl.parkSpot ? RaceControl.parkSpot(T) : null; }
 
-  return { make, kinds: KINDS, tris, dispose, parkSpot, geos: GEOS };
+  return { make, kinds: KINDS, tris, dispose, parkSpot, geos: GEOS, crewKit };
+})();
+
+
+// ===== src/pitcrew.js =====
+// Apex GP \u2014 PitCrew: the pit crews at the boxes (Three.js, browser only) and the one pit-stop timeline that the crews and the
+// stop's sounds (audio.js) both run on. Declares only `PitCrew`.
+//
+// PitCrew.timeline(car) -> the stop in progress (the car in its box) or null. Times in s from the car stopping: a time penalty
+//   first (the crew stands ready, nobody touches the car), then the work: { dur, pen, W (work), k (tempo), fj / rj: front / rear
+//   jack lift [t0, t1], gl / gt: wheel guns loosen / tighten [left side, right side], gLen [[loosen L, R], [tighten L, R]],
+//   off / on: old tyres off / new tyres on [t0, t1], wg: front-wing change [old off t0, t1, new on t0, t1] or null, drop: jacks
+//   down [t0, t1], end, cues: [{ t, k: 'gun' | 'drop', gi: 0 left / 1 right, len }] } (audio.js fires each cue as elapsed passes it).
+// PitCrew.elapsed(car) -> s since the car stopped in its box (held at the end while it waits to leave), or null.
+//   Both read the race's pit state (car._race.pit: service, serviceDur, penServed, nose, wingCost) or, without it (a multiplayer
+//   client), the synced car.pitState / pitProgress / pitElapsed / pitDur / pitPen (no wing change then).
+// PitCrew.frame(G, dt, X) - render3d's hook, every frame after the cars are placed. X = { world, cam, views (render3d's car views:
+//   car, model, y), gy(o) (ground height at {s, d, x, z}), gf(s) (garage front |d| at s, or null) }. Per car that pits (AI too;
+//   not in qualifying / time trial): 16 mechanics in team overalls (3 per wheel: gun, tyre off, tyre on; front + rear jack; two
+//   for a front-wing change) walk out of the garage when it enters the pit lane, kneel by the box, come closer as it arrives,
+//   stand ready through a penalty, do the stop on the timeline (jacks lift the car, its tyres swap for props carried off / on,
+//   the wing men swap the front wing), then walk back in. One InstancedMesh each for crew / tyres / guns / jacks / wings,
+//   built on first use; only the 6 nearest crews within 150 m of the camera are drawn. PitCrew.off = true hides them.
+//   PitCrew.stats() -> { cars, crew, ms } (the last frame).
+const PitCrew = (() => {
+  const PI = Math.PI, HPI = PI / 2;
+  const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+  const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const wrapA = a => { a %= 2 * PI; return a > PI ? a - 2 * PI : a < -PI ? a + 2 * PI : a; };
+  const angMix = (a, b, u) => a + wrapA(b - a) * u;
+  const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+
+  // ------------------------------------------------------------------ the stop timeline (pure)
+  const TLC = new WeakMap();
+  function build(dur, pen, nose, wing) {
+    const P = pen, W = Math.max(0.6, dur - pen), B = Math.max(0.6, W - nose - wing), k = clamp((B - 0.15) / 1.75, 0.4, 1.9);
+    const tl = { dur, pen, nose, wing, W, k, end: P + W, wg: null };
+    tl.fj = [P + 0.02 * k, P + 0.2 * k]; tl.rj = [P + 0.22 * k, P + 0.4 * k];
+    tl.gl = [P + 0.3 * k, P + 0.36 * k]; tl.gLen = [[0.34, 0.3], [0.4, 0.36]];   // (the guns' run times: audio.js's sounds)
+    tl.off = [tl.gl[1] + 0.26, tl.gl[1] + 0.26 + 0.24 * k]; tl.on = [tl.off[1] + 0.02, tl.off[1] + 0.02 + 0.25 * k];
+    tl.gt = [tl.on[1] + 0.03, tl.on[1] + 0.09];
+    let d0 = Math.max(1.55 * k, tl.gt[1] - P + 0.38, W - Math.max(0.1, B - 1.55 * k));
+    if (nose > 0.5) {
+      const a0 = Math.min(1.7, 0.2 * W), a1 = a0 + Math.min(1.1, 0.2 * W), b1 = W - 0.45, b0 = clamp(b1 - 1.4, Math.min(a1 + 0.3, b1 - 0.3), b1 - 0.3);
+      tl.wg = [P + a0, P + a1, P + b0, P + b1]; d0 = Math.max(d0, b1 + 0.12);
+    }
+    d0 = Math.min(d0, W - 0.12);
+    tl.drop = [P + d0, P + d0 + 0.1];
+    tl.cues = [{ t: tl.gl[0], k: 'gun', gi: 0, len: 0.34 }, { t: tl.gl[1], k: 'gun', gi: 1, len: 0.3 },
+      { t: tl.gt[0], k: 'gun', gi: 0, len: 0.4 }, { t: tl.gt[1], k: 'gun', gi: 1, len: 0.36 }, { t: tl.drop[0], k: 'drop', gi: 0, len: 0 }];
+    return tl;
+  }
+  const inBoxPs = ps => !!ps && ps.stop && ps.serviceDur > 0 && (ps.state === 'service' || ps.state === 'go' || ps.state === 'wait');
+  function elapsed(car) {
+    if (!car) return null;
+    const ps = car._race && car._race.pit;
+    if (ps) return inBoxPs(ps) ? (ps.state === 'service' ? ps.service : ps.serviceDur) : null;
+    if (car.pitState !== 'service' || !(car.pitDur > 0)) return null;
+    return car.pitProgress == null ? car.pitDur : car.pitProgress === 0 ? 0 : +car.pitElapsed || 0;   // (the first frame: the last stop's figure)
+  }
+  function timeline(car) {
+    if (!car) return null;
+    const ps = car._race && car._race.pit;
+    let dur, pen = 0, nose = 0, wing = 0;
+    if (ps) { if (!inBoxPs(ps)) return null; dur = ps.serviceDur; pen = ps.penServed || 0; nose = ps.nose > 0 ? ps.nose : 0; wing = ps.wingCost || 0; }
+    else if (car.pitState === 'service' && car.pitDur > 0) { dur = car.pitDur; pen = car.pitPen || 0; }
+    else return null;
+    let tl = TLC.get(car);
+    if (!tl || tl.dur !== dur || tl.pen !== pen || tl.nose !== nose || tl.wing !== wing) { tl = build(dur, pen, nose, wing); TLC.set(car, tl); }
+    return tl;
+  }
+
+  // ------------------------------------------------------------------ the crews
+  const R_FAR = 150, MAXC = 6, PER = 16, MAXI = MAXC * PER;
+  const AXF = 1.75, AXR = -1.65, WZ = [0.8, -0.8, 0.75, -0.75], WO = 0.95, HUB = 0.36, NOSE_X = 2.62, TAIL_X = -2.8, FW_X = 2.45, FW_Y = 0.13;
+  const V_WALK = 1.9, V_BACK = 1.7;
+  // leg poses [hip L, knee L, hip R, knee R, lean]: + = forward (a knee bends with -); kneeling on the right knee
+  const P_ST = [0, 0, 0, 0, 0.03], P_RD = [0.55, -0.95, 0.3, -0.6, 0.3], P_KN = [1.55, -1.55, -0.12, -1.55, 0.12], P_KW = [1.55, -1.55, -0.12, -1.55, 0.42], P_PU = [0.45, -0.6, -0.25, -0.1, 0.5];
+  const ST = new Map();
+  let K = null, lastT = null, lastViews = null, stat = { cars: 0, crew: 0, ms: 0 };
+  let SH, EL, HIP, A_, B_, TU0, TF0, JL;
+  const hid = [];
+
+  function init() {
+    if (K || typeof THREE === 'undefined' || typeof RCModels === 'undefined' || !RCModels.crewKit) return K;
+    const kit = RCModels.crewKit(), rg = kit.rig;
+    SH = rg.sh; EL = rg.el; HIP = rg.hip; JL = rg.jackL;
+    A_ = Math.hypot(EL[0] - SH[0], EL[1] - SH[1]); B_ = Math.hypot(rg.hand[0] - EL[0], rg.hand[1] - EL[1]);
+    TU0 = Math.atan2(EL[1] - SH[1], EL[0] - SH[0]); TF0 = Math.atan2(rg.hand[1] - EL[1], rg.hand[0] - EL[0]);
+    const f = v => v.toFixed(4), v2 = p => 'vec2(' + f(p[0]) + ', ' + f(p[1]) + ')';
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0, envMapIntensity: 0.5 });
+    mat.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float limb;\nattribute vec4 iA;\nattribute vec4 iB;\nattribute vec4 iC;\nattribute vec3 iD;\n' +
+          'void pcRot(inout vec3 p, inout vec3 n, vec2 c, float a) { float s = sin(a), k = cos(a); vec2 d = p.xy - c; p.xy = c + vec2(d.x * k - d.y * s, d.x * s + d.y * k); n.xy = vec2(n.x * k - n.y * s, n.x * s + n.y * k); }')
+        .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(normal);\nvec3 pcP = vec3(position);\n{\n' +
+          '  float m = floor(limb / 16.0 + 0.01), L = limb - 16.0 * m;\n' +
+          '  if (L > 0.5 && L < 4.5) {\n    bool r = L > 2.5;\n' +
+          '    if (abs(L - 2.0) < 0.1 || abs(L - 4.0) < 0.1) pcRot(pcP, objectNormal, ' + v2(rg.knee) + ', r ? iA.w : iA.y);\n' +
+          '    pcRot(pcP, objectNormal, ' + v2(rg.hip) + ', r ? iA.z : iA.x);\n  } else {\n' +
+          '    if (L > 4.5) {\n      bool r = L > 6.5;\n' +
+          '      if (abs(L - 6.0) < 0.1 || abs(L - 8.0) < 0.1) pcRot(pcP, objectNormal, ' + v2(rg.el) + ', r ? iB.w : iB.y);\n' +
+          '      pcRot(pcP, objectNormal, ' + v2(rg.sh) + ', r ? iB.z : iB.x);\n    }\n' +
+          '    pcRot(pcP, objectNormal, ' + v2(rg.hip) + ', iC.x);\n  }\n}')
+        .replace('#include <begin_vertex>', 'vec3 transformed = pcP;')
+        .replace('#include <color_vertex>', '#include <color_vertex>\n{ float m = floor(limb / 16.0 + 0.01); if (m > 0.5) vColor.xyz = color.xyz * (m < 1.5 ? iC.yzw : iD); }');
+    };
+    mat.customProgramCacheKey = () => 'agp-pitcrew';
+    const geo = kit.crew, ia = n => { const a = new THREE.InstancedBufferAttribute(new Float32Array(MAXI * n), n); a.setUsage(THREE.DynamicDrawUsage); return a; };
+    geo.setAttribute('iA', ia(4)); geo.setAttribute('iB', ia(4)); geo.setAttribute('iC', ia(4)); geo.setAttribute('iD', ia(3));
+    const root = new THREE.Group(); root.name = 'pitCrew';
+    const setup = m => { m.count = 0; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(m); return m; };
+    const crew = setup(new THREE.InstancedMesh(geo, mat, MAXI)); crew.name = 'crew';
+    const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15, envMapIntensity: 0.6 });
+    pm.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader.replace('#include <color_vertex>', '#include <color_vertex>\n#ifdef USE_INSTANCING_COLOR\n  vColor.xyz = color.r + color.g + color.b > 2.99 ? instanceColor.xyz : color.xyz;\n#endif');
+    };
+    pm.customProgramCacheKey = () => 'agp-pitkit';
+    const W1 = new THREE.Color(1, 1, 1);
+    const prop = (g, n, name) => { const m = setup(new THREE.InstancedMesh(g, pm, n)); m.name = name; for (let i = 0; i < n; i++) m.setColorAt(i, W1); m.instanceColor.setUsage(THREE.DynamicDrawUsage); return m; };
+    K = { root, crew, geo, tyre: prop(kit.tyre, MAXC * 8, 'crewTyres'), gun: prop(kit.gun, MAXC * 4, 'crewGuns'), jack: prop(kit.jack, MAXC * 2, 'crewJacks'),
+      wing: prop(kit.wing, MAXC * 2, 'crewWings'), M4: new THREE.Matrix4(), Q: new THREE.Quaternion(), E: new THREE.Euler(), P: new THREE.Vector3(), S: new THREE.Vector3(1, 1, 1), C: new THREE.Color() };
+    return K;
+  }
+
+  // ---------- pose helpers
+  const GAIT = [0, 0, 0, 0, 0], TMP = [0, 0, 0, 0, 0];
+  function gaitAt(wd, out) { const a = wd * 4.49, s = Math.sin(a), c = Math.cos(a); out[0] = 0.42 * s; out[2] = -0.42 * s; out[1] = -0.1 - 0.75 * Math.max(0, c); out[3] = -0.1 - 0.75 * Math.max(0, -c); out[4] = 0.08; }
+  function mix5(o, A, B, u) { for (let i = 0; i < 5; i++) o[i] = A[i] + (B[i] - A[i]) * u; }
+  // a move from a to b leaving at t0 at v m/s: o.x / z / psi / leg; pose pA before, the gait on the way, pB after (eased in and out)
+  function move(o, a, b, t0, v, t, pA, pB, psA, psB) {
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+    o.mv = 0;
+    if (L < 0.03) { const u = ss(t0, t0 + 0.4, t); o.x = b[0]; o.z = b[1]; o.psi = angMix(psA, psB, u); mix5(o.leg, pA, pB, u); return; }
+    if (t <= t0) { o.x = a[0]; o.z = a[1]; o.psi = psA; mix5(o.leg, pA, pA, 0); return; }
+    const T1 = t0 + L / v, u = Math.min(1, (t - t0) / (T1 - t0)), dir = Math.atan2(dz, dx);
+    o.x = a[0] + dx * u; o.z = a[1] + dz * u; o.ph = L * u * 4.49;
+    gaitAt(L * u, GAIT);
+    if (t < T1) { const ui = ss(t0, t0 + 0.3, t); mix5(o.leg, pA, GAIT, ui); o.psi = angMix(psA, dir, ss(t0, t0 + 0.25, t)); o.mv = ui; }
+    else { const uo = ss(T1, T1 + 0.4, t); mix5(o.leg, GAIT, pB, uo); o.psi = angMix(dir, psB, ss(T1, T1 + 0.35, t)); o.mv = 1 - uo; }
+  }
+  const moveT = (a, b, t0, v) => t0 + dist(a, b) / v + 0.4;   // (arrived and settled)
+  function dropOf(L) {   // the figure sinks so its lowest point (a sole or a knee) is on the ground
+    let H = 0;
+    for (let s = 0; s < 2; s++) { const h = L[2 * s], th = 0.42 * Math.cos(h); H = Math.max(H, th + 0.51 * Math.cos(h + L[2 * s + 1]), th + 0.065); }
+    return 0.93 - H;
+  }
+  // arm IK in the body's plane: hand to (fwd, up) (up above the ground) -> shoulder + elbow angles into out[i], out[i + 1]
+  function ik(fwd, up, drop, lean, out, i) {
+    const ty = up + drop, c = Math.cos(lean), s = Math.sin(lean), dx = fwd - HIP[0], dy = ty - HIP[1];
+    const px = HIP[0] + dx * c + dy * s, py = HIP[1] - dx * s + dy * c, ex0 = px - SH[0], ey0 = py - SH[1], d = Math.hypot(ex0, ey0) || 1e-3;
+    const dm = clamp(d, Math.abs(A_ - B_) + 0.02, A_ + B_ - 0.005), al = Math.acos(clamp((A_ * A_ + dm * dm - B_ * B_) / (2 * A_ * dm), -1, 1));
+    const pu = Math.atan2(ey0, ex0) - al, ex = SH[0] + A_ * Math.cos(pu), ey = SH[1] + A_ * Math.sin(pu);
+    const pf = Math.atan2(SH[1] + ey0 / d * dm - ey, SH[0] + ex0 / d * dm - ex);
+    out[i] = pu - TU0; out[i + 1] = pf - TF0 - out[i];
+  }
+
+  // ---------- the roles (car-local: x forward, z right; gs = the garage's side): spots K (work), Rd (ready), D (garage door)
+  function roles(gs, gd) {
+    const R = [], door = (x, i) => [clamp(x * 0.85, -3.6, 3.6) + (i % 2 ? 0.25 : -0.25), gs * (gd + 1)];
+    for (let c = 0; c < 4; c++) {
+      const ax = c < 2 ? AXF : AXR, sg = WZ[c] > 0 ? 1 : -1, face = -sg * HPI, far = sg !== gs ? 1 : 0;
+      const hub = [ax, sg * WO];
+      for (const [kd, dx, dl] of [['gun', 0, 0], ['off', -0.62, 0.15], ['on', 0.62, 0.3]]) {
+        const Kp = [ax + dx, sg * (WO + (kd === 'gun' ? 0.5 : 0.45))], Rd = [ax + dx * 1.4, sg * (WO + (kd === 'gun' ? 1.5 : 1.6))];
+        R.push({ kd, c, sg, ax, hub, K: Kp, Rd, psK: Math.atan2(hub[1] - Kp[1], hub[0] - Kp[0]), dl: dl + 0.12 * c, far, D: door(Kp[0], R.length) });
+      }
+    }
+    R.push({ kd: 'fj', dl: 0.2, far: 1, psK: PI, D: door(3.4, 12) });
+    R.push({ kd: 'rj', dl: 0.45, far: 0, psK: 0, Rd: [TAIL_X - 1.6, gs * 1.9], D: door(-3.4, 13) });
+    R.push({ kd: 'wo', psK: PI, K: [3.25, gs * 0.55], Dp: [2.3, gs * Math.max(2, gd - 0.6)], D: door(3, 14), far: 0 });
+    R.push({ kd: 'wn', psK: PI, K: [3.25, gs * 0.55], Rd: [3.75, gs * 2.1], D: door(3.6, 15), far: 0 });
+    for (const r of R) { r.psD = r.Rd ? Math.atan2(r.Rd[1] - r.D[1], r.Rd[0] - r.D[0]) : -gs * HPI; r.end = [0, 0]; }
+    return R;
+  }
+
+  // ---------- per car state
+  function newState(car, T, X, ps, rt) {
+    const pit = T.pit, box = car.box != null ? car.box : car.teamIndex;
+    const s = T.wrapS(pit.boxS && pit.boxS[box] != null ? pit.boxS[box] : pit.entryS), d = pit.boxDAt ? pit.boxDAt(s) : pit.boxD || 0;
+    const w = T.toWorld(s, d), sm = T.sample(s), A = { x: w.x, z: w.z, h: Math.atan2(sm.tz, sm.tx), y: 0 };
+    try { A.y = X.gy ? X.gy({ s, d, x: w.x, z: w.z }) || 0 : 0; } catch (e) { A.y = 0; }
+    let e = null; try { e = X.gf ? X.gf(s) : null; } catch (er) { e = null; }
+    const sd = pit.side || 1;
+    if (!(e > Math.abs(d))) e = Math.abs(d) + 6;
+    const g = T.toWorld(s, sd * e), lz = -(g.x - A.x) * Math.sin(A.h) + (g.z - A.z) * Math.cos(A.h), gs = lz < 0 ? -1 : 1, gd = clamp(Math.abs(lz) - 0.3, 3, 12);
+    const team = car.team || (typeof TEAMS !== 'undefined' && TEAMS[car.teamIndex]) || { primary: '#888888', secondary: '#dddddd' };
+    const col = h => { try { const c = new THREE.Color(h); return [c.r, c.g, c.b]; } catch (er) { return [0.5, 0.5, 0.5]; } };
+    return { ph: 'out', tw: ps && ps.enterT != null ? Math.max(0, rt - ps.enterT) : 0, tnAt: null, e: -1, tl: null, tb: 0, A, gs, gd, R: roles(gs, gd),
+      c1: col(team.primary), c2: col(team.secondary || team.accent || '#ffffff'), oldC: null, newC: null, stopped: false, backT: 0, cx: -99, lf: 0, lr: 0 };
+  }
+  const local = (st, car) => { const A = st.A, dx = car.x - A.x, dz = car.z - A.z, c = Math.cos(A.h), s = Math.sin(A.h); return [dx * c + dz * s, -dx * s + dz * c]; };
+  const cmpOf = c => (typeof COMPOUNDS !== 'undefined' && COMPOUNDS[c] ? COMPOUNDS[c].color : '#cccccc');
+
+  // ---------- one role's pose + props at the state's clocks (car-local); o.hand = hand target [fwd, up] or null
+  const O = { x: 0, z: 0, psi: 0, leg: [0, 0, 0, 0, 0], mv: 0, ph: 0, hand: null, arm: [0, 0, 0, 0], pr: [] };
+  const HAND = [0, 0];
+  // props: [kind, x, y, z, yaw (car-local axis / chord direction), pitch, colour]; pushed per role
+  function prop(kd, x, y, z, yaw, pitch, col) { O.pr.push(kd, x, y, z, yaw, pitch, col); }
+  const fwdOf = (x, z) => (x - O.x) * Math.cos(O.psi) + (z - O.z) * Math.sin(O.psi);
+  const holdPt = (f, lat) => [O.x + f * Math.cos(O.psi) - (lat || 0) * Math.sin(O.psi), O.z + f * Math.sin(O.psi) + (lat || 0) * Math.cos(O.psi)];
+  function hands(x, y, z) { O.hand = HAND; HAND[0] = fwdOf(x, z); HAND[1] = y; }
+
+  function pose(st, r) {
+    O.hand = null; O.pr.length = 0; O.mv = 0;
+    const tl = st.tl, e = st.e, ph = st.ph, gs = st.gs;
+    if (ph === 'back') return poseBack(st, r);
+    const P = tl ? tl.pen : 0, work = tl && e >= P, dropT = tl ? tl.drop : null;
+    const into = tl ? (P > 0 ? ss(P - 0.05, P + 0.15, e) : ss(-0.01, 0.15, e)) : 0, aft = tl ? ss(dropT[1] + 0.05, dropT[1] + 0.45, e) : 0;
+    const standPen = tl && P > 0 ? ss(0, 0.35, e) * (1 - into) : 0;
+    if (r.kd === 'gun' || r.kd === 'off' || r.kd === 'on') {
+      const tR = r.dl + dist(r.D, r.Rd) / V_WALK, tA = st.tnAt == null ? Infinity : Math.max(tR + 0.3, st.tnAt);
+      if (st.tw < tA) move(O, r.D, r.Rd, r.dl, V_WALK, st.tw, P_ST, P_KN, r.psD, r.psK);
+      else move(O, r.Rd, r.K, tA, 1.6, st.tw, P_KN, P_KN, r.psK, r.psK);
+      const atK = st.tw >= tA + dist(r.Rd, r.K) / 1.6;
+      const hubY = HUB + (r.c < 2 ? st.lf : st.lr), sg = r.sg, hz = WZ[r.c];
+      if (tl && atK) {   // the stop: ready (standing) through a penalty, kneeling for the work, up again after the drop
+        if (P > 0 && e < P - 0.05) mix5(O.leg, P_KN, P_RD, standPen);
+        else { mix5(TMP, P > 0 ? P_RD : P_KN, P_KW, into); mix5(O.leg, TMP, P_RD, aft); }
+      }
+      if (r.kd === 'gun') {
+        const gi = sg < 0 ? 0 : 1, l0 = tl ? tl.gl[gi] : 0, t0 = tl ? tl.gt[gi] : 0, Ll = tl ? tl.gLen[0][gi] : 0, Lt = tl ? tl.gLen[1][gi] : 0;
+        const press = tl && atK ? Math.max(ss(l0 - 0.1, l0, e) * (1 - ss(l0 + Ll, l0 + Ll + 0.1, e)), ss(t0 - 0.1, t0, e) * (1 - ss(t0 + Lt, t0 + Lt + 0.12, e))) : 0;
+        const near = tl && atK ? ss(P - 0.1, P + 0.2, e) * (1 - aft) : 0;
+        // the gun: held (in front, low when kneeling), at the hub while working (on the nut while it runs, pulled back between)
+        const rest = holdPt(0.36), ry = O.mv > 0.5 || (tl && atK ? into * (1 - aft) : 1) < 0.5 ? 0.95 : 0.55;
+        const buzz = press > 0.9 ? Math.sin(e * 97) * 0.004 : 0, gz = sg * (WO + 0.03 + 0.22 * (1 - press) + buzz + 0.255);
+        const fx = rest[0] + (r.ax - rest[0]) * near, fz = rest[1] + (gz - rest[1]) * near, fy = ry + (hubY - ry) * near;
+        prop('gun', fx, fy, fz, angMix(O.psi, -sg * HPI, near), 0, null); hands(fx, fy - 0.02, fz);
+      } else if (r.kd === 'off') {
+        const o0 = tl ? tl.off[0] : 1e9, o1 = tl ? tl.off[1] : 1e9;
+        if (tl && atK && e >= o0) {   // old tyre: hub -> his hands, then he stands and steps back with it
+          const u = ss(o0, o1, e), up = ss(o1 + 0.05, o1 + 0.45, e);
+          const Dp = [r.ax - 1.05, sg * (WO + 1.3)];
+          if (up > 0) { move(O, r.K, Dp, o1 + 0.1, 1.4, e, P_KW, P_ST, r.psK, r.psK); }
+          const hp = holdPt(0.42), hy = hubY + (1.0 - hubY) * up;
+          const x = r.ax + (hp[0] - r.ax) * u, z = hz + (hp[1] - hz) * u, y = hubY + (hy - hubY) * u;
+          prop('tyre', x, y, z, angMix(-sg * HPI, O.psi, u), 0, st.oldC); hands(x, y + 0.12, z);
+        } else if (tl && atK && work) { hands(r.ax - 0.15, hubY + 0.15, sg * (WO + 0.05)); }
+      } else {   // 'on': the new tyre, carried out, held ready, fitted
+        const n0 = tl ? tl.on[0] : 1e9, n1 = tl ? tl.on[1] : 1e9;
+        if (!(tl && e >= n1)) {
+          const u = tl && atK ? ss(n0, n1, e) : 0, lift = tl && atK ? Math.max(standPen, ss(P - 0.05, P + 0.25, e)) : 0;
+          const carry = O.mv > 0.3 ? 1 : 0, hp = holdPt(carry ? 0.36 : 0.48), hy0 = carry ? 1.0 : HUB + 0.02, hy = hy0 + (hubY + 0.02 - hy0) * lift * (1 - carry);
+          const x = hp[0] + (r.ax - hp[0]) * u, z = hp[1] + (hz - hp[1]) * u, y = hy + (hubY - hy) * u;
+          prop('tyre', x, y, z, angMix(O.psi, -sg * HPI, u), 0, st.newC); hands(x, y + (carry ? 0 : 0.14), z);
+        }
+      }
+      return;
+    }
+    if (r.kd === 'fj' || r.kd === 'rj') {
+      const front = r.kd === 'fj', sgx = front ? 1 : -1, j = tl ? (front ? tl.fj : tl.rj) : null;
+      const u = tl ? ss(j[0], j[1], e) * (1 - ss(dropT[0], dropT[1], e)) : 0;
+      const hx = front ? NOSE_X : TAIL_X, hy = (front ? 0.09 : 0.2) + 0.1 * u, yh = 0.92 - 0.42 * u;
+      const hd = Math.sqrt(Math.max(0.1, JL * JL - (yh - hy) * (yh - hy))), Km = [hx + sgx * (hd + 0.38), 0];
+      let headAt = null;
+      if (front) {
+        move(O, r.D, Km, r.dl, V_WALK, st.tw, P_ST, P_ST, -gs * HPI, PI);
+        const out = tl ? ss(dropT[1] + 0.05, dropT[1] + 0.7, e) : 0;
+        if (out > 0) move(O, Km, [Km[0] + 0.5, gs * 2.3], dropT[1] + 0.05, 2.6, e, P_ST, P_ST, PI, gs * HPI);
+        else if (u > 0) mix5(O.leg, P_ST, P_PU, u);
+        else if (tl && e < P && P > 0) mix5(O.leg, P_ST, P_RD, 0.5 * standPen);
+        if (out <= 0 && st.tw >= moveT(r.D, Km, r.dl, V_WALK)) headAt = [hx, hy, 0];
+      } else {
+        const tR = r.dl + dist(r.D, r.Rd) / V_WALK, tIn = st.cx > -0.9 || tl ? Math.max(tR, st.tInR != null ? st.tInR : st.tw) : Infinity;
+        if (tIn < Infinity && st.tInR == null) st.tInR = tIn;
+        if (st.tw < tIn) move(O, r.D, r.Rd, r.dl, V_WALK, st.tw, P_ST, P_ST, r.psD, 0);
+        else move(O, r.Rd, Km, tIn, 2.4, st.tw, P_ST, P_ST, 0, 0);
+        const back = tl ? ss(dropT[1] + 0.05, dropT[1] + 0.5, e) : 0;
+        if (back > 0) { O.x -= 0.7 * back; }
+        else if (u > 0) mix5(O.leg, P_ST, P_PU, u);
+        else if (tl && e < P && P > 0) mix5(O.leg, P_ST, P_RD, 0.5 * standPen);
+        if (back <= 0 && st.tw >= tIn + dist(r.Rd, Km) / 2.4 + 0.2) headAt = [hx, hy, 0];
+      }
+      const c = Math.cos(O.psi), s = Math.sin(O.psi), hY = headAt ? yh : 0.92;
+      const handX = O.x + 0.38 * c, handZ = O.z + 0.38 * s;
+      let H = headAt;
+      if (!H) { const dd = Math.sqrt(JL * JL - (hY - 0.06) * (hY - 0.06)); H = [handX + dd * c, 0.06, handZ + dd * s]; }
+      const bx = handX - H[0], bz = handZ - H[2], hl = Math.hypot(bx, bz);
+      prop('jack', H[0], H[1], H[2], Math.atan2(bz, bx), Math.atan2(hY - H[1], hl), st.c1);
+      hands(handX, hY, handZ);
+      return;
+    }
+    // the front-wing men (a stop with a new front wing only)
+    const wg = tl && tl.wg;
+    if (!wg || !(e >= P)) { O.hide = true; return; }
+    const lat = gs * 0.55;   // (the wing's centre is 0.55 m to his side, on the car's centreline: holdPt's lateral)
+    if (r.kd === 'wo') {
+      move(O, r.D, r.K, P, 4.2, e, P_ST, P_KW, -gs * HPI, PI);
+      const pull = ss(wg[0], wg[0] + 0.5, e), up = ss(wg[0] + 0.5, wg[0] + 0.8, e);
+      if (up > 0) move(O, r.K, r.Dp, wg[0] + 0.8, 1.6, e, P_KW, P_ST, PI, -gs * HPI);
+      else if (e >= wg[0] - 0.3) mix5(O.leg, P_ST, P_RD, ss(wg[0] - 0.3, wg[0], e));
+      if (e >= wg[0]) {
+        const hp = holdPt(0.32, lat), ax = FW_X + 0.45 * pull, ay = FW_Y + 0.05 * pull;
+        const x = ax + (hp[0] - ax) * up, z = (hp[1] - 0) * up, y = ay + (0.95 - ay) * up;
+        prop('wing', x, y, z, angMix(0, O.psi + PI, up), 0, st.c1);
+        const h = holdPt(0.32); hands(h[0] + (x - hp[0]), y, h[1] + (z - hp[1]));
+      }
+    } else {
+      const tR = P + dist(r.D, r.Rd) / 4.2;
+      if (e < wg[2]) move(O, r.D, r.Rd, P, 4.2, e, P_ST, P_ST, -gs * HPI, PI);
+      else move(O, r.Rd, r.K, wg[2], 2.4, e, P_ST, P_RD, PI, PI);
+      if (e < wg[3]) {
+        const u = ss(wg[2] + dist(r.Rd, r.K) / 2.4, wg[3], e), hp = holdPt(0.32, lat), y0 = 0.95 - 0.5 * ss(wg[2], wg[3] - 0.3, e) * (e > tR ? 1 : 0);
+        const x = hp[0] + (FW_X - hp[0]) * u, z = hp[1] * (1 - u), y = y0 + (FW_Y - y0) * u;
+        prop('wing', x, y, z, angMix(O.psi + PI, 0, u), 0, st.c1);
+        const h = holdPt(0.32); hands(h[0] + (x - hp[0]), Math.max(0.35, y), h[1] + (z - hp[1]));
+      }
+    }
+  }
+  // the walk back into the garage (from where each stood when the car left); the old tyres / wing / guns / jacks go with them
+  function poseBack(st, r) {
+    const t = st.tb, d0 = r.dlb, a = r.end, ps0 = r.endPsi;
+    if ((r.kd === 'wo' || r.kd === 'wn') && !r.endOn) { O.hide = true; return; }
+    move(O, a, r.D, d0, V_BACK, t, r.endLeg || P_ST, P_ST, ps0, Math.atan2(r.D[1] - a[1], r.D[0] - a[0]));
+    if (t > d0 + dist(a, r.D) / V_BACK + 0.05) { O.hide = true; return; }
+    const hp = holdPt(0.34);
+    if (r.kd === 'gun') { prop('gun', hp[0], 0.95, hp[1], O.psi, 0, null); hands(hp[0], 0.93, hp[1]); }
+    else if (r.kd === 'off' && st.stopped) { prop('tyre', hp[0], 1.0, hp[1], O.psi, 0, st.oldC); hands(hp[0], 1.0, hp[1]); }
+    else if (r.kd === 'on' && !st.stopped) { prop('tyre', hp[0], 1.0, hp[1], O.psi, 0, st.newC); hands(hp[0], 1.0, hp[1]); }
+    else if (r.kd === 'wo' && st.stopped) { const w = holdPt(0.32, st.gs * 0.55); prop('wing', w[0], 0.95, w[1], O.psi + PI, 0, st.c1); hands(hp[0], 0.95, hp[1]); }
+    else if (r.kd === 'fj' || r.kd === 'rj') {
+      const c = Math.cos(O.psi), s = Math.sin(O.psi), hx = O.x + 0.38 * c, hz = O.z + 0.38 * s, dd = Math.sqrt(JL * JL - 0.86 * 0.86);
+      prop('jack', hx + dd * c, 0.06, hz + dd * s, O.psi + PI, Math.atan2(0.86, dd), st.c1); hands(hx, 0.92, hz);
+    }
+  }
+
+  // ---------- drawing
+  let nC = 0, nT = 0, nG = 0, nJ = 0, nW = 0;
+  function putCrew(st, A, x, z, y, phi, leg, arm, drop) {
+    if (nC >= MAXI) return;
+    const g = K.geo, iA = g.attributes.iA.array, iB = g.attributes.iB.array, iC = g.attributes.iC.array, iD = g.attributes.iD.array, i = nC++;
+    const c = Math.cos(phi), s = Math.sin(phi), m = K.crew.instanceMatrix.array, o = 16 * i;
+    m[o] = c; m[o + 1] = 0; m[o + 2] = s; m[o + 3] = 0; m[o + 4] = 0; m[o + 5] = 1; m[o + 6] = 0; m[o + 7] = 0;
+    m[o + 8] = -s; m[o + 9] = 0; m[o + 10] = c; m[o + 11] = 0; m[o + 12] = x; m[o + 13] = y - drop; m[o + 14] = z; m[o + 15] = 1;
+    iA[4 * i] = leg[0]; iA[4 * i + 1] = leg[1]; iA[4 * i + 2] = leg[2]; iA[4 * i + 3] = leg[3];
+    iB[4 * i] = arm[0]; iB[4 * i + 1] = arm[1]; iB[4 * i + 2] = arm[2]; iB[4 * i + 3] = arm[3];
+    iC[4 * i] = leg[4]; iC[4 * i + 1] = st.c1[0]; iC[4 * i + 2] = st.c1[1]; iC[4 * i + 3] = st.c1[2];
+    iD[3 * i] = st.c2[0]; iD[3 * i + 1] = st.c2[1]; iD[3 * i + 2] = st.c2[2];
+  }
+  function putProp(A, kd, x, y, z, yaw, pitch, col) {
+    const mesh = kd === 'tyre' ? K.tyre : kd === 'gun' ? K.gun : kd === 'jack' ? K.jack : K.wing;
+    const n = kd === 'tyre' ? nT++ : kd === 'gun' ? nG++ : kd === 'jack' ? nJ++ : nW++;
+    if (n >= mesh.instanceMatrix.count) return;
+    const c = Math.cos(A.h), s = Math.sin(A.h), wx = A.x + x * c - z * s, wz = A.z + x * s + z * c;
+    // tyre: axle (local z) along the car-local direction yaw; gun / jack / wing: local +x along it
+    const wy = kd === 'tyre' ? HPI - (yaw + A.h) : -(yaw + A.h);
+    K.E.set(0, wy, pitch, 'YXZ'); K.Q.setFromEuler(K.E); K.P.set(wx, A.y + y, wz);
+    K.M4.compose(K.P, K.Q, K.S); mesh.setMatrixAt(n, K.M4);
+    if (col) { if (typeof col === 'string') K.C.set(col); else K.C.setRGB(col[0], col[1], col[2]); mesh.setColorAt(n, K.C); }
+    else mesh.setColorAt(n, K.C.setRGB(0.85, 0.87, 0.9));
+  }
+  function drawCar(st, v) {
+    const A = st.A;
+    for (let i = 0; i < st.R.length; i++) {
+      const r = st.R[i];
+      O.hide = false; pose(st, r);
+      if (O.hide) continue;
+      const leg = O.leg, drop = dropOf(leg), arm = O.arm;
+      if (O.hand) { ik(O.hand[0], O.hand[1], drop, leg[4], arm, 0); arm[2] = arm[0]; arm[3] = arm[1]; }
+      else { const w = O.mv, sp = Math.sin(O.ph || 0) * 0.32 * w; arm[0] = -sp + 0.05; arm[1] = 0.25 * w + 0.1; arm[2] = sp + 0.05; arm[3] = 0.25 * w + 0.1; }
+      const c = Math.cos(A.h), s = Math.sin(A.h);
+      putCrew(st, A, A.x + O.x * c - O.z * s, A.z + O.x * s + O.z * c, A.y, A.h + O.psi, leg, arm, drop);
+      for (let k = 0; k < O.pr.length; k += 7) putProp(A, O.pr[k], O.pr[k + 1], O.pr[k + 2], O.pr[k + 3], O.pr[k + 4], O.pr[k + 5], O.pr[k + 6]);
+    }
+    // the car itself: up on the jacks, its tyres off between the off and on, the old flaps off for a new wing
+    if (st.ph !== 'stop' || !st.tl || !v || !v.model) return;
+    const grp = v.model.group, tl = st.tl, e = st.e;
+    if (st.lf > 0 || st.lr > 0) { grp.position.y += (st.lf + st.lr) / 2; grp.rotation.z += (st.lf - st.lr) / 3.4; }
+    const rigs = v.model.parts && v.model.parts.rigs;
+    if (!rigs) return;
+    const off = e >= tl.off[0] && e < tl.on[1], wing = tl.wg && e >= tl.wg[0] + 0.3 && e < tl.wg[3];
+    for (const rg of rigs) {
+      if (off && rg.tyres) for (const m of rg.tyres) if (m.visible) { m.visible = false; hid.push(m); }
+      if (wing && rg.ffM && rg.ffM.visible) { rg.ffM.visible = false; hid.push(rg.ffM); }
+    }
+  }
+  function restore() { for (const m of hid) m.visible = true; hid.length = 0; }
+  function clearDraw() { if (!K) return; K.crew.count = 0; K.tyre.count = 0; K.gun.count = 0; K.jack.count = 0; K.wing.count = 0; }
+
+  const CAND = [];
+  function frame(G, dt, X) {
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    restore();
+    const race = G && G.race, T = G && G.track;
+    if (!race || !T || !T.pit || !X || !X.world || !X.views || PitCrew.off) { clearDraw(); ST.clear(); lastT = null; return; }
+    if (init() && K.root.parent !== X.world) X.world.add(K.root);   // (attached at once, empty: Render3D.prewarm compiles the crew with the track, no hitch at the first stop)
+    const rt = race.t || 0;
+    let drt = lastT == null ? 0 : rt - lastT;
+    lastT = rt;
+    if (drt < -1e-6 || drt > 1.5 || X.views !== lastViews) { ST.clear(); drt = 0; lastViews = X.views; }   // (a rewind / a jump / new cars: start over)
+    drt = Math.max(0, drt);
+    const noCrew = race.mode === 'timetrial' || race.phase === 'quali';
+    const cam = X.cam && X.cam.position, cx = cam ? cam.x : 0, cz = cam ? cam.z : 0;
+    CAND.length = 0;
+    for (const v of X.views) {
+      const car = v.car; if (!car) continue;
+      let st = ST.get(car);
+      if (noCrew) { if (st) ST.delete(car); continue; }
+      const ps = car._race && car._race.pit, el = elapsed(car);
+      const coming = el == null && car.pitState === 'entry' && (!ps || ps.stop) && !car.finished;
+      if (el != null || coming) {
+        if (!st || st.ph === 'back') { st = newState(car, T, X, ps, rt); ST.set(car, st); if (el != null) { st.tw = 99; st.tnAt = 0; } }
+        st.tw += drt;
+        st.cx = local(st, car)[0];
+        if (st.tnAt == null && Math.hypot(car.x - st.A.x, car.z - st.A.z) < 18) st.tnAt = st.tw;
+        if (el != null) {
+          if (st.ph !== 'stop') {
+            st.ph = 'stop'; st.stopped = true;
+            st.A.x = car.x; st.A.z = car.z; st.A.h = car.h; if (v.y != null && isFinite(v.y)) st.A.y = v.y;
+            st.oldC = cmpOf(car.tyre && car.tyre.compound);
+            if (st.tnAt == null) st.tnAt = st.tw;
+          }
+          st.tl = timeline(car); st.e = el;
+          if (st.tl && el >= st.tl.end - 1e-6 && car.tyre) st.newC = cmpOf(car.tyre.compound);
+        }
+        if (!st.newC || st.ph === 'out') st.newC = cmpOf(car.nextCompound || car.pitCompound || (car.isPlayer && race.playerPitCompound) || (car.tyre && car.tyre.compound));
+        if (!st.oldC) st.oldC = cmpOf(car.tyre && car.tyre.compound);
+        const tl = st.tl, e = st.e;
+        st.lf = tl && st.ph === 'stop' ? 0.1 * ss(tl.fj[0], tl.fj[1], e) * (1 - ss(tl.drop[0], tl.drop[1], e)) : 0;
+        st.lr = tl && st.ph === 'stop' ? 0.1 * ss(tl.rj[0], tl.rj[1], e) * (1 - ss(tl.drop[0], tl.drop[1], e)) : 0;
+      } else if (st) {
+        if (st.ph !== 'back') {   // the car has gone: everyone walks back in from where they stand
+          if (!K) { ST.delete(car); continue; }
+          let bt = 0;
+          for (const r of st.R) {
+            O.hide = false; pose(st, r);
+            r.end[0] = O.x; r.end[1] = O.z; r.endPsi = O.psi; r.endOn = !O.hide; r.endLeg = r.endLeg || [0, 0, 0, 0, 0]; mix5(r.endLeg, O.leg, O.leg, 0);
+            r.dlb = 0.2 + (r.far ? 0.7 : 0) + 0.08 * (st.R.indexOf(r) % 4);
+            bt = Math.max(bt, r.dlb + dist(r.end, r.D) / V_BACK + 0.2);
+          }
+          st.ph = 'back'; st.tb = 0; st.backT = bt; st.lf = st.lr = 0;
+        } else st.tb += drt;
+        if (st.tb > st.backT) { ST.delete(car); continue; }
+      } else continue;
+      const d2 = (st.A.x - cx) * (st.A.x - cx) + (st.A.z - cz) * (st.A.z - cz);
+      if (d2 < R_FAR * R_FAR) { st.d2 = d2; st.v = v; CAND.push(st); }
+    }
+    if (!CAND.length) { clearDraw(); stat.cars = 0; stat.crew = 0; stat.ms = 0; return; }
+    if (!init()) return;
+    if (K.root.parent !== X.world) X.world.add(K.root);
+    CAND.sort((a, b) => a.d2 - b.d2);
+    nC = nT = nG = nJ = nW = 0;
+    for (let k = 0; k < CAND.length && k < MAXC; k++) drawCar(CAND[k], CAND[k].v);
+    const fin = (m, n) => { m.count = Math.min(n, m.instanceMatrix.count); if (n) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; } };
+    fin(K.crew, nC); fin(K.tyre, nT); fin(K.gun, nG); fin(K.jack, nJ); fin(K.wing, nW);
+    if (nC) for (const a of ['iA', 'iB', 'iC', 'iD']) K.geo.attributes[a].needsUpdate = true;
+    stat.cars = Math.min(CAND.length, MAXC); stat.crew = nC;
+    stat.ms = typeof performance !== 'undefined' ? performance.now() - t0 : 0;
+  }
+
+  return { timeline, elapsed, frame, off: false, stats: () => stat, _st: ST };
 })();
 
 
@@ -85639,16 +86365,20 @@ const LVFX = (() => {
       #include <colorspace_fragment>
       #include <fog_fragment>
       }`;
+    // (the dark back box stood 5 cm behind the screen: under one depth step beyond ~200 m with the cockpit's 0.04 m near plane, so
+    // far away it z-fought the screen - black squares flashing on the signs (the user, 2026-10-25). Its face is now 0.2 m back and
+    // the screen has a polygon offset: 4 depth steps + one pixel's slope in front at any distance)
     const slots = signs.map((s, i) => ({ s, slot: i % nSlot, acc: rnd(i) / o.hz }));
     slots.forEach(({ s, slot }) => {
       const cx = slot % o.cols, cyy = Math.floor(slot / o.cols), asp = s.w / s.h;
       // the slot area used keeps the sign's aspect inside the 512 x 512 slot
       const uw = asp >= 1 ? 1 : asp, vh = asp >= 1 ? 1 / asp : 1;
       const m = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: null }, uBright: { value: s.bright || o.bright },
-        uSlot: { value: new THREE.Vector4((cx + (1 - uw) / 2) / o.cols, (cyy + (1 - vh) / 2) / o.rows, uw / o.cols, vh / o.rows) } }]), vertexShader: VS, fragmentShader: FS, fog: true, side: THREE.DoubleSide });
+        uSlot: { value: new THREE.Vector4((cx + (1 - uw) / 2) / o.cols, (cyy + (1 - vh) / 2) / o.rows, uw / o.cols, vh / o.rows) } }]), vertexShader: VS, fragmentShader: FS, fog: true, side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
       m.uniforms.uMap.value = rt.texture; mats.push(m);
       const q = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h), m); q.position.set(s.x, s.y, s.z); q.rotation.y = s.yaw || 0; group.add(q);
-      const back = new THREE.Mesh(new THREE.BoxGeometry(s.w + 0.6, s.h + 0.6, 0.8), new THREE.MeshLambertMaterial({ color: 0x1b1c22 })); back.position.set(s.x, s.y, s.z); back.rotation.y = s.yaw || 0; back.translateZ(-0.45); group.add(back);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(s.w + 0.6, s.h + 0.6, 0.8), new THREE.MeshLambertMaterial({ color: 0x1b1c22 })); back.position.set(s.x, s.y, s.z); back.rotation.y = s.yaw || 0; back.translateZ(-0.6); group.add(back);
       const ph = s.y - s.h / 2 - 0.3; if (ph > 1) { const pl = new THREE.Mesh(new THREE.BoxGeometry(Math.min(3, s.w * 0.2), ph, 1.6), pylonMat); pl.position.set(s.x, ph / 2, s.z); pl.rotation.y = s.yaw || 0; group.add(pl); }
       s._asp = asp; s._uw = uw; s._vh = vh;
     });
@@ -85669,33 +86399,45 @@ const LVFX = (() => {
   //   poly: straight edges (a 6-sided prism per edge instead of a Catmull-Rom tube; a 2-point open tube is always one),
   //   rib: [ux, uy, uz, h] a flat LED ribbon h m along (ux, uy, uz) from the points (barrier / fence strips)}]
   // Every tube goes into ONE merged mesh (one draw call, DoubleSide for the one-sided ribbons; it was a mesh per tube).
+  // FAR FIELD (the user 2026-10-25: red / green strobing far down the straights): far away a tube / ribbon is thinner than a pixel
+  // (it broke into crawling dashes), its chase finer than a pixel (aliased into flashing bands) and the barrier ribbons, 3 cm off the
+  // barrier face, z-fought it. Now each vertex is pushed out from its tube's axis / ribbon's midline (aO: unit direction, half size)
+  // to at least 1 px across, dimmed by the same ratio (the same light per metre, steady); the chase and the 6 Hz shimmer fade to
+  // their steady means from 90 to 200 m (and wherever the chase is finer than a few pixels), the whole neon to 65 % there (calm far
+  // away); a polygon offset keeps the ribbons in front of the barrier face. Nearer than ~90 m nothing changes.
   X.Neon = function (tubes) {
     const group = new THREE.Group();
-    const mat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 } }]), side: THREE.DoubleSide,
-      vertexShader: `attribute vec4 aC; attribute vec2 aS; varying vec4 vC; varying vec2 vS;
+    const mat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uVH: { value: 720 } }]), side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
+      vertexShader: `attribute vec4 aC; attribute vec2 aS; attribute vec4 aO; uniform float uVH; varying vec4 vC; varying vec2 vS; varying float vFar;
         #include <fog_pars_vertex>
-        void main(){ vC = aC; vS = aS; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+        void main(){ vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          float pw = 2.0 * max(-mvPosition.z, 0.05) / (projectionMatrix[1][1] * uVH), hn = max(aO.w, 0.5 * pw);   // (pw: a pixel in metres here)
+          mvPosition.xyz += mat3(modelViewMatrix) * aO.xyz * (hn - aO.w);
+          vFar = smoothstep(90.0, 200.0, -mvPosition.z); vC = vec4(aC.rgb, aC.a * aO.w / hn * (1.0 - 0.35 * vFar)); vS = aS; gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
         }`,
-      fragmentShader: `uniform float uTime; varying vec4 vC; varying vec2 vS;
+      fragmentShader: `uniform float uTime; varying vec4 vC; varying vec2 vS; varying float vFar;
         #include <fog_pars_fragment>
-        void main(){ float on = vS.y > 0.0 ? 0.25 + 0.75 * step(0.45, fract(vS.x * vS.y - uTime * 2.5)) : 1.0;
-          float fl = 0.92 + 0.08 * sin(uTime * 37.0 + vS.x);
+        void main(){ float ph = vS.x * vS.y, on = vS.y > 0.0 ? 0.25 + 0.75 * step(0.45, fract(ph - uTime * 2.5)) : 1.0;
+          if (vS.y > 0.0) on = mix(on, 0.6625, max(vFar, clamp(fwidth(ph) * 2.0 - 0.3, 0.0, 1.0)));   // (0.6625: the chase's mean)
+          float fl = 0.92 + 0.08 * sin(uTime * 37.0 + vS.x) * (1.0 - max(vFar, clamp(fwidth(vS.x) - 0.5, 0.0, 1.0)));
           gl_FragColor = vec4(vC.rgb * vC.a * on * fl, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
         }`, fog: true });
-    const P = [], C = [], S = [], I = []; let nv = 0;
+    mat.extensions = { derivatives: true };
+    const P = [], C = [], S = [], O = [], I = []; let nv = 0;
     const SP = [], SC = [], SV = [], SI = []; let ns = 0;   // (ribbon spill: an additive glow on the ground in front of a ribbon, tb.spill [w m, strength], tb.nrm [[nx, nz] per point])
-    const vtx = (x, y, z, tb, s) => { P.push(x, y, z); C.push(tb.col[0], tb.col[1], tb.col[2], tb.k || 3.0); S.push(s, tb.chase || 0); return nv++; };
+    const vtx = (x, y, z, tb, s, ox, oy, oz, oh) => { P.push(x, y, z); C.push(tb.col[0], tb.col[1], tb.col[2], tb.k || 3.0); S.push(s, tb.chase || 0); O.push(ox, oy, oz, oh); return nv++; };   // (o: aO)
     const quad = (a, b, c, d) => I.push(a, b, c, a, c, d);
     for (const tb of tubes) {
       const pts = tb.pts; if (!pts || pts.length < 2) continue;
       if (tb.rib) {   // a flat strip: two vertices per point
         const [ux, uy, uz, h] = tb.rib; let acc = 0;
         for (let k = 0; k < pts.length; k++) { const p = pts[k]; if (k) acc += Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1], p[2] - pts[k - 1][2]);
-          const a = vtx(p[0], p[1], p[2], tb, acc); vtx(p[0] + ux * h, p[1] + uy * h, p[2] + uz * h, tb, acc); if (k) quad(a - 2, a, a + 1, a - 1);
+          const a = vtx(p[0], p[1], p[2], tb, acc, -ux, -uy, -uz, h / 2); vtx(p[0] + ux * h, p[1] + uy * h, p[2] + uz * h, tb, acc, ux, uy, uz, h / 2); if (k) quad(a - 2, a, a + 1, a - 1);
           if (tb.spill && tb.nrm) { const [w, st, dy] = tb.spill, [nx, nz] = tb.nrm[k], y = p[1] + dy;
             SP.push(p[0], y, p[2], p[0] + nx * w, y, p[2] + nz * w); SC.push(...tb.col, st, ...tb.col, st); SV.push(0, 1);
             if (k) SI.push(ns - 2, ns, ns + 1, ns - 2, ns + 1, ns - 1); ns += 2; } }
@@ -85706,14 +86448,14 @@ const LVFX = (() => {
           let ux = -dz, uy = 0, uz = dx, um = Math.hypot(ux, uz); if (um < 1e-3) { ux = 1; uz = 0; um = 1; } ux /= um; uz /= um;   // (u: horizontal, across the edge)
           const vx = uy * dz - uz * dy, vy = uz * dx - ux * dz, vz = ux * dy - uy * dx, i0 = nv;
           for (const [p, s] of [[a, acc], [b, acc + L]]) for (let j = 0; j < 6; j++) { const an = j / 6 * Math.PI * 2, c = Math.cos(an) * r, sn = Math.sin(an) * r;
-            vtx(p[0] + ux * c + vx * sn, p[1] + uy * c + vy * sn, p[2] + uz * c + vz * sn, tb, s); }
+            vtx(p[0] + ux * c + vx * sn, p[1] + uy * c + vy * sn, p[2] + uz * c + vz * sn, tb, s, (ux * c + vx * sn) / r, (uy * c + vy * sn) / r, (uz * c + vz * sn) / r, r); }
           for (let j = 0; j < 6; j++) { const j1 = (j + 1) % 6; quad(i0 + j, i0 + j1, i0 + 6 + j1, i0 + 6 + j); }
           acc += L; }
       } else {   // a curve (sign frames, the Flamingo plumes): Catmull-Rom tube, copied into the merged arrays
         const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])), !!tb.closed, 'centripetal');
         const len = curve.getLength(), seg = Math.max(8, Math.round(len * (tb.segK || 1.5))), g = new THREE.TubeGeometry(curve, seg, tb.r || 0.12, 6, !!tb.closed);
-        const gp = g.attributes.position.array, gu = g.attributes.uv.array, gi = g.index.array, i0 = nv;
-        for (let i = 0; i < gp.length / 3; i++) vtx(gp[i * 3], gp[i * 3 + 1], gp[i * 3 + 2], tb, gu[i * 2] * len);
+        const gp = g.attributes.position.array, gn = g.attributes.normal.array, gu = g.attributes.uv.array, gi = g.index.array, i0 = nv, tr = tb.r || 0.12;
+        for (let i = 0; i < gp.length / 3; i++) vtx(gp[i * 3], gp[i * 3 + 1], gp[i * 3 + 2], tb, gu[i * 2] * len, gn[i * 3], gn[i * 3 + 1], gn[i * 3 + 2], tr);
         for (let i = 0; i < gi.length; i++) I.push(gi[i] + i0);
         g.dispose();
       }
@@ -85721,15 +86463,19 @@ const LVFX = (() => {
     if (nv) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(C), 4));
-      g.setAttribute('aS', new THREE.BufferAttribute(new Float32Array(S), 2)); g.setIndex(new THREE.BufferAttribute(nv > 65535 ? new Uint32Array(I) : new Uint16Array(I), 1));
+      g.setAttribute('aS', new THREE.BufferAttribute(new Float32Array(S), 2)); g.setAttribute('aO', new THREE.BufferAttribute(new Float32Array(O), 4));
+      g.setIndex(new THREE.BufferAttribute(nv > 65535 ? new Uint32Array(I) : new Uint16Array(I), 1));
       g.computeBoundingSphere(); const m = new THREE.Mesh(g, mat); m.name = 'lv neon'; group.add(m);
+      const vh = new THREE.Vector2();   // (uVH: the target's height in pixels, per draw: the main view, mirrors, reflections)
+      m.onBeforeRender = r => { const rt = r.getRenderTarget(); mat.uniforms.uVH.value = rt ? rt.height : r.getDrawingBufferSize(vh).y; };
     }
     if (ns) {   // (additive, faded with the fog by hand: fog_fragment would add the fog colour)
       const smat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog]), fog: true, transparent: true, depthWrite: false,
         blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
         vertexShader: `attribute vec4 aC; attribute float aV; varying vec4 vC; varying float vV;
           #include <fog_pars_vertex>
-          void main(){ vC = aC; vV = aV; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+          void main(){ vV = aV; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+          vC = vec4(aC.rgb, aC.a * (1.0 - smoothstep(70.0, 160.0, -mvPosition.z)));   // (far: a sliver on the road that z-fought it: faded out)
           #include <fog_vertex>
           }`,
         fragmentShader: `varying vec4 vC; varying float vV;
@@ -85750,7 +86496,7 @@ const LVFX = (() => {
       g.setAttribute('aV', new THREE.BufferAttribute(new Float32Array(SV), 1)); g.setIndex(new THREE.BufferAttribute(ns > 65535 ? new Uint32Array(SI) : new Uint16Array(SI), 1));
       g.computeBoundingSphere(); const m = new THREE.Mesh(g, smat); m.name = 'lv neon spill'; m.renderOrder = 2; group.add(m);
     }
-    track('geo', `neon tubes ${tubes.length} (merged)`, nv * 36 + I.length * (nv > 65535 ? 4 : 2) + ns * 32 + SI.length * 4);
+    track('geo', `neon tubes ${tubes.length} (merged)`, nv * 52 + I.length * (nv > 65535 ? 4 : 2) + ns * 32 + SI.length * 4);
     return { group, mat, verts: nv, spillVerts: ns, update: t => { mat.uniforms.uTime.value = t; } };
   };
 
@@ -86278,6 +87024,7 @@ const Render3D = (() => {
   let bulbs = null, glows = null, lightsKey = -99;
   let smoke = null, sparks = null, streaks = null;
   let debugCfg = null;
+  const PCX = {};   // (PitCrew.frame's context, reused)
   let warmDue = false, warmMs = 0;          // prewarm(): due on the next drawn frame after a track / cars change
   let csm = null;                           // smoothed curvature per sample
   let pitWallRange = null, garageRange = null, tunnelRange = null, garageRangeRG = null;   // (garageRangeRG: the s range behind garages along a pit road, FIX3)
@@ -89482,9 +90229,13 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       try { f(ctx); } catch (e) { console.error('[Render3D] ' + f.name + ' failed:', e); } finally { for (const g of geos) g.yF = null; }
     }
     addMesh(S, lambert({ vertexColors: true }), { cast: true, receive: true, chunk: CHUNK });
-    if (TBD && TB.i.length) addMesh(TB, lambert({ vertexColors: true, map: TBD.tex }), { cast: true, chunk: CHUNK });
+    // (boards hang 2-5 cm off a barrier / wall face: from ~100 m (cockpit near plane 0.04 m, 24-bit depth) that is under one depth step and
+    // they z-fought the face - dark boards flashing in and out as black squares far away (the user, 2026-10-25). A polygon offset keeps
+    // them in front: 4 depth steps + one pixel's slope, ~1 mm at 10 m)
+    const BOFF = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 };
+    if (TBD && TB.i.length) addMesh(TB, lambert(Object.assign({ vertexColors: true, map: TBD.tex }, BOFF)), { cast: true, chunk: CHUNK });
     addMesh(TY, lambert({ vertexColors: true, map: shared.tyres }), { cast: true, chunk: CHUNK });
-    addMesh(B, lambert({ vertexColors: true, map: shared.atlas }), { cast: true, chunk: CHUNK });
+    addMesh(B, lambert(Object.assign({ vertexColors: true, map: shared.atlas }, BOFF)), { cast: true, chunk: CHUNK });
     // reflective glass (curtain walls): the sky environment map does the reflections; lit from inside after dusk
     if (GL.i.length) {
       const night = ENV.tod !== 'day';
@@ -96574,6 +97325,10 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     if (BRD.m.length) { try { barFrame(G); } catch (e) { BRD.m.length = 0; console.error('[Render3D] movable barriers:', e); } }   // race control: barriers pushed back
     if (RCA.on) { try { rcActFrame(G, camera.position.x, camera.position.z); } catch (e) { RCA.on = false; console.error('[Render3D] race control actors:', e); } }
     if (RCP) { try { rcCarFrame(G); } catch (e) { RCP = null; console.error('[Render3D] safety car:', e); } }
+    if (T && typeof PitCrew !== 'undefined' && !PCX.err) {   // the pit crews at the boxes (pitcrew.js; lifts / tyres of the cars in a stop)
+      PCX.world = world; PCX.cam = camera; PCX.views = views; PCX.gy = carY; PCX.gf = garageRange && garageRange.frontE || null;
+      try { PitCrew.frame(G, dt, PCX); } catch (e) { PCX.err = true; console.error('[Render3D] pit crews:', e); }
+    }
     stepParticles(smoke, dt, -0.35, false);
     stepParticles(sparks, dt, 9.8, true);
     updateStreaks(player && !debugCfg ? player.speed || 0 : 0, dt);
@@ -98307,6 +99062,7 @@ const HUD = (() => {
       else if (scOn && si && si.sp === 2) { t = 'RESTART'; sub = si.m === 4 ? (si.fin ? 'LEAD THE FIELD TO THE FLAG' : kbOf(si, car) ? 'YOU LEAD · LEAVE A GAP TO THE SC' : 'YOUR RESTART · GO BEFORE THE LINE') : 'NO OVERTAKING BEFORE THE LINE'; }
       else if (scOn) { t = rc.sp === 2 ? 'RESTART' : 'SC DEPLOYED'; sub = 'NO OVERTAKING'; }
       else if (rc.vs === 2) { const left = Math.max(0, Math.ceil((rc.vsEnd || 0) - (race.t || 0))); t = 'VSC ENDING'; sub = 'GREEN FLAG' + (left > 0 ? ' IN ' + left + ' S' : ' SOON'); }
+      else if (RaceControl.scHeld && RaceControl.scHeld(rc)) { t = 'SC DEPLOYED'; sub = 'KEEP THE DELTA POSITIVE · NO OVERTAKING'; }   // (the SC called, held until it can come out ahead of the leader: shown as the SC, user 2026-10-25)
       else { t = 'VIRTUAL SAFETY CAR'; sub = 'KEEP THE DELTA POSITIVE · NO OVERTAKING'; }
       flash(t, { kind: 'alert', color: COL.yellow, sub, duration: 1.5, key: 'rcv', priority: 3 });   // (re-flashed every 0.2 s: it never runs out)
     } else if (RCB.neu) flash('GREEN FLAG', { kind: 'alert', color: COL.green, sub: RCB.neu === 'v' ? 'VSC OVER · RACING' : si && si.m === 6 ? 'RESTART · NO OVERTAKING BEFORE THE LINE' : 'RESTART · RACING', duration: 3, key: 'rcv', priority: 3 });
@@ -100796,7 +101552,7 @@ const Menu = (() => {
     proxArrows: true,   // HUD proximity arrows around your car (hud.js proxOn)
     honkOthers: true,   // multiplayer: hear other players' honks (honk.js)
     units: 'kmh',   // speed unit shown everywhere: 'kmh' | 'mph' (U.setSpeedUnit, main.js onSettings)
-    engineer: true, engVoice: true, engVisual: true, engVerbosity: 'normal', engVoiceVol: 1, engVoiceName: '',   // race engineer (engineer_ui.js)
+    engineer: true, engVoice: true, engVisual: true, engPopups: true, engVerbosity: 'normal', engVoiceVol: 1, engVoiceName: '',   // race engineer (engineer_ui.js; engPopups: every message's text as a popup, user 2026-10-25)
     music: true, musicVolume: 0.7,   // menu / pause / results music (Music; scaled by the master volume)
     engineMenus: false,   // the car's sounds on the pre-race entry list / grid + time-trial garage (results: always silent)
     touchSteer: 'tilt', touchCtl: 'auto', tiltSens: 0.5, tiltDead: 0.3, touchSize: 0.5,   // touch devices (mobile.js)
@@ -101005,7 +101761,7 @@ const Menu = (() => {
     s.minimap = pick(s.minimap, OPT.minimap, 'full');
     s.units = pick(s.units, OPT.units, 'kmh');
     s.telemetry = s.telemetry !== false;
-    for (const k of ['engineer', 'engVoice', 'engVisual']) s[k] = s[k] !== false;   // race engineer
+    for (const k of ['engineer', 'engVoice', 'engVisual', 'engPopups']) s[k] = s[k] !== false;   // race engineer
     s.engVerbosity = pick(s.engVerbosity, OPT.engVerb, 'normal');
     s.engVoiceVol = isNum(+s.engVoiceVol) && s.engVoiceVol !== '' && s.engVoiceVol != null ? Math.max(0, Math.min(1, +s.engVoiceVol)) : 1;
     if (!s.engVolUp) { if (s.engVoiceVol === 0.9) s.engVoiceVol = 1; s.engVolUp = 1; }   // (once: the old default 90% -> full volume)
@@ -101222,6 +101978,7 @@ const Menu = (() => {
     { k: 'engineer', label: 'Race engineer', type: 'toggle', tab: 'engineer' },
     { k: 'engVoice', label: 'Voice (spoken radio)', type: 'toggle', tab: 'engineer', showIf: () => S.engineer !== false },
     { k: 'engVisual', label: 'On-screen callouts', type: 'toggle', tab: 'engineer', showIf: () => S.engineer !== false },
+    { k: 'engPopups', label: 'Engineer popups', type: 'toggle', tab: 'engineer', showIf: () => S.engineer !== false },   // (every message's text for a few seconds, bottom left; engineer_ui.js)
     { k: 'engVerbosity', label: 'How much it talks', type: 'cycle', opts: OPT.engVerb, tab: 'engineer', showIf: () => S.engineer !== false },
     { k: 'engVoiceName', label: 'Engineer voice', type: 'cycle', tab: 'engineer', opts: () => ENG_UI() ? ENG_UI().voiceOptions() : [['', 'AUTO']],
       showIf: () => S.engineer !== false && S.engVoice !== false && !!ENG_UI() && ENG_UI().voiceOptions().length > 2 },
@@ -105342,7 +106099,7 @@ const SFX = (() => {
     const st = {
       load: 0, ts: 0, fade: 0, liftT: 9, downT: 9, nextPop: 0, popIdx: 0, prevThr: 0, prevShiftT: -Infinity, prevGear: 1,
       lastShiftAt: -9, chuffAt: -9, prevCol: 0, lastThump: -9, lastThumpK: 0, scrape: 0, prevAero: null, lastUi: -9, lastWarn: -9,
-      thunderAt: 0,
+      thunderAt: 0, pitEl: -1,
     };
     let player = null, paused = false, stalled = false, screenOK = true, pageOver = false, lastGPaused = false, duckK = 1;
     let vol = 0.8, lastSettingsVol = NaN, lastWall = wallNow(), V = VIEWS.chase, viewName = 'chase';
@@ -105487,6 +106244,27 @@ const SFX = (() => {
       tone(tonesEv, tj, { f: [[0, 120], [0.12, 45]], w2: 'triangle', r2: 1.5, m2: 0.3, a: 0.002, h: 0.01, d: 0.25, v: 0.35, fc: 600 });
       burst(noisesEv, tj, { fc: 900, q: 0.8, a: 0.001, h: 0.01, d: 0.12, v: 0.25 });
     }
+    // the stop's sounds on PitCrew's timeline (the crew's guns / jacks move on the same clock): each cue as the elapsed
+    // stop time passes it, the player's car only; a penalty is waited out first (the timeline starts the work after it)
+    function gunHit(gi, len) {
+      const g = GUN[gi], tb = now + 0.005, f = g.lfo.frequency, f0 = gi ? 29 : 25;
+      g.env.gain.cancelScheduledValues(tb); wake(g.gt, tb + len + 0.5);
+      g.env.gain.setTargetAtTime(1.3, tb, 0.004); g.env.gain.setTargetAtTime(0, tb + len, 0.012);
+      f.cancelScheduledValues(tb); f.setValueAtTime(f0 * 0.6, tb); f.exponentialRampToValueAtTime(f0, tb + 0.08);   // motor spin-up
+      burst(noisesEv, tb + len + 0.02, { ft: 'highpass', fc: 4500, q: 0.7, a: 0.01, h: 0.05, d: 0.2, v: 0.06, pan: gi ? 0.4 : -0.4 });
+    }
+    function jackDrop() {
+      const tj = now + 0.005;
+      tone(tonesEv, tj, { f: [[0, 120], [0.12, 45]], w2: 'triangle', r2: 1.5, m2: 0.3, a: 0.002, h: 0.01, d: 0.25, v: 0.35, fc: 600 });
+      burst(noisesEv, tj, { fc: 900, q: 0.8, a: 0.001, h: 0.01, d: 0.12, v: 0.25 });
+    }
+    function pitCues(p) {
+      const el = PitCrew.elapsed(p), tl = el == null ? null : PitCrew.timeline(p);
+      if (!tl) { st.pitEl = -1; return; }
+      const e0 = st.pitEl; st.pitEl = el;
+      if (el < e0 || (e0 >= 0 && el - e0 > 0.5)) return;   // (a rewind / a jump: no burst of old cues)
+      for (const c of tl.cues) if (c.t > e0 && c.t <= el) { if (c.k === 'gun') gunHit(c.gi, c.len); else jackDrop(); }
+    }
     function flapClick() { burst(noisesEv, now + 0.005, { ft: 'highpass', fc: 2500, q: 0.7, a: 0.001, h: 0.004, d: 0.03, v: 0.1 }); }
 
     function handleEvent(ev) {
@@ -105562,7 +106340,7 @@ const SFX = (() => {
           if ((mine || !car) && now - st.lastWarn > 0.6) for (let i = 0; i < 2; i++) tone(tonesEv, t + i * 0.25, { f: 185, w1: 'sawtooth', w2: 'sawtooth', r2: 1.059, m2: 0.8, a: 0.004, h: 0.16, d: 0.05, v: 0.22, fc: 1600, q: 1 });
           if (mine || !car) st.lastWarn = now;
           break;
-        case 'pitStop': if (mine) airGuns(t, num(ev.duration, 0)); break;
+        case 'pitStop': if (mine && (ev.garage || typeof PitCrew === 'undefined')) airGuns(t, num(ev.duration, 0)); break;   // (a stop in the box: pitCues)
         case 'raceEnd':
           chime(t, [1568, 1318.5, 1046.5], 0.11);
           if (now > CR.until) cheer(0.4, 2.5, false);
@@ -105805,6 +106583,7 @@ const SFX = (() => {
       if (!p || !ok) { silenceCar(); updateAI(G, null); return; }
       if (paused) return;
       engine(p, dt); carFx(p, dt); rainFx(G, p, dt); limiter(p); updateAI(G, p);
+      if (typeof PitCrew !== 'undefined') pitCues(p);
     }
     function onEvent(ev) {
       if (!offline && ctx.state !== 'running') return;
@@ -106480,7 +107259,10 @@ const Input = (() => {
 //     while it talks (SFX.duck). Urgent calls cut in; a routine one arriving while the voice is busy is said right
 //     after it only if still fresh (never a stale queue). Without speech support (or voice off) the callouts carry
 //     everything.
-//   Settings (G.settings): engineer, engVoice, engVisual, engVerbosity (logic), engVoiceVol, engVoiceName.
+//   Popups (user 2026-10-25, Settings > Engineer > Engineer popups, engPopups, default on): EVERY delivered message's text as a
+//     small radio-transcript card at the bottom left (above the turn tag; above the pit timer in the pit lane; phones: the right
+//     edge, mid height), POP_MAX at most (the newest at the bottom), each for 3.5-7 s by its length; off: none.
+//   Settings (G.settings): engineer, engVoice, engVisual, engPopups, engVerbosity (logic), engVoiceVol, engVoiceName.
 //   Pause screen: logHTML(G) = the scrollable radio log (menu timing board, RADIO tab).
 //   Radio key (Input action 'radio', Q by default): ask for the gaps.
 const EngineerUI = (() => {
@@ -106543,9 +107325,21 @@ const EngineerUI = (() => {
 .agp-el-row b { font: italic 800 1em/1.1 var(--agp-ft, Arial, sans-serif); letter-spacing: .03em; color: #fff; }
 .agp-el-row span { color: #d3d8e0; }
 .agp-el-row.is-crit { background: rgba(225, 6, 0, .14); }
-.agp-el-empty { padding: 2em 1em; text-align: center; font: 700 .9em/1.6 var(--agp-fd, Arial, sans-serif); letter-spacing: .12em; color: #8e96a5; }`;
+.agp-el-empty { padding: 2em 1em; text-align: center; font: 700 .9em/1.6 var(--agp-fd, Arial, sans-serif); letter-spacing: .12em; color: #8e96a5; }
+/* engineer popups (engPopups): the radio transcript, bottom left, never over the line of sight */
+.agp-eng-pop { position: absolute; left: 1.6em; bottom: 4.7em; max-width: 27em; display: flex; flex-direction: column; align-items: flex-start; gap: .35em; pointer-events: none; z-index: 2; }
+.agp-pclk.on ~ .agp-eng-pop { bottom: 14.6em; }
+.agp-ep { --c: #27d7f5; display: flex; flex-direction: column; gap: .18em; padding: .42em .8em .5em .7em; border-left: .26em solid var(--c); border-radius: .25em;
+  background: rgba(10, 12, 18, .74); box-shadow: 0 .3em 1em rgba(0, 0, 0, .3); animation: agp-eng-in .25s ease-out both; }
+.agp-ep.out { animation: agp-eng-out .3s ease-in both; }
+.agp-ep i { font: italic 800 .7em/1 var(--agp-ft, Arial, sans-serif); letter-spacing: .14em; color: var(--c); }
+.agp-ep span { font: 600 1em/1.3 var(--agp-fd, Arial, sans-serif); color: #eef1f5; }
+.agp-ep.is-crit { background: rgba(60, 8, 8, .82); }
+html.agp-touch .agp-hud .agp-eng-pop { left: auto; right: .8em; top: 38%; bottom: auto; max-width: 40vw; align-items: flex-end; font-size: .8em; }`;
 
-  let host = null, hudEl = null, E = {}, cur = null, q = [], lastSeq = 0, lastRace = null, lastS = null, shown = false, lastNz = null;
+  let host = null, hudEl = null, E = {}, cur = null, q = [], lastSeq = 0, lastRace = null, lastS = null, shown = false, lastNz = null, pops = [];
+  const POP_MAX = 2;
+  const popDur = m => Math.max(3.5, Math.min(7, 2.2 + String(m.text || '').split(/\s+/).length * 0.3));
   let voices = [], voiceSel = null, voiceKey = '', speakUntil = 0, duckOn = false, keep = [], curHot = false, pend = null, lastU = null;
   const RATE = 1.03, PITCH = 1, PEND_MAX = 2.5;   // (speech rate / pitch; s a routine message may wait for the voice)
   const SS = () => (typeof window !== 'undefined' && window.speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined' ? window.speechSynthesis : null);
@@ -106641,6 +107435,7 @@ const EngineerUI = (() => {
     const ntf = hudEl.querySelector('.agp-ntf');   // (the HUD's notification stack: the callout is its first card)
     if (ntf) ntf.insertBefore(el, ntf.firstChild); else hudEl.appendChild(el);
     E = { root: el, co: el.firstChild, ic: el.querySelector('.agp-eng-ic'), main: el.querySelector('b'), sub: el.querySelector('.agp-eng-tx span'), bar: el.querySelector('s') };
+    E.pop = document.createElement('div'); E.pop.className = 'agp-eng-pop'; hudEl.appendChild(E.pop);   // (last in the HUD: after .agp-pclk for its ~ rule)
     const ss = SS();
     if (ss) { loadVoices(); if (ss.addEventListener) ss.addEventListener('voiceschanged', loadVoices); else ss.onvoiceschanged = loadVoices; }
     // radio key: ask for the gaps (not while typing / in a menu)
@@ -106671,7 +107466,27 @@ const EngineerUI = (() => {
     if (fast) { E.co.className = 'agp-eng-co'; cur = null; if (hudEl) hudEl.classList.remove('has-eng'); return; }
     cur.out = true; cur.t = 0; E.co.classList.add('out');
   }
-  function reset() { q.length = 0; hide(true); stopVoice(); }
+  function reset() { q.length = 0; hide(true); stopVoice(); popClear(); }
+  // ---------- popups (engPopups) ----------
+  function popAdd(m) {
+    if (!E.pop || !m || !m.text) return;
+    const el = document.createElement('div');
+    el.className = 'agp-ep' + (m.pri === 0 ? ' is-crit' : '');
+    el.style.setProperty('--c', m.color || COL[m.cat] || COL.info);
+    el.innerHTML = '<i>RADIO</i><span>' + esc(m.text) + '</span>';
+    E.pop.appendChild(el);
+    pops.push({ el, t: 0, dur: popDur(m), out: false, key: m.key });
+    while (pops.length > POP_MAX) { const x = pops.shift(); x.el.remove(); }
+  }
+  function popStep(dt) {
+    for (let i = pops.length - 1; i >= 0; i--) {
+      const p = pops[i];
+      p.t += dt;
+      if (!p.out && p.t >= p.dur) { p.out = true; p.el.classList.add('out'); }
+      else if (p.out && p.t >= p.dur + 0.3) { p.el.remove(); pops.splice(i, 1); }
+    }
+  }
+  function popClear() { for (const p of pops) p.el.remove(); pops = []; }
   const CO_WAIT = 2.5;   // s a callout may wait for a critical one to finish (else dropped: never an old callout)
 
   // every frame (main)
@@ -106695,10 +107510,12 @@ const EngineerUI = (() => {
       if (ss && lastU && !ok(lastU._k) && (ss.speaking || ss.pending)) { cancelAll(ss); unduck(); speakUntil = 0; curHot = false; }
     }
     lastNz = nz;
-    const visual = set(G, 'engVisual', true) !== false, voice = set(G, 'engVoice', true) !== false && !!SS();
+    const visual = set(G, 'engVisual', true) !== false, voice = set(G, 'engVoice', true) !== false && !!SS(), popOn = set(G, 'engPopups', true) !== false;
+    if (!popOn && pops.length) popClear();
     for (const m of ES && ES.seq > lastSeq ? Engineer.feed(G, lastSeq) : []) {
       lastSeq = m.seq;
       if (G.race && G.race.t - m.t > 2) continue;   // (stale: e.g. delivered while this layer was not running)
+      if (popOn) popAdd(m);   // (every message, the HUD-banner ones too)
       const voiced = voice && speak(G, m);
       if (!voiced && typeof SFX !== 'undefined' && SFX.onEvent && G.player && m.pri <= 1) SFX.onEvent({ type: 'radio', car: G.player });   // (no voice: the chirp says "look")
       if (!visual || m.vis === false) continue;
@@ -106710,6 +107527,7 @@ const EngineerUI = (() => {
       show(m, voiced);
     }
     const fdt = Math.min(0.1, dt || 0);
+    if (pops.length) popStep(fdt);
     if (cur) {
       cur.t += fdt;
       if (!cur.out && cur.t >= cur.dur) hide(false);
@@ -109178,7 +109996,7 @@ const Game = (() => {
     engineMenus: false,   // car sounds on the pre-race screens (audio.js)
     setups: {},   // car setup per circuit { trackId: { fw, rw } } (CFG.setup; missing = baseline 6 / 6), player's car only
     // race engineer (engineer.js / engineer_ui.js, docs/ENGINEER.md): on/off, voice, on-screen callouts, how much it talks
-    engineer: true, engVoice: true, engVisual: true, engVerbosity: 'normal', engVoiceVol: 1, engVoiceName: '',
+    engineer: true, engVoice: true, engVisual: true, engPopups: true, engVerbosity: 'normal', engVoiceVol: 1, engVoiceName: '',
     damage: 'reduced',   // contact damage 'off' | 'visual' | 'reduced' | 'full' (damage.js; only with its flag on: ?damage)
     raceControl: { on: true, yellow: true, vsc: true, sc: true, red: true, freq: 'realistic', fail: true, crash: 'normal', avoid: true },   // (crash / avoid: AI crashes, CFG.aiCrash)   // race control (racecontrol.js; Settings > Rules)
   };
@@ -110210,6 +111028,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-25 11:43 -->
+<!-- Apex GP build 2026-10-26 02:56 -->
 </body>
 </html>
