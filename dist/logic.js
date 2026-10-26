@@ -957,6 +957,7 @@ const Livery = (() => {
 const TRACK_DATA = {
   vortex: {
     id: 'vortex',
+    lineMarginX: 1.2,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Autodromo Vortex',
     country: 'Italy (fictional)',
     climate: { when: 'early September (Monza)', wetDay: 0.26, rain: 0.18, start: 0.4 },   // dynamic weather (weather.js)
@@ -1023,6 +1024,7 @@ const TRACK_DATA = {
 
   harbour: {
     id: 'harbour',
+    lineMarginX: 1.8,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Harbour Street Circuit',
     country: 'France (fictional)',
     climate: { when: 'late May (Monaco)', wetDay: 0.17, rain: 0.12, start: 0.4 },
@@ -1194,6 +1196,7 @@ const TRACK_DATA = {
   // line) and the pit exit road that joins after T1 (the lane rejoins the straight before T1 here).
   mirage: {
     id: 'mirage',
+    lineMarginX: 1.2,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     zoneOpts: { lead: -40, back: 15, bendK: 1 / 220 },   // longer Straight-mode zones (user request): open on the corner exit, close just before braking
     name: 'Gulf Mirage International Circuit',
     country: 'Saudi Arabia (fictional)',
@@ -1306,6 +1309,7 @@ const TRACK_DATA = {
   // its Start line); the second "DRS detection" note before T9 has no equivalent (one detection point per lap).
   serrano: {
     id: 'serrano',
+    lineMarginX: 1.2,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Serrano GP Circuit',
     country: 'Austria (fictional)',
     climate: { when: 'early July (Vienna)', wetDay: 0.30, rain: 0.21, start: 0.25 },   // (summer storms: rarely at the lights)
@@ -1409,6 +1413,7 @@ const TRACK_DATA = {
   // T8 hairpin (highest), down the SE diagonal and the middle loop, up the NE diagonal, downhill on the east side.
   leman: {
     id: 'leman',
+    lineMarginX: 1.2,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Circuit du Léman',
     country: 'Switzerland (fictional)',
     climate: { when: 'mid June (Geneva)', wetDay: 0.37, rain: 0.26, start: 0.4 },
@@ -1781,6 +1786,7 @@ const TRACK_DATA = {
   },
   sepang: {
     id: 'sepang',
+    lineMarginX: 1.2,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Sepang Circuit',
     country: 'Malaysia',
     character: 'flowing',
@@ -2073,6 +2079,7 @@ const TRACK_DATA = {
   },
   bahrain: {
     id: 'bahrain',
+    lineMarginX: 1.4,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Bahrain International Circuit',
     rcType: 'permanent',   // (race control: a permanent circuit; theme.street is only its concrete-wall look)
     country: 'Bahrain',
@@ -2204,6 +2211,7 @@ const TRACK_DATA = {
   },
   jeddah: {
     id: 'jeddah',
+    lineMarginX: 1.0,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Jeddah Corniche Circuit',
     country: 'Saudi Arabia',
     character: 'fast',
@@ -2517,6 +2525,7 @@ const TRACK_DATA = {
   },
   silverstone: {
     id: 'silverstone',
+    lineMarginX: 1.2,   // (the Extreme AI's racing-line margin, m: the quickest clean one, 2026-10-26 sweep; others 1.6)
     name: 'Silverstone Circuit',
     country: 'United Kingdom',
     character: 'fast',
@@ -3446,47 +3455,54 @@ const buildTrack = (() => {
     for (let i = 0; i < N; i++) kerbL[i] = kerbR[i] = kerbM[i] > 0.5 ? 1 : 0;
 
     // ---- racing line ----
-    const kerbUse = data.kerbUse != null ? data.kerbUse : 0.4, margin = 1.6;
-    const lo = new Float64Array(N), hi = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      lo[i] = -(halfW[i] - margin) - (kerbL[i] ? kerbUse : 0);
-      hi[i] = (halfW[i] - margin) + (kerbR[i] ? kerbUse : 0);
-    }
-    // optional data.lineKeep [[s0, s1, lo, hi], ...]: the solver keeps the line within d [lo, hi] from s0 to s1 (15 m ramps), e.g.
-    // off a pit-exit merge (Las Vegas); tools/line_opt.mjs --bound takes the same windows
-    for (const kp of (Array.isArray(data.lineKeep) ? data.lineKeep : [])) {
-      const a = +kp[0], b = +kp[1], kl = +kp[2], kh = +kp[3];
-      for (let s = a - 15; s <= b + 15; s += step) {
-        const i = ((Math.round(s / step) % N) + N) % N, w = s < a ? (s - a + 15) / 15 : s > b ? (b + 15 - s) / 15 : 1;
-        const L = -(halfW[i] - margin), H = halfW[i] - margin;
-        lo[i] = Math.max(lo[i], L + (kl - L) * w); hi[i] = Math.min(hi[i], H + (kh - H) * w);
+    // margin: the line keeps the car centre this far inside the white line (data.lineMargin m, opt-in per circuit; default 1.6).
+    // solveLine(m) solves the line at another margin: T.lineFor(m), the Extreme AI's own line at data.lineMarginX (ai.js lmSet)
+    const kerbUse = data.kerbUse != null ? data.kerbUse : 0.4, margin = data.lineMargin != null ? +data.lineMargin : 1.6;
+    function solveLine(margin) {
+      const lo = new Float64Array(N), hi = new Float64Array(N);
+      for (let i = 0; i < N; i++) {
+        lo[i] = -(halfW[i] - margin) - (kerbL[i] ? kerbUse : 0);
+        hi[i] = (halfW[i] - margin) + (kerbR[i] ? kerbUse : 0);
       }
-    }
-    // optional data.raceLineFrom (at-spec or s): the sample the solver's lattice and sweeps start from (default the line).
-    // tools/shift_line.mjs sets it to the old line when it moves a circuit's line, so the racing line stays exactly as it was
-    let dl;
-    const r0 = data.raceLineFrom != null ? Math.round(atS(data.raceLineFrom) / step) % N : 0;
-    if (r0) {
-      const rot = A => { const B = new Float64Array(N); for (let i = 0; i < N; i++) B[i] = A[(i + r0) % N]; return B; };
-      const d0 = racingLine(N, rot(px), rot(pz), rot(nx), rot(nz), rot(lo), rot(hi), data.lineIters || 45);
-      dl = new Float64Array(N); for (let i = 0; i < N; i++) dl[(i + r0) % N] = d0[i];
-    } else dl = racingLine(N, px, pz, nx, nz, lo, hi, data.lineIters || 45);
-    dl = blur(dl, 2, 2);
-    for (let i = 0; i < N; i++) dl[i] = clamp(dl[i], lo[i], hi[i]);
-    // optional data.lineDelta [[s0, s1, cp, [c0 .. cn]], ...] (race-line hints): offsets added to the solved line from s0 to s1 (s1 may
-    // pass the lap's end), control points every ~cp m (n = round((s1 - s0) / cp), c0 = cn = 0), smoothstep between them; the result
-    // stays within [lo, hi] (or the solved line where that lies outside). Where this min-curvature line is clearly slower than a
-    // min-time one: tools/line_opt.mjs searches the offsets on this same lap-time model and prints them (relative to the solved
-    // line: re-run it when a circuit's centre line, widths or kerbs change)
-    for (const h of (Array.isArray(data.lineDelta) ? data.lineDelta : [])) {
-      const i0 = Math.round(+h[0] / step), i1 = Math.round(+h[1] / step), c = h[3] || [], nc = c.length - 1;
-      if (!(i1 > i0 && nc >= 1)) continue;
-      for (let i = i0; i <= i1; i++) {
-        const u = (i - i0) / (i1 - i0) * nc, k = Math.min(nc - 1, Math.floor(u)), f = u - k, w = f * f * (3 - 2 * f), j = ((i % N) + N) % N;
-        dl[j] = clamp(dl[j] + c[k] * (1 - w) + c[k + 1] * w, Math.min(dl[j], lo[j]), Math.max(dl[j], hi[j]));
+      // optional data.lineKeep [[s0, s1, lo, hi], ...]: the solver keeps the line within d [lo, hi] from s0 to s1 (15 m ramps), e.g.
+      // off a pit-exit merge (Las Vegas); tools/line_opt.mjs --bound takes the same windows
+      for (const kp of (Array.isArray(data.lineKeep) ? data.lineKeep : [])) {
+        const a = +kp[0], b = +kp[1], kl = +kp[2], kh = +kp[3];
+        for (let s = a - 15; s <= b + 15; s += step) {
+          const i = ((Math.round(s / step) % N) + N) % N, w = s < a ? (s - a + 15) / 15 : s > b ? (b + 15 - s) / 15 : 1;
+          const L = -(halfW[i] - margin), H = halfW[i] - margin;
+          lo[i] = Math.max(lo[i], L + (kl - L) * w); hi[i] = Math.min(hi[i], H + (kh - H) * w);
+        }
       }
+      // optional data.raceLineFrom (at-spec or s): the sample the solver's lattice and sweeps start from (default the line).
+      // tools/shift_line.mjs sets it to the old line when it moves a circuit's line, so the racing line stays exactly as it was
+      let dl;
+      const r0 = data.raceLineFrom != null ? Math.round(atS(data.raceLineFrom) / step) % N : 0;
+      if (r0) {
+        const rot = A => { const B = new Float64Array(N); for (let i = 0; i < N; i++) B[i] = A[(i + r0) % N]; return B; };
+        const d0 = racingLine(N, rot(px), rot(pz), rot(nx), rot(nz), rot(lo), rot(hi), data.lineIters || 45);
+        dl = new Float64Array(N); for (let i = 0; i < N; i++) dl[(i + r0) % N] = d0[i];
+      } else dl = racingLine(N, px, pz, nx, nz, lo, hi, data.lineIters || 45);
+      dl = blur(dl, 2, 2);
+      for (let i = 0; i < N; i++) dl[i] = clamp(dl[i], lo[i], hi[i]);
+      // optional data.lineDelta [[s0, s1, cp, [c0 .. cn]], ...] (race-line hints): offsets added to the solved line from s0 to s1 (s1 may
+      // pass the lap's end), control points every ~cp m (n = round((s1 - s0) / cp), c0 = cn = 0), smoothstep between them; the result
+      // stays within [lo, hi] (or the solved line where that lies outside). Where this min-curvature line is clearly slower than a
+      // min-time one: tools/line_opt.mjs searches the offsets on this same lap-time model and prints them (relative to the solved
+      // line: re-run it when a circuit's centre line, widths or kerbs change)
+      for (const h of (Array.isArray(data.lineDelta) ? data.lineDelta : [])) {
+        const i0 = Math.round(+h[0] / step), i1 = Math.round(+h[1] / step), c = h[3] || [], nc = c.length - 1;
+        if (!(i1 > i0 && nc >= 1)) continue;
+        for (let i = i0; i <= i1; i++) {
+          const u = (i - i0) / (i1 - i0) * nc, k = Math.min(nc - 1, Math.floor(u)), f = u - k, w = f * f * (3 - 2 * f), j = ((i % N) + N) % N;
+          dl[j] = clamp(dl[j] + c[k] * (1 - w) + c[k + 1] * w, Math.min(dl[j], lo[j]), Math.max(dl[j], hi[j]));
+        }
+      }
+      return dl;
     }
-    const raceLine = Float32Array.from(dl);
+    const dl = solveLine(margin);
+    const raceLine = Float32Array.from(dl), lineM = new Map();
+    const lineFor = m => { m = +m; if (m === margin) return raceLine; let l = lineM.get(m); if (!l) lineM.set(m, l = Float32Array.from(solveLine(m))); return l; };
     const qx = new Float64Array(N), qz = new Float64Array(N);
     for (let i = 0; i < N; i++) { qx[i] = px[i] + dl[i] * nx[i]; qz[i] = pz[i] + dl[i] * nz[i]; }
     let kl = new Float64Array(N);
@@ -4500,7 +4516,8 @@ const buildTrack = (() => {
       id: data.id, name: data.name, country: data.country || '', lapRecordHint: data.lapRecordHint || '',
       description: data.description || '', character: data.character || '',
       length: L, N, step,
-      px, pz, tx, tz, nx, nz, curv, halfW, wallL, wallR, raceLine, raceSpeed, kerbL, kerbR, runoffL, runoffR, runoffL2, runoffR2, splitL, splitR,
+      px, pz, tx, tz, nx, nz, curv, halfW, wallL, wallR, raceLine, raceSpeed, lineMargin: margin, lineFor,
+      lineMarginX: data.lineMarginX != null ? +data.lineMarginX : null, kerbL, kerbR, runoffL, runoffR, runoffL2, runoffR2, splitL, splitR,
       elev, grade, bank, elevRange: elevRange(),
       crown: hasCrown ? crown : null, crownC: CROWN_C, escapes, openAreas, paints: paints.map(p => ({ kind: p.kind, poly: p.poly, x0: p.x0, x1: p.x1, z0: p.z0, z1: p.z1 })),
       bankLevel, bankOff, bankSlope,
@@ -11490,6 +11507,10 @@ const AI = (() => {
   let SFT = CFG.surface;
   const sfSet = G => { const w = G && G.world; SFT = w && w.grassSlip != null && CFG.grass ? CFG.grass.table(w.grassSlip) : CFG.surface; };
   const grassK = car => (SFT !== CFG.surface && car.surface === SURF.GRASS ? SFT[SURF.GRASS].grip / CFG.surface[SURF.GRASS].grip : 1);
+  // the Extreme AI's own racing line (track data lineMarginX: track.lineFor, the line at that margin; null = track.raceLine):
+  // LM = the line of the brain being driven (set by create / drive, like SFT); prep builds its own cache for it (track._aiX)
+  let LM = null;
+  const lmSet = (b, track) => { LM = b && b.lmx && track && track.lineMarginX != null && track.lineFor ? track.lineFor(track.lineMarginX) : null; };
   function surfGrip(hw, d, kL, kR, roL, roR) {
     const ad = d < 0 ? -d : d, kb = d < 0 ? kL : kR;
     sfDrag = 0;
@@ -11553,7 +11574,7 @@ const AI = (() => {
   function kerbLine(track, corners, X) {
     const N = track.N, step = track.step, hw = track.halfW, kL = track.kerbL, kR = track.kerbR, WM = wallExtra(track);
     if (!kL || !kR || N % 64 !== 0 || !track.raceLine) return null;
-    const base = Float64Array.from(X ? X.ref : track.raceLine);
+    const base = Float64Array.from(X ? X.ref : LM || track.raceLine);
     const lo = new Float64Array(N), hi = new Float64Array(N);
     const roOK = ro => ro === SURF.GRASS || ro === SURF.RUNOFF;
     const bounds = (use) => {
@@ -11629,7 +11650,7 @@ const AI = (() => {
       const s = wrap(E.s0 + u), i = Math.round(s / st) % N, ld = pit.laneD(s);
       if (ld == null) { E.wl = u; break; }
       const inn = Math.abs(ld) - lhw, m = (sd < 0 ? track.kerbL[i] : track.kerbR[i]) ? track.halfW[i] + KW : track.halfW[i] - 0.24;
-      if (!(inn >= m || inn >= Math.max(0.15, sd * track.raceLine[i] + 1.4))) { E.wl = u; break; }
+      if (!(inn >= m || inn >= Math.max(0.15, sd * (LM || track.raceLine)[i] + 1.4))) { E.wl = u; break; }
     }
     // hot: a short exit road (< 100 m past the limiter-end line) whose lane runs onto the racing line where the track is
     // flat out (Kettle Pond, before T1: cars come off it at ~170 km/h into 320 km/h traffic and were hit from behind) ->
@@ -11637,7 +11658,7 @@ const AI = (() => {
     E.hot = false;
     if (E.len < 100) for (let u = E.wl; u <= E.len && !E.hot; u += st) {
       const s = wrap(E.s0 + u), i = Math.round(s / st) % N, ld = pit.laneD(s);
-      if (ld != null && Math.abs(ld - track.raceLine[i]) < SEP + 0.5 && track.raceSpeed[i] > 75) E.hot = true;
+      if (ld != null && Math.abs(ld - (LM || track.raceLine)[i]) < SEP + 0.5 && track.raceSpeed[i] > 75) E.hot = true;
     }
     return E;
   }
@@ -11707,12 +11728,13 @@ const AI = (() => {
 
   // ---------- per-track cache ----------
   function prep(track) {
-    const gk = SFT.g, c0 = gk == null ? track._ai : track._aiG && track._aiG[gk];   // (a grass setting of its own: its own lines, track._aiG)
-    if (c0 && c0.N === track.N && c0.src === track.raceLine) return c0;
+    const gk = SFT.g, src = LM || track.raceLine, CX = LM ? (track._aiX || (track._aiX = {})) : null;
+    const c0 = CX ? CX[gk == null ? '' : gk] : gk == null ? track._ai : track._aiG && track._aiG[gk];   // (a grass setting of its own: its own lines, track._aiG)
+    if (c0 && c0.N === track.N && c0.src === src) return c0;
     const N = track.N, step = track.step, L = track.length;
     const line = new Float32Array(N), th = new Float32Array(N), lx = new Float64Array(N), lz = new Float64Array(N);
     for (let i = 0; i < N; i++) {
-      line[i] = track.raceLine ? track.raceLine[i] : 0;
+      line[i] = src ? src[i] : 0;
       th[i] = Math.atan2(track.tz[i], track.tx[i]);
       lx[i] = track.px[i] + track.nx[i] * line[i]; lz[i] = track.pz[i] + track.nz[i] * line[i];
     }
@@ -11794,7 +11816,7 @@ const AI = (() => {
     try { lineX = useX ? kerbLine(track, csK, { xm: P.kxM, ref: lineK || line }) : null; } catch (e) { lineX = null; }
     try { exit = exitRoad(track, pit); } catch (e) { exit = null; }
     const A = {
-      src: track.raceLine, N, step, L, line, lineK: lineK || line,
+      src, N, step, L, line, lineK: lineK || line,
       // steering feed-forward: smooth curvature of each line (world-space menger on the interpolated path has a bump at
       // every track sample: the centreline is a polyline -> chatter)
       lkK: lineK ? lineCurv(lineK) : lk, lkX: lineX ? lineCurv(lineX) : lineK ? null : lk, kerbGain: lineK ? lineK.gain : 0, th, lk, nzf, vr, corners: cs, nextC, toBrk,
@@ -11807,7 +11829,7 @@ const AI = (() => {
       zn: (() => { const z = new Uint8Array(N); if (track.zoneAt) for (let i = 0; i < N; i++) z[i] = track.zoneAt(i * step) >= 0 ? 1 : 0; return z; })(),   // (Straight-mode zones: ersMap)
     };
     if (!A.lkX) A.lkX = lineX ? lineCurv(lineX) : A.lkK;
-    if (gk == null) track._ai = A; else (track._aiG || (track._aiG = {}))[gk] = A;
+    if (CX) CX[gk == null ? '' : gk] = A; else if (gk == null) track._ai = A; else (track._aiG || (track._aiG = {}))[gk] = A;
     return A;
   }
 
@@ -12123,7 +12145,7 @@ const AI = (() => {
       paceFix: car.seasonK && car.seasonK.pace > 0 && !diff.allOut && !diff.adaptive ? car.seasonK.pace * (1 + (rnd() - 0.5) * P.form * P.formS)
         : Math.pow(perf, P.perfK * (diff.adaptive ? 0.45 : diff.perfK != null ? diff.perfK : 1)) * (1 + (rnd() - 0.5) * P.form * (diff.adaptive ? 0.5 : diff.formK != null ? diff.formK : 1)),   // (Extreme: perfK / formK 0)
       pace: P.base * (1 - (1 - diff.pace) * P.paceK) * Math.pow(perf, P.perfK),
-      dPace: diff.allOut && G && G.track && X_PACE[G.track.id] ? X_PACE[G.track.id] : diff.pace,
+      dPace: diff.allOut && G && G.track && X_PACE[G.track.id] ? X_PACE[G.track.id] : diff.pace, lmx: !!diff.allOut,
       aggr: diff.aggression, adaptive: !!diff.adaptive, kw: diff.kerb || 0, kwBase: diff.kerb || 0, lead: 0,
       fixedK: diff.fixedK || 0, band: 0, rb: 0, kc: 0, S: null, bandE: null, e: 0,
       stat: { atk: 0, def: 0, dep: 0, atkPl: 0, defPl: 0, depPl: 0 },
@@ -12178,7 +12200,7 @@ const AI = (() => {
       if (diff.fixedE != null) b.fixedK = b.kc;
       dialSet(b, diff.fixedE != null ? diff.fixedE : eOfK(b.kc, cal));
     }
-    if (G && G.track) { sfSet(G); const A = prep(G.track); if (P.sbs || P.cover || P.mv) sbsOf(A, G.track); b.off = b.offT = car.d - lineAt(A, car.s, b.kw); const nc = A.corners.length; b.myMn = new Float32Array(nc); b.myMx = new Float32Array(nc); b.myRw = new Float32Array(nc); }
+    if (G && G.track) { sfSet(G); lmSet(b, G.track); const A = prep(G.track); if (P.sbs || P.cover || P.mv) sbsOf(A, G.track); b.off = b.offT = car.d - lineAt(A, car.s, b.kw); const nc = A.corners.length; b.myMn = new Float32Array(nc); b.myMx = new Float32Array(nc); b.myRw = new Float32Array(nc); }
     if (G && G.race && !G.attract && !car.isPlayer && G.race.phase !== 'racing') {
       const pA = { easy: 0.035, medium: 0.02, hard: 0.01, extreme: 0 }[diff.id] ?? 0.02;
       car.aiAnticipate = rnd() < pA;
@@ -12221,7 +12243,7 @@ const AI = (() => {
     }
     // human getaway: extra reaction on top of Race's launch delay, occasional bogged start (TC-limited wheelspin)
     if (b.launch && race && phase === 'racing' && race.t < b.reactT) { inp.throttle = 0; inp.brake = car.isPlayer ? 0.45 : 1; inp.steer = 0; return inp; }
-    sfSet(G);
+    sfSet(G); lmSet(b, track);
     const A = prep(track);
     b.G = G;
     b.t += dt;
@@ -14658,7 +14680,7 @@ const AI = (() => {
   };
   // reference lap (AI at k = 1, clean air, fresh tyre for the conditions): mini-sector times + entry speeds, cached per circuit / weather
   function reference(track, wet) {
-    const A = prep(track), key = refComp(wet);
+    const lm0 = LM; LM = null; const A = prep(track), key = refComp(wet); LM = lm0;   // (the reference: the track's own line)
     if (!A.refs) A.refs = {};
     if (A.refs[key]) return A.refs[key];
     const comp = COMPOUNDS[key] || COMPOUNDS.M, L = track.length;
