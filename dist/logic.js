@@ -3782,8 +3782,18 @@ const buildTrack = (() => {
       // (an open start, data open: the road still runs over / beside the track's asphalt, where cars hand over between the
       // frames anywhere across it: the track's own height at the point, eased into the profile over 15 m past the open end)
       if (!(r.hOpen > 0) || a >= r.hOpen + 15) return y;
-      roadPt(k, s, e, _ry); T.project(_ry.x, _ry.z, idxAt(s), _rp);
-      return lerp(T.elevAt(_rp.s, _rp.d), y, sstep((a - r.hOpen) / 15));
+      let yT;
+      const F = r.flipA && r.flipA.find(f => a > f[0] && a < f[1]);
+      if (F) {   // (a stretch where the nearest track point jumps across a bend's inside: a cubic between the heights / slopes at its ends)
+        const n = F[1] - F[0], t = (a - F[0]) / n, t2 = t * t, t3 = t2 * t, h0 = projH(k, F[0], e), h1 = projH(k, F[1], e);
+        const g0 = (h0 - projH(k, F[0] - 0.5, e)) * 2 * n, g1 = (projH(k, F[1] + 0.5, e) - h1) * 2 * n;
+        yT = (2 * t3 - 3 * t2 + 1) * h0 + (t3 - 2 * t2 + t) * g0 + (3 * t2 - 2 * t3) * h1 + (t3 - t2) * g1;
+      } else { roadPt(k, s, e, _ry); T.project(_ry.x, _ry.z, idxAt(s), _rp); yT = T.elevAt(_rp.s, _rp.d); }
+      return lerp(yT, y, sstep((a - r.hOpen) / 15));
+    };
+    const projH = (k, a, e) => {   // the track's height at the point of road k a m along, e across (its nearest track point)
+      const r = roads[k], s = wrap(entryS + r.u0 + a / r.len * (r.u1 - r.u0));
+      roadPt(k, s, e, _ry); T.project(_ry.x, _ry.z, idxAt(s), _rp); return T.elevAt(_rp.s, _rp.d);
     };
     const roadG = (k, a) => {   // dY/da (the slope per metre along the road)
       const r = roads[k], P = roadProf[k];
@@ -4867,6 +4877,23 @@ const buildTrack = (() => {
           }
           for (let j = 0; j < m; j++) G[j] = j === 0 ? e0.g : j === m - 1 ? e1.g : (Y[j + 1] - Y[j - 1]) / (2 * da);
           return { m, da, Y, G, str0: e0.str, str1: e1.str };
+        });
+        // the open stretches read the track's height at each point (roadY), but past the inside of a tight bend the nearest
+        // track point jumps from one side of the corner to the other: Monaco's exit road round the T1 island read s 210 then
+        // s 229, a 0.5-0.7 m step the cars jumped on. r.flipA: [a0, a1] (m along the road), 6 m either side of such a jump
+        // (> 3 cm and > 2 m of the lap between samples 0.5 m apart, across the road and 0.6 m past its edges), bridged there
+        roads.forEach((r, k) => {
+          if (!(r.hOpen > 0)) return;
+          const aEnd = Math.min(r.len, r.hOpen + 15), J = [];
+          let prev = null;
+          for (let a = 0; a <= aEnd + 1e-6; a += 0.5) {
+            const w = r.HW[Math.min(r.n - 1, Math.round(a))] + 0.6, cur = [-w, 0, w].map(e => [projH(k, a, e), _rp.s]);
+            if (prev && cur.some((c, j) => { let ds = c[1] - prev[j][1]; if (ds > L / 2) ds -= L; else if (ds < -L / 2) ds += L;
+              return Math.abs(c[0] - prev[j][0]) > 0.03 && Math.abs(ds) > 2; })) J.push(a - 0.25);
+            prev = cur;
+          }
+          for (const a of J) { const f = r.flipA && r.flipA[r.flipA.length - 1];
+            if (f && a - 6 <= f[1]) f[1] = Math.min(r.len - 0.5, a + 6); else (r.flipA = r.flipA || []).push([Math.max(0.5, a - 6), Math.min(r.len - 0.5, a + 6)]); }
         });
         // roadGrade(s, out) (road coordinates at s, up to 6 m past a road's ends): the surface's slope per metre along the road
         // (renderers: the pitch; Physics: gravity), out.tx / tz = the road's direction there; null off every road
