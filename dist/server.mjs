@@ -373,7 +373,7 @@ class RaceSim {
     const diffId = DIFFICULTY[S.difficulty] ? S.difficulty : 'medium';
     this.diff = DIFFICULTY[diffId];
     Race.create(G, { mode: 'race', laps: S.laps, difficulty: diffId, playerTeam: humans.length ? humans[0].team : field[0], playerCompound: 'M', tyreWear: S.tyreWear, twoCompound: S.twoCompound,
-      penalties: S.penalties, penaltyLevel: S.penaltyLevel, pitExitPen: S.pitExitPen === true, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
+      penalties: S.penalties, penaltyLevel: S.penaltyLevel, pitExitPen: S.pitExitPen === true, investigations: S.investigations !== false, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
     const race = this.race = G.race;
     this.brainQ = [];
     if (race.qs) {
@@ -959,7 +959,8 @@ class RaceSim {
       sbs: race.sessionBestSectors, lf: !!race.leaderFinished, tca: !!race.twoCompoundActive, t: race.t };
     if (this.G.world && this.G.world.damage && typeof Damage !== 'undefined') r.db = Damage.packDebris(race);   // (contact damage: debris)
     if (race.rc && typeof RaceControl !== 'undefined') r.rc = RaceControl.pack(race);   // (race control: the zone flags, decided here)
-    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db, r.rc && r.rc[0], r.rc && r.rc[8] ? r.rc[8][0] : 0, r.rc && (r.rc[5] || r.rc[6]) ? Math.floor(race.t * 2) : 0, r.rc ? Math.floor(race.t / 2) : 0]);   // (r.rc[8][0]: the movable barriers' version; under a VSC / SC 2 Hz: the deltas, which clients' own followers correct to; race control on: every 2 s anyway - a client that missed a change, e.g. the medical car parked while its page was still building the race, is put right)
+    if (Race.invPack) r.inv = Race.invPack(race);   // (investigations: the open cases - the towers' '!' badges; null: none in this race)
+    const rk = JSON.stringify([r.phase, r.leaderLap, r.fl, r.sbs, r.lf, r.tca, r.db, r.inv, r.rc && r.rc[0], r.rc && r.rc[8] ? r.rc[8][0] : 0, r.rc && (r.rc[5] || r.rc[6]) ? Math.floor(race.t * 2) : 0, r.rc ? Math.floor(race.t / 2) : 0]);   // (r.rc[8][0]: the movable barriers' version; under a VSC / SC 2 Hz: the deltas, which clients' own followers correct to; race control on: every 2 s anyway - a client that missed a change, e.g. the medical car parked while its page was still building the race, is put right)
     const msg = { t: 'info', c: ch };
     if (full || rk !== this.rKey) { this.rKey = rk; msg.r = r; }
     if (!ch.length && !msg.r) return;

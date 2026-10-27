@@ -9384,6 +9384,13 @@ const RaceControl = (() => {
     scd: ['SC DELTA WARNING', 'UNDER THE SAFETY CAR DELTA', 'Under the safety car delta'], scq: ['SAFETY CAR WARNING', 'OVER 10 CAR LENGTHS BEHIND', 'More than 10 car lengths behind under the safety car'],
     scp: ['SAFETY CAR WARNING', 'PASSED THE SAFETY CAR', 'Passed the safety car before the pit entry'],
     scg: ['SAFETY CAR WARNING', 'TOO CLOSE TO THE SAFETY CAR', 'Too close to the safety car before the restart'] };
+  // a time penalty: Race's penalise (H.pen: at once, or investigated - Settings > Rules > Investigations), else at once here
+  function rcPen(G, race, H, c, ev, sub) {
+    if (H.pen) { H.pen(G, race, c, ev, sub, []); return; }
+    c.penalty += ev.sec;
+    ev.type = 'penalty'; ev.car = c; H.emit(G, ev);
+    if (c.isPlayer) H.note(race, ev.sec + ' S PENALTY', '#ffd12e', sub);
+  }
   function offence(G, race, rc, Lo, H, c, z, kind, x) {
     const turn = z >= 0 ? Lo.zones[z].turn : '', W = kind === 'vsc' || kind === 'scd' ? rc.warnV : kind === 'scq' ? (rc.warnQ || (rc.warnQ = {})) : kind === 'scg' ? (rc.warnG || (rc.warnG = {})) : rc.warnO, o = OFF[kind];
     if (!isHuman(c) || !race.pen) { rc.log.push([+race.t.toFixed(2), kind + 'AI', z, c.id]); return; }
@@ -9393,9 +9400,7 @@ const RaceControl = (() => {
       H.emit(G, { type: 'rcWarn', car: c, kind, n, turn, x });
       if (c.isPlayer) H.note(race, o[0], '#ffd12e', o[1] + (turn ? ' (' + turn + ')' : '') + ' · NEXT TIME: 5 S');
     } else {
-      c.penalty += 5;
-      H.emit(G, { type: 'penalty', car: c, sec: 5, reason: o[2] + (turn ? ' (' + turn + ')' : ''), kind: 'rc', turn });
-      if (c.isPlayer) H.note(race, '5 S PENALTY', '#ffd12e', o[2]);
+      rcPen(G, race, H, c, { sec: 5, reason: o[2] + (turn ? ' (' + turn + ')' : ''), kind: 'rc', turn }, o[2]);
     }
   }
   // the AI under the VSC: k, the share of the VSC reference (vscV; corners: k x rc.vf of its pace) that keeps its delta at
@@ -9703,9 +9708,7 @@ const RaceControl = (() => {
       H.emit(G, { type: 'rcHit', car: c, k: V.k, v: -vn });
       if (!isHuman(c) || !race.pen) { rc.log.push([+race.t.toFixed(2), 'hitAI', z, c.id]); continue; }
       rc.log.push([+race.t.toFixed(2), 'hitPen', z, c.id]);
-      c.penalty += SC_HIT;
-      H.emit(G, { type: 'penalty', car: c, sec: SC_HIT, reason: 'Contact with ' + what, kind: 'rc' });
-      if (c.isPlayer) H.note(race, SC_HIT + ' S PENALTY', '#ffd12e', 'Contact with ' + what);
+      rcPen(G, race, H, c, { sec: SC_HIT, reason: 'Contact with ' + what, kind: 'rc' }, 'Contact with ' + what);
     }
   }
   // a client: its own car out of the SC / medical car as drawn (the server judges the contact)
@@ -10629,9 +10632,7 @@ const RaceControl = (() => {
           H.emit(G, { type: 'rcWarn', car: c, kind: 'dy', n, turn, ratio: r });
           if (c.isPlayer) H.note(race, 'DOUBLE YELLOW WARNING', '#ffd12e', 'OVER 200 KM/H' + (turn ? ' (' + turn + ')' : '') + ' · NEXT TIME: 5 S');
         } else {
-          c.penalty += 5;
-          H.emit(G, { type: 'penalty', car: c, sec: 5, reason: 'Over 200 km/h under double yellow flags' + (turn ? ' (' + turn + ')' : ''), kind: 'rc', turn });
-          if (c.isPlayer) H.note(race, '5 S PENALTY', '#ffd12e', 'Over 200 km/h under double yellow flags');
+          rcPen(G, race, H, c, { sec: 5, reason: 'Over 200 km/h under double yellow flags' + (turn ? ' (' + turn + ')' : ''), kind: 'rc', turn }, 'Over 200 km/h under double yellow flags');
         }
       }
     }
@@ -11478,6 +11479,12 @@ const AI = (() => {
   const HT = 0.8, KERB_M = 0.35, KERB_WALL = 2.3;
   const QE = { m: 45, t: 0.8 };   // qualifying, my flying lap: the limit envelope stays on behind a car further ahead than m m / t s
   const QP_E = 40;   // m: qualifying, rounding a yielding car (qPass): the path eases out / back over this
+  // slowing with no hurry on a straight (user 2026-10-26: "the AI go slow for times and i get the penalty for driving into
+  // them"): back to the straight-line cap after a tow / an attack's lift (cap), a place (gb) / time (gbT) to give back, a lift
+  // for a car lapping it (blue) - at most this many m/s^2, with part throttle (b.easeA, drive's controller). Before, each was a
+  // full lift: 5-7 m/s^2 at 300 km/h (a Hard car dropped ~40 km/h in 2 s once out of a tow), or a stamp on the brakes down to
+  // the owed car's speed - 5 m/s (a give-back with that car 60 m back), in front of whoever was in its tow
+  const EASE = { cap: 1.5, gb: 3, gbT: 2, blue: 2 };
   const TL_LIFT = 0.5, TL_T = 0.3, TL_GRIP = 0.92;   // track limits (the white line): lift when heading > TL_LIFT m past it (car centre) within TL_T s (all four wheels past it from ~1.0); TL_GRIP: the grip assumed off the line against the edge
   const KERB_G1 = 0.925, KERB_G2 = 0.89;    // axle grip with one / both wheels on a kerb (surface 0.93 x kerb jolt)
   function optLine(N, px, pz, nx, nz, lo, hi, iters) {
@@ -11891,6 +11898,12 @@ const AI = (() => {
   // line-variation waves must repeat a whole number of times per lap, otherwise the path has a sideways
   // step where s wraps at the start/finish line (the AI braked for that phantom kink)
   function periodic(k, track) { const L = track.length; return Math.max(1, Math.round(k * L / TAU)) * TAU / L; }
+  // how straight the line is at samples i / j: 1 under 1/600 (1/m), 0 from 1/300, smooth between (pathD's speed-plan easing)
+  function strF(A, i, j) {
+    const k = Math.max(A.lk[i] < 0 ? -A.lk[i] : A.lk[i], A.lk[j] < 0 ? -A.lk[j] : A.lk[j]);
+    const u = k <= 1 / 600 ? 1 : k >= 1 / 300 ? 0 : (1 / 300 - k) / (1 / 300 - 1 / 600);
+    return u * u * (3 - 2 * u);
+  }
   function pathD(b, A, s, x, v) {
     const f = s / A.step; let i = Math.floor(f); const u = f - i; i %= A.N; if (i < 0) i += A.N;
     const j = i + 1 === A.N ? 0 : i + 1;
@@ -11926,7 +11939,16 @@ const AI = (() => {
       if (wp > w) { w = wp; abs = road; }
       if (wp > 0) pa = road;
     }
-    const d = base + (abs - base) * w + approach(b.off, b.offT, b.offRate * tt);
+    let off = approach(b.off, b.offT, b.offRate * tt);
+    // speed plan: the offset (an attack / passing lane) eases off against the asphalt edge. Clamped there below, the path had
+    // a kink where the line ran into the edge with the offset on -> a phantom corner (pathKap: the offset's 2nd derivative),
+    // the car braking on a straight to ~140 km/h for nothing (user 2026-10-26: "the AI go slow for times"). The steered path
+    // is unchanged (the clamp: a few degrees, taken at speed)
+    // (on a straight only - the line's curvature under 1/600, faded out by 1/300: in a corner the clamp's kink is the path the car
+    // really steers, the plan must slow for it - Extreme ran wide over the white line at vortex T2 / T5 / T8 without it)
+    const fS = holdTrans ? strF(A, i, j) : 0;
+    if (fS > 0 && off) { const d0 = base + (abs - base) * w, room = off > 0 ? hw - EDGE - d0 : d0 + hw - EDGE; off += ((room > 0.05 ? (off > 0 ? room : -room) * Math.tanh((off > 0 ? off : -off) / room) : 0) - off) * fS; }
+    const d = base + (abs - base) * w + off;
     let lo = -(hw - EDGE), hi = hw - EDGE;
     if (ln < lo) lo = ln; if (ln > hi) hi = ln;
     let wlo = A.wl[i] + (A.wl[j] - A.wl[i]) * u + P.wallM, whi = A.wr[i] + (A.wr[j] - A.wr[i]) * u - P.wallM;        // street circuits: keep off barriers hugging the kerbs
@@ -11956,7 +11978,9 @@ const AI = (() => {
         if (dO > hw - 1) dO = hw - 1; else if (dO < 1 - hw) dO = 1 - hw;
         const hold = P.noSqueeze && !(k.oA && b.sl);   // (both on committed lines: the lines keep the room, no 'hold where I am')
         // (a push away from a car closer than SEP eases in at ~2.5 m/s sideways: an instant jump of the path was a swerve)
-        const push = P.noSqueeze ? 0.3 + x * 2.5 / (v > 10 ? v : 10) : 99;
+        // (the speed plan: the push's end lane at once - the ramp's corner where it meets dO -/+ SEP was a phantom curvature, a
+        // brake on a straight beside a car, user 2026-10-26; the steered path keeps the ramp)
+        const push = !P.noSqueeze ? 99 : (0.3 + x * 2.5 / (v > 10 ? v : 10)) / (1 - 0.999 * fS);   // (fS: on a straight, as the offset above)
         if (k.side > 0) { const tg = Math.max(dO - SEP, b.dNow - push); if (!k.comm && tg < hi) hi = tg; if (hold && k.dHold < hi) hi = k.dHold; }
         else { const tg = Math.min(dO + SEP, b.dNow + push); if (!k.comm && tg > lo) lo = tg; if (hold && k.dHold > lo) lo = k.dHold; }
         if (P.room && k.ov) { if (k.side > 0) { if (hw - ROOM_W < hi) hi = hw - ROOM_W; } else if (ROOM_W - hw > lo) lo = ROOM_W - hw; }   // (leave it a car's width + air to the white line)
@@ -12518,7 +12542,21 @@ const AI = (() => {
     // held up by a car ahead that is not braking (e.g. the pack off the grid): lift and coast, don't touch the brakes
     // (on a straight before the braking zone, a car in the next lane that is merely lifting: lift, never brake)
     const coastOnly = trafficLim && followFF <= 0 && aFF <= 0 && !car.offTrack && (ev < 4 || (b.strOpen && b.vLimAdd > 1.6 && ev < 10));
-    if (coastOnly && ev > 0.3) { inp.throttle = 0; inp.brake = 0; }
+    // back down to the straight-line cap after a tow / an attack's lift / the ERS lift, far from the next braking point: eased
+    // (ev > 1: well above it - the ERS lift's own slow fall back, 1.5 m/s^2, is followed as before: the calibrated pace unchanged)
+    if (!trafficLim && aFF <= 0 && ev > 1 && !finished && !startPh && b.strOpen && vT >= b.capS - 0.6 && Math.min(A.toBrk[idx], b.planBrkC) > 2.5 * v) { b.easeA = Math.max(b.easeA, EASE.cap); b.easeV = Infinity; }
+    const easing = b.easeA > 0 && ev > 0.3 && aFF <= 0 && followFF <= 0 && !car.offTrack && (!trafficLim || b.vLim >= b.easeV - 1e-6);
+    if (!easing) b.easeI = 0;
+    if (easing) {
+      // (EASE: at most easeA m/s^2 - part throttle against the drag, no full lift, no brakes; easeI: the measured deceleration's
+      // error, integrated - the drag estimate leaves out the engine braking at part throttle)
+      const a = Math.min(b.easeA, P.kB * ev);
+      b.easeI = clamp((b.easeI || 0) + (-(car.aLong || 0) - a) * dt * 3, -2, 4);
+      const F = drag - (a - b.easeI) * MASS;
+      inp.throttle = F > 0 ? clamp(Math.max(F * Math.max(v, 1) / (C.enginePower * pwOf(car)), F / (C.maxDriveForce * 1.2)), 0, b.pow * b.ersPwC) : 0;
+      inp.brake = 0;
+    }
+    else if (coastOnly && ev > 0.3) { inp.throttle = 0; inp.brake = 0; b.easeI = 0; }
     else if ((aFF > 0 && ev > -1) || (followFF > 0 && ev > -0.5) || ev > 0.3) {
       let aCmd = Math.max(aFF, followFF) + (followFF > 0 ? 3 : P.kB) * ev;
       // friction circle: never stamp on the brakes while loaded up in a corner (spins the car)
@@ -12772,6 +12810,7 @@ const AI = (() => {
   // ---------- racecraft ----------
   function racecraft(b, car, G, A, track, v, idx, startPh, finished, dt) {
     b.nCons = 0; b.vLim = b.vTop; b.vLimA = 0; b.vLimDs = 1e9; b.free = false; b.lateBrk = 1; b.lateCap = 0; b.atkBoost = 0; b.qPass = null; car.qLane = 0; car.qYieldTo = -1;
+    b.easeA = 0; b.easeV = Infinity;   // (EASE: a slow-down with no hurry, the limit it applies to)
     if (b.rcF >= 2) b.vLim = Math.min(b.vLim, RaceControl.AI_SLOW * track.raceSpeed[idx], (RaceControl.DY_V || 55.6) * 0.95);   // (double yellow: a clear lift on the straights too, under the 200 km/h limit)
     if (b.rcV > 0) b.vLim = Math.min(b.vLim, b.rcV * RaceControl.vscV(G, idx));   // (the VSC)
     if (b.rcR > 0) b.vLim = Math.min(b.vLim, b.rcR * track.raceSpeed[idx]);   // (the red flag)
@@ -13024,7 +13063,7 @@ const AI = (() => {
       if (onStr) {
         const ln = lineAt(A, car.s, b.kw);
         b.absSide = ln > 0 ? -1 : 1; b.absM = 1.6; wT = 1; b.wRate = 1.2;
-        if (lapDs > -35) b.vLim = Math.min(b.vLim, v * 0.985);
+        if (lapDs > -35 && v * 0.985 < b.vLim) { b.vLim = b.easeV = v * 0.985; b.easeA = EASE.blue; }   // (a lift, eased)
         if (b.rcSm === 2 && lapDs > -70 && lapper.speed > v - 2) b.vLim = Math.min(b.vLim, v * 0.96);   // (the SC queue: a lapped car going through, a clear lift)
       }
       // (into the braking zone with it beside me: a little slower than it, it takes the corner ahead of me)
@@ -13041,9 +13080,10 @@ const AI = (() => {
         if (gds < 3) {   // (still ahead of it, or alongside)
           b.yieldOn = true;
           if (onStr) { const ln = lineAt(A, car.s, b.kw); b.absSide = ln > 0 ? -1 : 1; b.absM = 1.6; wT = 1; b.wRate = 1.2; }
-          b.vLim = Math.min(b.vLim, gds > -60 ? Math.max(8, Y.speed - (onStr ? 5 : 3)) : Math.max(12, v * 0.97));
+          const lim = gds > -60 ? Math.max(8, Y.speed - (onStr ? 5 : 3)) : Math.max(12, v * 0.97);
+          if (lim < b.vLim) { b.vLim = lim; if (onStr) { b.easeA = EASE.gb; b.easeV = lim; } }   // (on a straight: eased, EASE)
         }
-      } else if (gbo.kind === 'time' && onStr) b.vLim = Math.min(b.vLim, v * 0.97);
+      } else if (gbo.kind === 'time' && onStr && v * 0.97 < b.vLim) { b.vLim = b.easeV = v * 0.97; b.easeA = EASE.gbT; }
     }
 
     // attack / slipstream
@@ -16236,6 +16276,8 @@ const Race = (() => {
     // race control (racecontrol.js: flags, VSC / SC / red flags): opts.raceControl, else the game's settings; race.rc
     if (typeof RaceControl !== 'undefined') RaceControl.create(race, track, opts.raceControl != null ? opts.raceControl : gs.raceControl);
     { const o = opts.raceControl != null ? opts.raceControl : gs.raceControl; race.mechFail = !(o && o.fail === false); }
+    // investigations (Settings > Rules, default on; penalise): race control on, penalties on, a race of INV_LAPS+ laps
+    { const iv = opts.investigations != null ? opts.investigations : gs.investigations; race.inv = { on: iv !== false && !!(race.rc && race.rc.on) && race.penalties && !tt && laps >= INV_LAPS && !opts.attract, seq: 0, list: [] }; }
     // AI crashes (ai.js mkPlan, CFG.aiCrash): Settings > Rules > AI crashes ('off' | 'low' | 'normal' | 'high'; the game's default
     // normal comes with the settings - main DEFAULTS, menu sanitize, netcore rcOf -, a missing key = off: test harnesses) and
     // "AI mistakes avoid you" (avoid, default on), kept in raceControl so seasons and multiplayer (the host's) carry them
@@ -16833,7 +16875,7 @@ const Race = (() => {
     if (!car.isPlayer && race.laps) car.strategy = newStrategy(race, car);
     car._race = {
       prevS: car.s, dist, maxDist: dist,
-      nextB: nextPoint(dist, 0, L), nextBi: 2, lineDist: 0,             // next timing line: the start/finish line
+      nextB: nextPoint(dist, 0, L), nextBi: 2, lineDist: 0, secN: 0,   // next timing line: the start/finish line; sector lines crossed (penalise)
       lapStartT: 0, sectorStartT: 0, finishKey: 0,
       nextDetect: nextPoint(dist, track.overtakeDetectS || 0, L), detectPending: false,
       nextEntry: track.pit ? nextPoint(dist, track.pit.entryS, L) : Infinity, boxHintKey: null,
@@ -16883,6 +16925,7 @@ const Race = (() => {
     if (racing) for (let i = 0; i < cars.length; i++) { const rc = cars[i]._race; if (rc && (rc.tlPost || (rc.gb && rc.gb.length))) advStep(G, race, cars[i], dt); }
     updateOrder(G, race, racing && race.mode !== 'timetrial');
     if (race.rc && race.rc.on && typeof RaceControl !== 'undefined') RaceControl.step(G, race, dt, RCH);   // (race control: after the order, it reads posChange)
+    if (racing && race.inv && race.inv.list.length) invStep(G, race);   // (investigations: announced / decided at the offending car's sector lines)
     if (race.leaderFinished && race.phase === 'racing' && race.mode !== 'timetrial') settlePenalties(G, race, false);
     if (race.mode !== 'timetrial') {
       updateGaps(race, track.length);
@@ -16900,7 +16943,7 @@ const Race = (() => {
   }
 
   const rcOn = race => !!(race && race.rc && race.rc.on && typeof RaceControl !== 'undefined');
-  const RCH = { giveBack: (G, race, car, o) => giveBack(G, race, car, o), note: (race, t, c, sub) => note(race, t, c, sub), emit, vscPit, rfPark, rfTyre, rfGrid, relaunch, retire };   // race control's hooks (racecontrol.js)
+  const RCH = { giveBack: (G, race, car, o) => giveBack(G, race, car, o), note: (race, t, c, sub) => note(race, t, c, sub), emit, vscPit, rfPark, rfTyre, rfGrid, relaunch, retire, pen: (G, race, car, ev, sub, oth) => penalise(G, race, car, ev, sub, oth) };   // race control's hooks (racecontrol.js; pen: a time penalty, at once or investigated - penalise)
 
   // ---------- the red flag (racecontrol.js phase 5): race control's hooks ----------
   // suspended: the car lined up in the pit lane at (s, d) (kinematic; a stop in progress called off; its race distance kept),
@@ -17008,6 +17051,96 @@ const Race = (() => {
     note(race, car.code + ' RETIRED', '#ff5a4f', why.toUpperCase());
   }
 
+  // ---------- penalties: issued at once, or investigated (Settings > Rules > Investigations, user 2026-10-26) ----------
+  // Every time penalty of a race goes through penalise(G, race, car, ev, sub, oth, o): ev = the 'penalty' event's fields
+  // (sec, reason, detail, kind, turn, other ...), sub = the player's note under 'N S PENALTY' (a string; [text, colour, sub]
+  // for its own note; false: none), oth = the other cars involved, o.tl = a track-limits strike, o.pend = owed at the flag.
+  // Investigated (race.inv.on: the setting, race control on, penalties on, a race of INV_LAPS+ laps; not qualifying / time
+  // trial) -> a case in race.inv.list {id, car, oth, sec, reason, detail, kind, turn, t0, n0, ph, nA, nD, ov, ev, sub, tl}:
+  // silent for nA (2-3) of the offending car's own sector crossings (its _race.secN; a car that does not get round - retired,
+  // stopped, the pit lane under a red flag: the time of that many of its average sectors, x INV_SLOW unless retired), then
+  // 'investigation' {phase 'open'} (the HUD's UNDER INVESTIGATION + the tower's '!' on every car involved, the engineer), nD
+  // (2-5) sectors later the decision: 'investigation' {phase 'decision', out 'penalty' | 'nfa'} and, upheld, the penalty
+  // exactly as an instant one (car.penalty, the 'penalty' event with inv = the case id and t0 = the offence's race time,
+  // the note). Overturned at INV_OVER[level]. A case of a car that has taken the flag (or is open when the race ends) is
+  // decided there (finishCar / checkRaceEnd / simulateRest): it counts in the classification. The draws (sectors, verdict)
+  // come from the race seed and the case id (invRnd): the same race decides the same case the same way, a rewind too.
+  // Track limits: the strike after the last warning is a case; while it is open, and after it is overturned, the car stays
+  // on the last warning (the next breach: a new case); upheld, the count starts again. Multiplayer: the server decides,
+  // Race.invPack / invUnpack carry the open cases (badges), the events go out as the others.
+  const INV_OVER = { strict: 0.18, standard: 0.23, lenient: 0.37 };   // chance a case ends in no further action, by level
+  const INV_LAPS = 6, INV_SLOW = 2.5;   // races shorter than INV_LAPS: every penalty at once; the time fallback's slack (s per sector)
+  function invRnd(race, id, k) {   // uniform [0, 1) from the race seed, the case id and the draw k
+    let h = ((race.seed | 0) ^ Math.imul(id | 0, 0x27d4eb2d) ^ Math.imul((k | 0) + 1, 0x165667b1)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x85ebca6b); h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  const invActive = race => !!(race && race.inv && race.inv.on) && race.mode !== 'timetrial' && !qLike(race) && race.phase !== 'quali' && race.phase !== 'finished' && !race.attract;
+  const secN = car => (car._race && car._race.secN) | 0;
+  const invSec = (race, car) => Math.max(5, (car.bestLap || car.lastLap || race.lapTimeEst || 90) / 3);
+  function penalise(G, race, car, ev, sub, oth, o) {
+    ev.type = 'penalty'; ev.car = car;
+    if (invActive(race)) return invOpen(G, race, car, ev, sub, oth, o);
+    applyPen(G, race, car, ev, sub, o && o.pend);
+    return null;
+  }
+  function applyPen(G, race, car, ev, sub, pend) {
+    car.penalty += ev.sec;
+    if (pend && car.finished) car.penPending = true;   // (owed at the flag: settled like any unserved penalty)
+    emit(G, ev);
+    if (car.isPlayer && sub !== false && sub != null) { if (Array.isArray(sub)) note(race, sub[0], sub[1], sub[2]); else note(race, ev.sec + ' S PENALTY', '#ffd12e', sub); }
+  }
+  function invOpen(G, race, car, ev, sub, oth, o) {
+    const I = race.inv, id = ++I.seq, ov = invRnd(race, id, 0) < (INV_OVER[race.penaltyLevel] != null ? INV_OVER[race.penaltyLevel] : INV_OVER.standard);
+    const c = { id, car, oth: (oth || []).filter(x => x && x !== car), sec: ev.sec, reason: ev.reason || '', detail: ev.detail || '', kind: ev.kind || '', turn: ev.turn || '',
+      t0: race.t, n0: secN(car), ph: 0, nA: 2 + Math.floor(invRnd(race, id, 1) * 2), nD: 2 + Math.floor(invRnd(race, id, 2) * 4), tA: null, nA0: 0, ov, ev, sub, tl: !!(o && o.tl) };
+    I.list.push(c);
+    if (car.finished) invDecide(G, race, c, true);   // (an offence after the flag: decided there)
+    return c;
+  }
+  const invOids = c => c.oth.map(x => x.id).join(',');
+  function invAnnounce(G, race, c) {
+    c.ph = 1; c.tA = race.t; c.nA0 = secN(c.car);
+    emit(G, { type: 'investigation', phase: 'open', id: c.id, car: c.car, other: c.oth[0] || null, oids: invOids(c), sec: c.sec, reason: c.reason, detail: c.detail, kind: c.kind, turn: c.turn, t0: c.t0 });
+  }
+  function invDecide(G, race, c, flag) {
+    const I = race.inv, j = I.list.indexOf(c);
+    if (j < 0) return;
+    I.list.splice(j, 1);
+    const car = c.car, pen = !c.ov;
+    emit(G, { type: 'investigation', phase: 'decision', out: pen ? 'penalty' : 'nfa', id: c.id, car, other: c.oth[0] || null, oids: invOids(c), sec: c.sec, reason: c.reason, detail: c.detail, kind: c.kind, turn: c.turn, t0: c.t0, flag: !!flag, ann: !!c.ph });
+    if (pen) { c.ev.inv = c.id; c.ev.t0 = c.t0; applyPen(G, race, car, c.ev, c.sub, true); }
+    if (pen && c.tl && !I.list.some(x => x.car === car && x.tl)) car.tlWarn = 0;   // (track limits: upheld - the count starts again; overturned - still on the last warning)
+  }
+  // per step: announce / decide the cases that are due
+  function invStep(G, race) {
+    const L = race.inv && race.inv.list;
+    if (!L || !L.length) return;
+    for (let j = 0; j < L.length; j++) {
+      const c = L[j], car = c.car;
+      if (car.finished) { invDecide(G, race, c, true); j--; continue; }
+      const n = secN(car) - (c.ph ? c.nA0 : c.n0), need = c.ph ? c.nD : c.nA, t0 = c.ph ? c.tA : c.t0;
+      if (n < need && race.t - t0 < need * invSec(race, car) * (car.dnf ? 1 : INV_SLOW)) continue;
+      if (!c.ph) invAnnounce(G, race, c);
+      else { invDecide(G, race, c, false); j--; }
+    }
+  }
+  // the flag: every case of `car` (null: every case left) decided now
+  function invFlag(G, race, car) {
+    const L = race.inv && race.inv.list;
+    if (!L || !L.length) return;
+    for (const c of L.slice()) if (!car || c.car === car) invDecide(G, race, c, true);
+  }
+  // multiplayer: the open (announced) cases [id, car id, [other ids], sec, kind] -> clients (badges); null: no investigations
+  const invPack = race => (race && race.inv && race.inv.on ? race.inv.list.filter(c => c.ph).map(c => [c.id, c.car.id, c.oth.map(x => x.id), c.sec, c.kind]) : null);
+  function invUnpack(race, a, byId) {
+    if (!race) return;
+    if (!Array.isArray(a)) { if (race.inv) { race.inv.on = false; race.inv.list = []; } return; }
+    const list = [];
+    for (const x of a) { const car = byId[x[1]]; if (car) list.push({ id: x[0], car, oth: (x[2] || []).map(i => byId[i]).filter(Boolean), sec: x[3], kind: x[4] || '', ph: 1 }); }
+    race.inv = { on: true, seq: race.inv ? race.inv.seq : 0, list };
+  }
+
   // ---------- causing a collision ----------
   // Reads the collision events Physics.collide pushed this step (G.events is cleared by main once per frame): e.intensity =
   // normal closing speed at the contact (m/s); e.nx / nz = contact normal car -> other, e.avx .. e.bvz = both velocities
@@ -17054,6 +17187,7 @@ const Race = (() => {
       const a = e.car, b = e.other;
       if (!a || !b || !a._race || !b._race || !(e.intensity > 1.5) || (race.phase !== 'racing' && !inQ(race)) || race.attract) continue;
       if (a.ghosted || b.ghosted) continue;   // [rewind agent] a reset ghost (Physics.ghostStart) is never judged, nor its victim
+      const tPa = a._race.touchT, tPb = b._race.touchT;   // (each car's contact before this one: brakeTest)
       a._race.touchT = b._race.touchT = race.t;   // (track limits: a car knocked off is not judged)
       if (race.phase === 'racing' && rjContact(G, race, a, b, e)) continue;   // (an unsafe rejoin: the rejoining car's, judged at its window's end)
       const f = collisionFault(a, b, e.intensity, G.track, e, C || CFG.penalties.standard.col, null, inQ(race));
@@ -17068,23 +17202,89 @@ const Race = (() => {
       if (rc.hitT != null && rc.hitBy !== v && race.t - rc.hitT < CHAIN) continue;       // pushed into it by a third car
       const k = (rc.dist < C.lap1Dist && !inQ(race) ? C.lap1 : 1) * (rcOn(race) ? RaceControl.contactK(race) : 1);   // first-lap latitude (race control: the SC restart too)
       if (e.intensity - netSlack(f) < Math.max(C.light, f.need) * k) continue;
+      // brake testing: into the back of a car that slowed hard for no reason - the car behind is not blamed; the car ahead
+      // gets BT_SEC s when it was its own choice (brakeTest; races only)
+      if (f.kind === 'rear' && o === f.car && v === f.ahead && !inQ(race) && race.phase === 'racing') {
+        const bt = brakeTest(G, race, v, o, v === a ? tPa : tPb);
+        if (bt) {
+          inc.get(key).by = v;
+          const vr = v._race;
+          if (bt.pen && (vr.lastBtPen == null || race.t - vr.lastBtPen >= C.cool)) {
+            vr.lastBtPen = race.t;
+            const turn = turnLabel(G.track, v.s), where = turn ? ' (' + turn + ')' : '';
+            penalise(G, race, v, { sec: BT_SEC, reason: 'Brake testing' + where, detail: bt.why, kind: 'brakeTest', other: o, turn, imp: e.intensity }, 'Brake testing' + where + ' · ' + bt.why, [o]);
+          }
+          (race.btLog || (race.btLog = [])).push([+race.t.toFixed(2), v.id, o.id, bt.pen ? 1 : 0, bt.why]);   // (tests: every judged brake test)
+          if (race.btLog.length > 40) race.btLog.shift();
+          continue;
+        }
+      }
       if (rc.lastColPen != null && race.t - rc.lastColPen < C.cool) continue;
       rc.lastColPen = race.t;
       inc.get(key).by = o;
       const sec = C.big && e.intensity >= C.big.imp * k ? C.big.sec : C.sec;
       const turn = turnLabel(G.track, o.s), where = turn ? ' (' + turn + ')' : '';
       if (inQ(race)) { if (typeof Quali !== 'undefined' && Quali.collision) Quali.collision(G, o, v, { kind: f.kind, why: f.why, turn, big: sec > C.sec, imp: e.intensity }); continue; }   // (qualifying: grid places)
-      o.penalty += sec;
-      emit(G, { type: 'penalty', car: o, sec, reason: 'Causing a collision' + where, detail: f.why, kind: f.kind, other: v, turn, imp: e.intensity });
-      if (o.isPlayer) note(race, sec + ' S PENALTY', '#ffd12e', 'Causing a collision' + where + ' · ' + f.why);
+      penalise(G, race, o, { sec, reason: 'Causing a collision' + where, detail: f.why, kind: f.kind, other: v, turn, imp: e.intensity }, 'Causing a collision' + where + ' · ' + f.why, [v]);
     }
   }
   // per-car look-back history (race time, s, d) sampled every HQ_DT s while racing
   function histStep(race, car, rc) {
     let q = rc.hq;
-    if (!q) q = rc.hq = { n: 0, i: 0, last: -1, t: new Float64Array(HQ), s: new Float64Array(HQ), d: new Float32Array(HQ) };
+    if (!q) q = rc.hq = { n: 0, i: 0, last: -1, t: new Float64Array(HQ), s: new Float64Array(HQ), d: new Float32Array(HQ), v: new Float32Array(HQ) };
     if (q.n && race.t - q.last < HQ_DT - 1e-6 && race.t >= q.last) return;
-    q.last = race.t; q.t[q.i] = race.t; q.s[q.i] = car.s; q.d[q.i] = car.d || 0; q.i = (q.i + 1) % HQ; if (q.n < HQ) q.n++;
+    q.last = race.t; q.t[q.i] = race.t; q.s[q.i] = car.s; q.d[q.i] = car.d || 0; q.v[q.i] = car.speed || 0; q.i = (q.i + 1) % HQ; if (q.n < HQ) q.n++;
+  }
+  // ---------- brake testing (user 2026-10-26) ----------
+  // A car hit from behind (collisionFault 'rear') that slowed hard in the last BT_T s (>= BT_DROP m/s off the most it had
+  // then), with the car behind within BT_GAP s of it as it began to slow (further back: it had the time to see it), and for
+  // no reason on the track: a straight (the reference allows ~the speed it had from there to 2 s on, no bend tighter than
+  // BT_R m) or far under the corner ahead (< BT_CRN x its own pace x the reference). Not for no reason (the old rule: the car
+  // behind's fault): race control's flags in its zone / the next (yellow, double yellow, debris, slow car), the VSC / SC /
+  // red flag / a restart, the pits (wantPit, the entry road, a human's approach on the pit side), a give-back order, a car
+  // lapping it, a car close ahead of it slower than it was (traffic), the start, the flag. Then -> { pen, why }: forced (a
+  // failure / retired, major damage, lost control or off the track or hit in that time, an AI mistake / spin recovery /
+  // rejoin) pen false, a racing incident; else the driver's choice (a human braking on a straight, an AI slowing for
+  // nothing) pen true: 'Brake testing', BT_SEC s. Either way the car behind is not blamed. null: the old rule.
+  const BT_T = 2, BT_DROP = 7, BT_GAP = 0.9, BT_R = 300, BT_CRN = 0.55, BT_SEC = 10, BT_START = 8;
+  function brakeTest(G, race, F, R, tPrev) {
+    const T = G.track, fr = F._race, q = fr && fr.hq, rc = race.rc;
+    if (!q || !q.v || q.n < 8 || race.t < BT_START || F.finished || R.finished) return null;
+    const t = q.last;
+    let vMax = 0, sMax = F.s, tMax = t;
+    for (let k = 0; k < q.n; k++) { const j = (q.i - 1 - k + HQ) % HQ; if (t - q.t[j] > BT_T + 1e-6) break; if (q.v[j] > vMax) { vMax = q.v[j]; sMax = q.s[j]; tMax = q.t[j]; } }
+    const v1 = Math.min(F.speed || 0, q.v[(q.i - 1 + HQ) % HQ]);   // (before the hit: its last sample)
+    if (vMax - v1 < BT_DROP || t - tMax < 0.2) return null;
+    const hR = histAt(R, tMax, 0), gap = hR ? T.deltaS(hR.s, sMax) : T.deltaS(R.s, F.s);
+    if (gap > Math.max(12, BT_GAP * vMax)) return null;
+    const i0 = T.idxAt(sMax), span = T.deltaS(sMax, F.s) + Math.max(60, 2 * v1);
+    let vRef = Infinity, kMax = 0;
+    for (let x = -20; x <= span; x += 4) { const j = (i0 + Math.round(x / T.step) + T.N) % T.N; if (T.raceSpeed[j] < vRef) vRef = T.raceSpeed[j]; const kk = Math.abs(T.curv[j]); if (kk > kMax) kMax = kk; }
+    const str = vRef >= 0.95 * vMax && kMax < 1 / BT_R;
+    if (!str && !(v1 < BT_CRN * U.clamp(fr.tlK || 0.95, 0.7, 1.05) * vRef)) return null;
+    if (rc && rc.on) {
+      if (rc.vs || rc.sp || rc.rf || (typeof RaceControl !== 'undefined' && RaceControl.restartPh && RaceControl.restartPh(race))) return null;
+      if (rc.zf && typeof RaceControl !== 'undefined' && RaceControl.layout) {
+        const Lo = RaceControl.layout(T), n = rc.zf.length;
+        for (const s of [sMax, F.s]) { const z = RaceControl.zoneAt(Lo, s); if ((rc.zf[z] | rc.zf[(z + 1) % n]) & 15) return null; }   // (Y | YY | SLIP | WHITE)
+      }
+    }
+    const P = T.pit, human = !!(F.isPlayer || F.net);
+    if (F.wantPit || F.inPitLane || F.pitLimiter || fr.pit || fr.preLane || (human && P && P.side * (F.d || 0) > 0 && T.wrapS(P.entryS - F.s) < 300)) return null;
+    if (F.giveBack || (fr.gb && fr.gb.length)) return null;
+    if (R.raceDist != null && F.raceDist != null && R.raceDist > F.raceDist + T.length * 0.5) return null;   // (letting the car lapping it by)
+    for (const o of G.cars) {   // (traffic: a car close ahead of it in its lane, slower than it was)
+      if (o === F || o === R || o.kinematic || o.inPitLane) continue;
+      const ds = T.deltaS(F.s, o.s);
+      if (ds > 0 && ds < Math.max(25, 1.2 * vMax) && Math.abs((o.d || 0) - (F.d || 0)) < 3.2 && (o.speed || 0) < vMax - 2) return null;
+    }
+    const b = G.brains && G.brains.get ? G.brains.get(F) : (F.net && F.net.brain) || null;
+    const dmg = !!(F.dmg && typeof Damage !== 'undefined' && Damage.major && Damage.major(F));
+    const lc = (fr.lcT != null && fr.lcT >= tMax - 0.5) || (fr.lastOffT != null && fr.lastOffT >= tMax - 0.5);
+    const hit = tPrev != null && tPrev >= tMax - 0.5 && tPrev < race.t - 1e-6;
+    const mk = !human && !!(b && (b.mk || b.rec || b.rj));
+    if (F.dnf || F.retired || dmg || lc || hit || mk) return { pen: false, why: F.dnf || F.retired ? 'The car ahead had a failure' : dmg ? 'The car ahead was damaged' : hit ? 'The car ahead was hit just before' : 'The car ahead lost control' };
+    return { pen: true, why: str ? 'Slowed hard on the straight' : 'Slowed far below the corner speed' };
   }
   const _hp = [{ s: 0, d: 0 }, { s: 0, d: 0 }];
   function histAt(car, t, slot) {   // sample nearest race time t (within 0.12 s), or null
@@ -17282,9 +17482,7 @@ const Race = (() => {
     const turn = turnLabel(G.track, W.s0), where = turn ? ' (' + turn + ')' : '', who = W.by ? W.by.code || 'a car' : 'a car';
     const why = W.sev >= 3 ? 'Contact with ' + who + ' rejoining' : W.sev === 2 ? who + ' forced to take avoiding action' : who + ' forced to lift';
     if (W.sev >= L[1] || rc.rjWarn) {
-      car.penalty += 5;
-      emit(G, { type: 'penalty', car, sec: 5, reason: 'Unsafe rejoin' + where, detail: why, kind: 'rejoin', other: W.by, turn, sev: W.sev, gap: W.gap });
-      if (car.isPlayer) note(race, '5 S PENALTY', '#ffd12e', 'Unsafe rejoin' + where + ' · ' + why);
+      penalise(G, race, car, { sec: 5, reason: 'Unsafe rejoin' + where, detail: why, kind: 'rejoin', other: W.by, turn, sev: W.sev, gap: W.gap }, 'Unsafe rejoin' + where + ' · ' + why, [W.by]);
     } else {
       rc.rjWarn = (rc.rjWarn | 0) + 1;
       emit(G, { type: 'rejoinWarn', car, reason: 'Unsafe rejoin' + where, detail: why, other: W.by, turn, sev: W.sev, gap: W.gap });
@@ -17398,9 +17596,7 @@ const Race = (() => {
       if (rc.lastColPen != null && race.t - rc.lastColPen < C.cool) return;
       rc.lastColPen = race.t;
       const sec = C.sec, turn = turnLabel(T, X.s), where = turn ? ' (' + turn + ')' : '';
-      X.penalty += sec;
-      emit(G, { type: 'penalty', car: X, sec, reason: 'Forcing a car off the track' + where, detail: "Left less than a car's width to a car alongside", kind: 'squeeze', other: V, turn });
-      if (X.isPlayer) note(race, sec + ' S PENALTY', '#ffd12e', 'Forcing a car off the track' + where);
+      penalise(G, race, X, { sec, reason: 'Forcing a car off the track' + where, detail: "Left less than a car's width to a car alongside", kind: 'squeeze', other: V, turn }, 'Forcing a car off the track' + where, [V]);
       return;
     }
   }
@@ -17423,9 +17619,7 @@ const Race = (() => {
     rc.pxOn = false;
     if (race.mode === 'timetrial' || qLike(race) || !tlOn(race, car) || !race.pitExitPen) return;   // (the setting: race.pitExitPen)
     const sec = race.pen.tl && race.pen.tl.sec ? race.pen.tl.sec : 5;
-    car.penalty += sec;
-    emit(G, { type: 'penalty', car, sec, reason: 'Crossing the pit exit line', kind: 'pitExit' });
-    if (car.isPlayer) note(race, sec + ' S PENALTY', '#ffd12e', 'Crossing the pit exit line');
+    penalise(G, race, car, { sec, reason: 'Crossing the pit exit line', kind: 'pitExit' }, 'Crossing the pit exit line');
   }
   // time trial: a lap deleted only after the line (an off just before it, judged adv.rejoin s after the rejoin) stops
   // counting: best lap, session fastest lap, best sectors, ghost and personal best go back to what they were before it
@@ -17504,11 +17698,9 @@ const Race = (() => {
     if (adv && cut && gain <= adv.big) { giveBack(G, race, car, { kind: 'time', need: gain, k: x.k, turn, win: adv.timeWin, sec: tl.sec }); return; }
     car.tlWarn = (car.tlWarn || 0) + (cut ? 0 : 1);
     if (!cut && car.tlWarn <= tl.warn) { emit(G, { type: 'trackLimits', car, n: car.tlWarn, max: tl.warn, turn, gain, del, late }); return; }
-    if (!cut) car.tlWarn = 0;
-    car.penalty += tl.sec;
+    if (!cut) car.tlWarn = invActive(race) ? tl.warn : 0;   // (investigated: on the last warning until the penalty stands, invDecide)
     const reason = (cut ? 'Corner cut' : 'Track limits') + where;
-    emit(G, { type: 'penalty', car, sec: tl.sec, reason, detail: cut ? 'Gained ' + gain.toFixed(1) + ' s off track' : tl.warn + ' warnings used', kind: cut ? 'cut' : 'limits', turn, gain });
-    if (car.isPlayer) note(race, tl.sec + ' S PENALTY', '#ffd12e', reason);
+    penalise(G, race, car, { sec: tl.sec, reason, detail: cut ? 'Gained ' + gain.toFixed(1) + ' s off track' : tl.warn + ' warnings used', kind: cut ? 'cut' : 'limits', turn, gain }, reason, [], { tl: !cut });
   }
 
   // ---------- leaving the track and gaining an advantage (race.pen.adv) ----------
@@ -17573,13 +17765,10 @@ const Race = (() => {
         if (car.dnf) how = 'retired';
         else {
           how = 'penalty';
-          car.penalty += o.sec;
-          if (car.finished) car.penPending = true;   // (owed at the flag: settled like any unserved penalty)
           const where = o.turn ? ' (' + o.turn + ')' : '', Y = o.to;
           const detail = o.kind === 'place' ? 'Place not given back to ' + (Y.number ? '#' + Y.number + ' ' : '') + (Y.lastName || Y.code || '') : 'Time not given back (' + o.need.toFixed(1) + ' s)';
           const why = o.reason || 'Leaving the track and gaining an advantage';
-          emit(G, { type: 'penalty', car, sec: o.sec, reason: why + where, detail, kind: o.reason ? 'rc' : 'adv', other: Y || null, turn: o.turn || '' });
-          if (car.isPlayer) note(race, o.sec + ' S PENALTY', '#ffd12e', why);
+          penalise(G, race, car, { sec: o.sec, reason: why + where, detail, kind: o.reason ? 'rc' : 'adv', other: Y || null, turn: o.turn || '' }, why, Y ? [Y] : [], { pend: true });   // (owed at the flag: settled like any unserved penalty)
           for (let q = rc.gb.length - 1; q >= 0; q--) if (q !== j && rc.gb[q].id === o.id) { const p = rc.gb[q]; rc.gb.splice(q, 1); if (q < j) j--; emit(G, { type: 'giveBackDone', car, kind: p.kind, to: p.to || null, how: 'penalty', id: p.id }); }
         }
       }
@@ -17617,7 +17806,9 @@ const Race = (() => {
     if (car.jumpStart || race.attract || !race.penalties || !race.pen) return;
     const rc = car._race, dx = car.x - rc.gridX, dz = car.z - rc.gridZ, jd = race.pen.jump, sec = race.pen.jumpSec;   // (level: tolerance, s)
     if (dx * dx + dz * dz <= jd * jd || !(car.isPlayer || car.throttle > 0.1)) return;
-    car.jumpStart = true; car.penalty += sec;
+    car.jumpStart = true;
+    if (invActive(race)) { penalise(G, race, car, { sec, reason: 'Jump start', kind: 'jump' }, ['JUMP START', '#ff3b3b', '+' + sec + 's time penalty']); return; }   // (investigated: no JUMP START now, the decision says it)
+    car.penalty += sec;
     emit(G, { type: 'jumpStart', car, sec });
     emit(G, { type: 'penalty', car, sec, reason: 'Jump start' });
     if (car.isPlayer) note(race, 'JUMP START', '#ff3b3b', '+' + sec + 's time penalty');
@@ -17654,6 +17845,7 @@ const Race = (() => {
       }
       while (rc.nextB <= m1 && !car.finished) {
         const p = rc.nextB, tc = crossT(p);
+        rc.secN = (rc.secN | 0) + 1;   // (sector lines crossed: the investigations' clock, penalise)
         if (rc.nextBi === 2) { lineCrossing(G, race, car, p, tc); rc.nextBi = 0; rc.nextB = p + track.sectorS[0]; }
         else if (rc.nextBi === 0) { sectorDone(G, race, car, 0, tc); rc.nextBi = 1; rc.nextB = rc.lineDist + track.sectorS[1]; }
         else { sectorDone(G, race, car, 1, tc); rc.nextBi = 2; rc.nextB = rc.lineDist + L; }
@@ -17849,6 +18041,7 @@ const Race = (() => {
     // an off still running at the flag (trackLimitsStep stops at the flag): judged as rejoined at the line (advStep / checkRaceEnd)
     if (rc.tlOff) { const x = rc.tlOff; rc.tlOff = null; x.tR = race.t; x.D1 = rc.dist; rc.tlPost = x; }
     if (!race.leaderFinished) { race.leaderFinished = true; race.winnerTime = tc; }
+    if (race.inv && race.inv.list.length) invFlag(G, race, car);   // (its open investigations: decided at the flag, before its place on the road)
     if (race.penalties && ruleOpen(race, car)) {   // (same test as the strategy's: waivers included)
       car.penalty += TWO_COMPOUND_PEN;
       emit(G, { type: 'penalty', car, sec: TWO_COMPOUND_PEN, reason: 'Two-compound rule' });
@@ -17888,6 +18081,7 @@ const Race = (() => {
         const x = q.tlPost; q.tlPost = null; tlJudge(G, race, c, x);
         if (q.gb && q.gb.length) advStep(G, race, c, 0);   // (a finished car's new order: its penalty now)
       }
+      invFlag(G, race, null);   // (every investigation still open: decided at the flag, in the classification)
       race.results = classify(G, true);
       updateOrder(G, race, true);          // (committed estimates) then every penalty still pending is applied now,
       settlePenalties(G, race, true);      // before the results: tower order = classification
@@ -17971,6 +18165,7 @@ const Race = (() => {
     }
     race.t = Math.max(race.t, ...M.map(m => m.c.finishTime));
     race.simulated = true;
+    invFlag(G, race, null);   // (open investigations: decided at the flag)
     race.results = classify(G, true);
     updateOrder(G, race, true);
     settlePenalties(G, race, true);
@@ -18448,10 +18643,8 @@ const Race = (() => {
     const inT = viaRoad && rc.preLaneT != null ? rc.preLaneT : race.t, inLap = viaRoad && rc.preLaneLap != null ? rc.preLaneLap : car.lap;
     if (manual) {
       if (!rc.preLane) { markInLap(rc); emit(G, { type: 'pitEntry', car }); }   // (came in without the entry road)
-      if (race.penalties && race.mode !== 'timetrial' && (car.vLong || 0) > PIT_SPEED_TOL) {   // speed-limit line crossed too fast (no penalty in time trial)
-        car.penalty += SPEEDING_PEN;
-        emit(G, { type: 'penalty', car, sec: SPEEDING_PEN, reason: 'Speeding in pit lane' });
-      }
+      if (race.penalties && race.mode !== 'timetrial' && (car.vLong || 0) > PIT_SPEED_TOL)   // speed-limit line crossed too fast (no penalty in time trial)
+        penalise(G, race, car, { sec: SPEEDING_PEN, reason: 'Speeding in pit lane', kind: 'pit', speed: car.vLong || 0 }, false);
       rc.preLane = false; rc.preLaneIn0 = null; rc.preOff = null; car.limiterWarn = false;   // (committed: the in-lap stands)
     }
     startPit(G, race, car, u, manual);
@@ -18580,10 +18773,7 @@ const Race = (() => {
       if (ps.stop && car.finished && ps.u < ps.uBox - (ps.pg.bb || BOX_BLEND)) ps.stop = false;   // took the flag in the lane
       if (ps.speeding && ps.u >= ps.uL0) {   // (AI) crossed the speed-limit line too fast
         ps.speeding = false;
-        if (ps.v > PIT_SPEED_TOL) {   // (held up behind another car in the lane = no offence)
-          car.penalty += SPEEDING_PEN;
-          emit(G, { type: 'penalty', car, sec: SPEEDING_PEN, reason: 'Speeding in pit lane', speed: ps.v });
-        }
+        if (ps.v > PIT_SPEED_TOL) penalise(G, race, car, { sec: SPEEDING_PEN, reason: 'Speeding in pit lane', kind: 'pit', speed: ps.v }, false);   // (held up behind another car in the lane = no offence)
       }
       const vL0 = ps.speeding ? vLim + 6 : vLim;
       let vT = ps.u < ps.uL0 ? Math.sqrt(vL0 * vL0 + 2 * ps.aEntry * (ps.uL0 - ps.u)) : vLim;
@@ -19053,6 +19243,8 @@ const Race = (() => {
       try { return { lapTimeEst: track.length / Math.max(20, vAvg * diff.pace * 0.97), pitLossEst: estimatePitLoss(track, diff.pace * 0.97, pitGeometry(track)) }; }
       finally { CFG.race.pitLimTrack = was; }
     },
+    invPack, invUnpack,   // investigations (penalise): the open cases for multiplayer clients (server -> info r.inv)
+    INV: { OVER: INV_OVER, LAPS: INV_LAPS, SLOW: INV_SLOW, rnd: invRnd, active: invActive, pen: (G, car, ev, sub, oth, o) => penalise(G, G.race, car, ev, sub, oth, o), BT_SEC },   // (tests: a penalty through penalise)
     PIT_TOL_KMH, TL_WARN, collisionFault, turnLabel, wheelsOff,   // (HUD pit-speed colour; tests; wheelsOff(track, car): all four wheels beyond the white line)
     sectorFlag,   // sectorFlag(race, car, i, time, storedFlag) -> 'purple' | 'green' | 'yellow' against the current bests (HUD)
     // fastLaneD(G, s) -> the pit lane's fast lane d at s (the cars' own lateral path, beside the dashed line; pit roads
@@ -21454,7 +21646,7 @@ const NetCore = (() => {
     o.aiCount = isFinite(ai) ? clamp(ai, 0, MAX_CARS - o.humanSlots) : null;
     o.fieldSize = o.aiCount != null ? clamp((humans | 0) + o.aiCount, 2, MAX_CARS) : clamp(Math.round(+s.fieldSize) || DEF.fieldSize, Math.max(2, humans | 0), MAX_CARS);
     o.penaltyLevel = OPT.penaltyLevel.includes(s.penaltyLevel) ? s.penaltyLevel : s.penalties === false ? 'off' : DEF.penaltyLevel;
-    o.penalties = o.penaltyLevel !== 'off'; o.twoCompound = !!s.twoCompound; o.pitExitPen = s.pitExitPen === true;
+    o.penalties = o.penaltyLevel !== 'off'; o.twoCompound = !!s.twoCompound; o.pitExitPen = s.pitExitPen === true; o.investigations = s.investigations !== false;   // (investigations: race.js penalise, default on)
     o.weatherStart = OPT.wxCond.includes(s.weatherStart) ? s.weatherStart : DEF.weatherStart;   // (weather 'custom')
     o.weatherEnd = OPT.wxCond.includes(s.weatherEnd) ? s.weatherEnd : DEF.weatherEnd;
     o.weatherWhen = OPT.wxWhen.includes(s.weatherWhen) ? s.weatherWhen : DEF.weatherWhen;
@@ -22025,6 +22217,7 @@ const NetCore = (() => {
           if (r.db != null && typeof Damage !== 'undefined') Damage.unpackDebris(race, r.db);   // (contact damage: debris on the track)
           if (r.rc && typeof RaceControl !== 'undefined') RaceControl.unpack(race, r.rc, G);   // (race control: the zone flags)
           else if (r.rc === null && race.rc && race.rc.on) race.rc.on = false;   // (none on the server: none here either - no medical car / flags of its own)
+          if (r.inv !== undefined && typeof Race !== 'undefined' && Race.invUnpack) Race.invUnpack(race, r.inv, S.byId);   // (investigations: the server's open cases, the tower's badges)
           if (r.phase === 'finished') race.phase = 'finished';
           else if (r.phase === 'racing' && !S.sched && race.phase !== 'racing' && race.phase !== 'finished' && S.raceT0 != null) { race.phase = 'racing'; race.lights.on = 0; race.lights.out = true; }   // (no schedule: joined late)
         }
