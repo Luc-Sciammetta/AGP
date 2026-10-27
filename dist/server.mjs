@@ -373,7 +373,7 @@ class RaceSim {
     const diffId = DIFFICULTY[S.difficulty] ? S.difficulty : 'medium';
     this.diff = DIFFICULTY[diffId];
     Race.create(G, { mode: 'race', laps: S.laps, difficulty: diffId, playerTeam: humans.length ? humans[0].team : field[0], playerCompound: 'M', tyreWear: S.tyreWear, twoCompound: S.twoCompound,
-      penalties: S.penalties, penaltyLevel: S.penaltyLevel, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
+      penalties: S.penalties, penaltyLevel: S.penaltyLevel, pitExitPen: S.pitExitPen === true, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
     const race = this.race = G.race;
     this.brainQ = [];
     if (race.qs) {

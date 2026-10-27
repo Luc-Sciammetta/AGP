@@ -58828,7 +58828,7 @@ const buildTrack = (() => {
     // hand-overs between the frames have no step or kink. Past an end
     // (project's 4 m overlap: road coordinates over the lane) it is the lane's own height. Before, a road read the lap
     // centreline at its s, which runs at the road's own rate: steps of 1-2 cm where project hands over (Silverstone's entry).
-    const ROAD_EXT = 6, _rr = { k: -1, a: 0 };   // (m of road past its ends that still read its profile: project's overlap is 4)
+    const ROAD_EXT = 6, _rr = { k: -1, a: 0 }, _rc = { k: -1, a: 0 };   // (m of road past its ends that still read its profile: project's overlap is 4; _rc: corridor's)
     let roadProf = null;
     const laneY = u => T.elevAt(wrap(entryS + u), pitSide * laneAbsU(u));   // (the path's lane centre, track frame)
     const roadRef = (s, out) => {   // road coordinates at s -> out.k (road), out.a (m along it, up to ROAD_EXT past its ends)
@@ -58910,6 +58910,15 @@ const buildTrack = (() => {
     const wdAt = wallDAt || (() => wallD);   // the pit wall's d at s (walled section)
     const inWallSec = pd.wallNone ? () => false : s => wrap(s - wallS0) <= wrap(wallS1 - wallS0);
     const inPitRange = s => wrap(s - entryS) <= pitLen;
+    // (a road end that runs into the pit wall - the walled section starts / ends within 2 m of it - as Render3D's roadWallJoin draws
+    // it: the road's inner wall eases onto the pit wall's lane face over its last / first ROAD_JOIN m, and corridor()'s overlap past
+    // that end goes on along the face. r.jA / r.jB = the face's offset from the road's centre at its start / end, or null)
+    const ROAD_JOIN = 8, dS_ = (a, b) => { let x = wrap(b - a); if (x > L / 2) x -= L; return x; };
+    for (const r of roads) {
+      const jn = s => (laneTab ? laneAbsU(wrap(s - entryS)) - (Math.abs(wdAt(wrap(s))) + wallThick / 2) : null);
+      r.jA = !pd.wallNone && Math.abs(dS_(wallS1, r.s0)) < 2 ? jn(r.s0) : null;
+      r.jB = !pd.wallNone && Math.abs(dS_(r.s1, wallS0)) < 2 ? jn(r.s1) : null;
+    }
     // no kerb under the pit lane: where the lane asphalt (entry / exit roads incl. the blends) reaches the kerb band on the
     // pit side, that kerb sample goes (kerbs elsewhere, e.g. the rest of the corner, stay). Racing line / speeds are built.
     const kerbP = pitSide < 0 ? kerbL : kerbR, kerbCut = [];
@@ -59707,7 +59716,8 @@ const buildTrack = (() => {
           // barrier hands over to the road's walls, the car is already in the road's frame)
           const q = roadNear(k, x, z);
           if (q.a < -4 || q.a > r.len + 4) continue;
-          const hw = r.HW[Math.min(r.n - 1, Math.max(0, Math.round(q.a)))], ae = Math.abs(q.e), op = r.open > 0 && q.a < r.open;
+          // (op: open towards the track here - its open start, or all of a road open to its end and the 4 m past it: corridor's overlap)
+          const hw = r.HW[Math.min(r.n - 1, Math.max(0, Math.round(q.a)))], ae = Math.abs(q.e), op = r.open > 0 && (q.a < r.open || r.open >= r.len);
           // (an open stretch: a point between the track and the road that the track's frame walls off - its barrier held at
           // the Voronoi limit on the inside of a bend, Singapore's T1 island - is the road's open side instead: no hidden wall)
           const gap = op && q.e * pitSide < 0 && ae > hw + 0.6 && ae < hw + 40 && out.d * pitSide > 0 && Math.abs(out.d) > wallInterp(out.s, out.d) - 0.05;
@@ -59780,8 +59790,23 @@ const buildTrack = (() => {
         out = out || {};
         s = wrap(s);
         if (isRoadD(d)) {   // (an open start: no wall on its side towards the track)
-          const k = onRoad(s), c = pitSide * ROAD_D, w = (k >= 0 ? roadHW(k, s) : laneHalfW) + 0.6, op = k >= 0 && openAt(k, s), wo = w + (op ? roadOX(k, s) : 0);
-          out.min = c - (op && pitSide > 0 ? 50 : pitSide < 0 ? wo : w); out.max = c + (op && pitSide < 0 ? 50 : pitSide > 0 ? wo : w); out.pit = true; return out;
+          const k = onRoad(s), c = pitSide * ROAD_D;
+          let w = (k >= 0 ? roadHW(k, s) : laneHalfW) + 0.6, op = k >= 0 && openAt(k, s), wo = w + (op ? roadOX(k, s) : 0), wi = w;   // (wi: the inner wall)
+          if (k >= 0 && !op) {   // (a road end run into the pit wall: the inner wall eases onto its lane face, as drawn)
+            const r = roads[k];
+            if (r.jA != null || r.jB != null) { const a = roadA(k, s), t = Math.max(r.jA != null ? 1 - a / ROAD_JOIN : 0, r.jB != null ? 1 - (r.len - a) / ROAD_JOIN : 0);
+              if (t > 0) { const j = r.jB != null && r.len - a < ROAD_JOIN ? r.jB : r.jA; wi = w + (j - w) * t * t * (3 - 2 * t); } }
+          } else if (k < 0 && roadRef(s, _rc)) {
+            // (off every road: project()'s 4 m overlap before a road's start / past its end, straight on. As drawn there: the far wall
+            // goes on at that end's width (+ an open start's OX); towards the track the pit wall's lane face where the road runs into
+            // it, nothing past an open end, and past a closed end the inner wall's end, chamfered at 45 deg (a car alongside still
+            // touches the wall's last metres, one across it does not). It was the lane's half width + 0.6 m on both sides: an invisible
+            // wall 4 m long at the roads' ends, e.g. Monaco's exit road at T1, 2026-10-26)
+            const r = roads[_rc.k], st = _rc.a < r.len / 2, q = st ? 0 : r.n - 1, j = st ? r.jA : r.jB;
+            w = r.HW[q] + 0.6; wo = w + (r.OX ? r.OX[q] : 0);
+            op = j == null && (st ? r.open > 0 : r.open >= r.len); wi = j != null ? j : w + Math.max(0, st ? -_rc.a : _rc.a - r.len);
+          }
+          out.min = c - (op && pitSide > 0 ? 50 : pitSide < 0 ? wo : wi); out.max = c + (op && pitSide < 0 ? 50 : pitSide > 0 ? wo : wi); out.pit = true; return out;
         }
         const f = s / step, i = Math.floor(f) % N, j = (i + 1) % N, u = f - Math.floor(f);
         const wL = wallL[i] + (wallL[j] - wallL[i]) * u, wR = wallR[i] + (wallR[j] - wallR[i]) * u;
@@ -62831,11 +62856,11 @@ const Damage = (() => {
   }
 
   // ---------- pit stops ----------
-  // extra stationary time for the repairs at this stop (front wing: a new nose ~8-10 s when it is damaged), 0 = none.
+  // the stationary time for the repairs at this stop (front wing: a new nose, the whole stop 14-16 s, the tyres alongside it), 0 = none.
   // Punctures are fixed by the new tyres; the rear wing, floor and suspension can't be repaired.
   // the crew changes the nose when it costs more than the change over the laps left: broken (>= FW_CHANGE[1]) with 2+ laps
   // to go, chipped (>= FW_CHANGE[0]) only with FW_LONG+ laps left
-  const FW_CHANGE = [0.12, 0.3], FW_LONG = 8, FW_COST = [8, 10];
+  const FW_CHANGE = [0.12, 0.3], FW_LONG = 8, FW_COST = [14, 16];   // (FW_COST: the whole stop with a new front wing, s; the tyres go on meanwhile: race.js)
   function pitRepair(car, race, lapsLeft) {
     const d = car.dmg, fw = d ? Math.max(d.fwL, d.fwR) : 0, left = lapsLeft != null ? lapsLeft : 99;
     if (!d || !car.dmgFx || fw < FW_CHANGE[0] || (fw < FW_CHANGE[1] ? left < FW_LONG : left < 2)) return 0;   // (visual only: no effects, nothing to fix)
@@ -71270,6 +71295,7 @@ const Race = (() => {
     const gs = G.settings && typeof G.settings === 'object' ? G.settings : {};
     race.penaltyLevel = penaltyLevel({ penaltyLevel: opts.penaltyLevel != null ? opts.penaltyLevel : gs.penaltyLevel, penalties: opts.penalties != null ? opts.penalties : gs.penalties });
     race.penalties = race.penaltyLevel !== 'off';
+    race.pitExitPen = (opts.pitExitPen != null ? opts.pitExitPen : gs.pitExitPen) === true;   // (the pit exit line rule: a setting, off by default)
     race.pen = race.penalties ? JSON.parse(JSON.stringify(CFG.penalties[race.penaltyLevel])) : null;
     race.pitTolKmh = race.pen ? race.pen.pitTol : PIT_TOL_KMH;
     // race control (racecontrol.js: flags, VSC / SC / red flags): opts.raceControl, else the game's settings; race.rc
@@ -72448,7 +72474,8 @@ const Race = (() => {
     !(inQ(race) && (car.qSt !== 'push' || !(car.q ? car.q.valid : car.qPush))) && !(oneShot(race) && !(car.lap >= 1));
   // the pits are left down the exit road (2026-10-16, Singapore's open exit road): a human car handed back at the limiter-end
   // line that gets onto the track's asphalt outside the lane before the lane's end (crossing the pit exit line: the exit
-  // road's open side, or the painted lane's line) gets a time penalty (race only, Strict only), once per stop
+  // road's open side, or the painted lane's line) gets a time penalty (race only, when the pit exit line setting is on:
+  // race.pitExitPen, off by default, user 2026-10-26), once per stop
   function pitExitLine(G, race, car) {
     const rc = car._race, T = G.track, pit = T.pit;
     if (!pit || !pit.laneD) { rc.pxOn = false; return; }
@@ -72459,7 +72486,7 @@ const Race = (() => {
     const ld = pit.laneD(T.wrapS(car.s)), inLane = ld != null && Math.abs(ld) < 1e3 && pit.side * d >= Math.abs(ld) - (pit.laneHalfW || 3) - 1.0;
     if (Math.abs(d) >= T.halfW[i] || inLane) return;
     rc.pxOn = false;
-    if (race.mode === 'timetrial' || qLike(race) || !tlOn(race, car) || race.penaltyLevel !== 'strict') return;   // (strict only, user 2026-10-18)
+    if (race.mode === 'timetrial' || qLike(race) || !tlOn(race, car) || !race.pitExitPen) return;   // (the setting: race.pitExitPen)
     const sec = race.pen.tl && race.pen.tl.sec ? race.pen.tl.sec : 5;
     car.penalty += sec;
     emit(G, { type: 'penalty', car, sec, reason: 'Crossing the pit exit line', kind: 'pitExit' });
@@ -73656,10 +73683,11 @@ const Race = (() => {
           const aw = aiPitWings(G, race, car);
           if (aw) { ps.wings = aw.w; ps.wingCost = aw.cost; ps.serviceDur += aw.cost; }
         }
-        // contact damage: a new front wing (Damage.pitRepair: ~8-10 s when it is damaged; punctures: the new tyres)
+        // contact damage: a new front wing (Damage.pitRepair: a 14-16 s stop when it is damaged; punctures: the new tyres)
         if (car.dmg && typeof Damage !== 'undefined') {
           ps.nose = Damage.pitRepair(car, race, race.laps ? race.laps - (car.lap | 0) : 0);
-          if (ps.nose > 0) { ps.serviceDur += ps.nose; if (car.isPlayer) car.pitWingNote = (car.pitWingNote ? car.pitWingNote + ' · ' : '') + 'NEW FRONT WING'; }
+          // (the new front wing goes on while the tyres are changed: the stop lasts the longer of the two, 14-16 s, user 2026-10-26)
+          if (ps.nose > 0) { ps.tyreDur = ps.serviceDur; ps.serviceDur = Math.max(ps.serviceDur, ps.nose); if (car.isPlayer) car.pitWingNote = (car.pitWingNote ? car.pitWingNote + ' · ' : '') + 'NEW FRONT WING'; }
         }
         if (car.penalty > 0) {   // unserved time penalties are served now, on top of the tyre change
           ps.penServed = car.penalty; ps.serviceDur += car.penalty;
@@ -75041,7 +75069,7 @@ const Quali = (() => {
     if (car.dmg && typeof Damage !== 'undefined') service(G, qs, car);
   }
   // ---------- contact damage (damage.js; with world.damage, qualifying takes the race's hits: HANDOFF "Damage in qualifying") ----------
-  // The garage is the pit stop: what the race's stop repairs (Damage.pitRepair + repair: a damaged nose is changed, ~8-10 s on the
+  // The garage is the pit stop: what the race's stop repairs (Damage.pitRepair + repair: a damaged nose is changed, a 14-16 s stop on the
   // session clock, the car held that long - q.lock; punctures go with the new tyres); the rear wing, floor and suspension stay
   // for the rest of the session. A wreck (a terminal hit: car.dmg.term, Race.retire) cannot be repaired here: it is out for the
   // session (q.wreck, no GO OUT) and the break repairs every car (fixCars) - as the grid does before the race.
@@ -76110,7 +76138,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-26 10:59';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-27 00:07';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -80791,7 +80819,7 @@ const NetCore = (() => {
     o.aiCount = isFinite(ai) ? clamp(ai, 0, MAX_CARS - o.humanSlots) : null;
     o.fieldSize = o.aiCount != null ? clamp((humans | 0) + o.aiCount, 2, MAX_CARS) : clamp(Math.round(+s.fieldSize) || DEF.fieldSize, Math.max(2, humans | 0), MAX_CARS);
     o.penaltyLevel = OPT.penaltyLevel.includes(s.penaltyLevel) ? s.penaltyLevel : s.penalties === false ? 'off' : DEF.penaltyLevel;
-    o.penalties = o.penaltyLevel !== 'off'; o.twoCompound = !!s.twoCompound;
+    o.penalties = o.penaltyLevel !== 'off'; o.twoCompound = !!s.twoCompound; o.pitExitPen = s.pitExitPen === true;
     o.weatherStart = OPT.wxCond.includes(s.weatherStart) ? s.weatherStart : DEF.weatherStart;   // (weather 'custom')
     o.weatherEnd = OPT.wxCond.includes(s.weatherEnd) ? s.weatherEnd : DEF.weatherEnd;
     o.weatherWhen = OPT.wxWhen.includes(s.weatherWhen) ? s.weatherWhen : DEF.weatherWhen;
@@ -84768,8 +84796,9 @@ const PitCrew = (() => {
 
   // ------------------------------------------------------------------ the stop timeline (pure)
   const TLC = new WeakMap();
-  function build(dur, pen, nose, wing) {
-    const P = pen, W = Math.max(0.6, dur - pen), B = Math.max(0.6, W - nose - wing), k = clamp((B - 0.15) / 1.75, 0.4, 1.9);
+  function build(dur, pen, nose, wing, tyre) {
+    const P = pen, W = Math.max(0.6, dur - pen), B = Math.max(0.6, nose > 0.5 && tyre > 0 ? tyre - wing : W - nose - wing),   // (B: the tyre change; a new front wing goes on alongside it, race.js ps.tyreDur)
+      k = clamp((B - 0.15) / 1.75, 0.4, 1.9);
     const tl = { dur, pen, nose, wing, W, k, end: P + W, wg: null };
     tl.fj = [P + 0.02 * k, P + 0.2 * k]; tl.rj = [P + 0.22 * k, P + 0.4 * k];
     tl.gl = [P + 0.3 * k, P + 0.36 * k]; tl.gLen = [[0.34, 0.3], [0.4, 0.36]];   // (the guns' run times: audio.js's sounds)
@@ -84797,12 +84826,12 @@ const PitCrew = (() => {
   function timeline(car) {
     if (!car) return null;
     const ps = car._race && car._race.pit;
-    let dur, pen = 0, nose = 0, wing = 0;
-    if (ps) { if (!inBoxPs(ps)) return null; dur = ps.serviceDur; pen = ps.penServed || 0; nose = ps.nose > 0 ? ps.nose : 0; wing = ps.wingCost || 0; }
+    let dur, pen = 0, nose = 0, wing = 0, tyre = 0;
+    if (ps) { if (!inBoxPs(ps)) return null; dur = ps.serviceDur; pen = ps.penServed || 0; nose = ps.nose > 0 ? ps.nose : 0; wing = ps.wingCost || 0; tyre = ps.tyreDur || 0; }
     else if (car.pitState === 'service' && car.pitDur > 0) { dur = car.pitDur; pen = car.pitPen || 0; }
     else return null;
     let tl = TLC.get(car);
-    if (!tl || tl.dur !== dur || tl.pen !== pen || tl.nose !== nose || tl.wing !== wing) { tl = build(dur, pen, nose, wing); TLC.set(car, tl); }
+    if (!tl || tl.dur !== dur || tl.pen !== pen || tl.nose !== nose || tl.wing !== wing) { tl = build(dur, pen, nose, wing, tyre); TLC.set(car, tl); }
     return tl;
   }
 
@@ -84892,8 +84921,8 @@ const PitCrew = (() => {
   }
 
   // ---------- the roles (car-local: x forward, z right; gs = the garage's side): spots K (work), Rd (ready), D (garage door)
-  function roles(gs, gd) {
-    const R = [], door = (x, i) => [clamp(x * 0.85, -3.6, 3.6) + (i % 2 ? 0.25 : -0.25), gs * (gd + 1)];
+  function roles(gs, gd, dm = 3.6) {   // (dm: the doors' reach along the lane, within the garage's opening)
+    const R = [], door = (x, i) => [clamp(x * 0.85, -dm, dm) + (i % 2 ? 0.25 : -0.25), gs * (gd + 1)];
     for (let c = 0; c < 4; c++) {
       const ax = c < 2 ? AXF : AXR, sg = WZ[c] > 0 ? 1 : -1, face = -sg * HPI, far = sg !== gs ? 1 : 0;
       const hub = [ax, sg * WO];
@@ -84911,19 +84940,49 @@ const PitCrew = (() => {
   }
 
   // ---------- per car state
-  function newState(car, T, X, ps, rt) {
-    const pit = T.pit, box = car.box != null ? car.box : car.teamIndex;
-    const s = T.wrapS(pit.boxS && pit.boxS[box] != null ? pit.boxS[box] : pit.entryS), d = pit.boxDAt ? pit.boxDAt(s) : pit.boxD || 0;
-    const w = T.toWorld(s, d), sm = T.sample(s), A = { x: w.x, z: w.z, h: Math.atan2(sm.tz, sm.tx), y: 0 };
-    try { A.y = X.gy ? X.gy({ s, d, x: w.x, z: w.z }) || 0 : 0; } catch (e) { A.y = 0; }
+  // the front of this box's garage (world point at the box's s), as Render3D builds it: garages along a pit road (track.pit.boxRoad,
+  // Monaco: boxIn = between the road and the track) front onto the road's edge + garageGap (X.gf is null there); the usual block
+  // beyond the lane on pit.side has X.gf(s) = its front |d| (render3d frontE), else the lane's edge + 1 m (its default)
+  function garageAt(T, s, d, X) {
+    const pit = T.pit, sd = pit.side || 1, RD = pit.roadD;
+    if (pit.boxRoad != null && RD && Math.abs(d) > RD / 2 && pit.roadHW) {
+      const e = pit.roadHW(s) + (pit.garageGap != null ? pit.garageGap : 0.6);
+      return T.toWorld(s, sd * RD + (pit.boxIn ? -sd : sd) * e);
+    }
     let e = null; try { e = X.gf ? X.gf(s) : null; } catch (er) { e = null; }
-    const sd = pit.side || 1;
-    if (!(e > Math.abs(d))) e = Math.abs(d) + 6;
-    const g = T.toWorld(s, sd * e), lz = -(g.x - A.x) * Math.sin(A.h) + (g.z - A.z) * Math.cos(A.h), gs = lz < 0 ? -1 : 1, gd = clamp(Math.abs(lz) - 0.3, 3, 12);
+    if (!(e > Math.abs(d))) {
+      const ld = pit.laneD ? pit.laneD(s) : null, lhw = pit.laneHalfW || 5;
+      e = pit.garageD != null ? Math.abs(pit.garageD) + 0.6 : ld != null && !(RD && Math.abs(ld) > RD / 2) ? Math.abs(ld) + lhw + 1 : Math.abs(d) + 6;
+    }
+    return T.toWorld(s, sd * e);
+  }
+  function newState(car, T, X, ps, rt) {
+    const pit = T.pit, box = car.box != null ? car.box : car.teamIndex, nb = pit.boxS ? pit.boxS.length : 0;
+    const s = T.wrapS(pit.boxS && pit.boxS[box] != null ? pit.boxS[box] : pit.entryS), d = pit.boxDAt ? pit.boxDAt(s) : pit.boxD || 0;
+    // the box's pose: the lane's own heading there (a chord along the box line; on a pit road its s runs along the road, whose
+    // heading the track's at that s is not: Monaco's boxes), as the race parks the car (race.js parkInBox / pitPose)
+    const w = T.toWorld(s, d), wa = T.toWorld(T.wrapS(s - 1), d), wb = T.toWorld(T.wrapS(s + 1), d), A = { x: w.x, z: w.z, h: Math.atan2(wb.z - wa.z, wb.x - wa.x), y: 0 };
+    try { A.y = X.gy ? X.gy({ s, d, x: w.x, z: w.z }) || 0 : 0; } catch (e) { A.y = 0; }
+    const g = garageAt(T, s, d, X), lz = -(g.x - A.x) * Math.sin(A.h) + (g.z - A.z) * Math.cos(A.h), gs = lz < 0 ? -1 : 1, gd = clamp(Math.abs(lz) - 0.3, 3, 12);
+    // the doors' reach along the lane: inside this garage's opening (the box spacing less the partitions, render3d bayHalf - 0.8)
+    let sp = 1e9;
+    for (const k of [box - 1, box + 1]) if (k >= 0 && k < nb && pit.boxS[k] != null) { const sk = T.wrapS(pit.boxS[k]), q = T.toWorld(sk, pit.boxDAt ? pit.boxDAt(sk) : d); sp = Math.min(sp, Math.hypot(q.x - w.x, q.z - w.z)); }
+    const dm = clamp(Math.min(sp * 0.5, 8) - 1.3, 1, 3.6);
     const team = car.team || (typeof TEAMS !== 'undefined' && TEAMS[car.teamIndex]) || { primary: '#888888', secondary: '#dddddd' };
     const col = h => { try { const c = new THREE.Color(h); return [c.r, c.g, c.b]; } catch (er) { return [0.5, 0.5, 0.5]; } };
-    return { ph: 'out', tw: ps && ps.enterT != null ? Math.max(0, rt - ps.enterT) : 0, tnAt: null, e: -1, tl: null, tb: 0, A, gs, gd, R: roles(gs, gd),
+    const R = roles(gs, gd, dm), c = Math.cos(A.h), sn = Math.sin(A.h);
+    for (const r of R) r.Dw = [A.x + r.D[0] * c - r.D[1] * sn, A.z + r.D[0] * sn + r.D[1] * c];   // (the doors stay put in the world when A moves to the stopped car)
+    return { ph: 'out', tw: ps && ps.enterT != null ? Math.max(0, rt - ps.enterT) : 0, tnAt: null, e: -1, tl: null, tb: 0, A, gs, gd, R,
       c1: col(team.primary), c2: col(team.secondary || team.accent || '#ffffff'), oldC: null, newC: null, stopped: false, backT: 0, cx: -99, lf: 0, lr: 0 };
+  }
+  // the car stopped: its own pose becomes the crew's frame; the doors keep their place in the world (a car a little off its box)
+  function reframe(st, x, z, h) {
+    st.A.x = x; st.A.z = z; st.A.h = h;
+    const c = Math.cos(h), sn = Math.sin(h);
+    for (const r of st.R) {
+      const dx = r.Dw[0] - x, dz = r.Dw[1] - z; r.D[0] = dx * c + dz * sn; r.D[1] = -dx * sn + dz * c;
+      r.psD = r.Rd ? Math.atan2(r.Rd[1] - r.D[1], r.Rd[0] - r.D[0]) : -st.gs * HPI;
+    }
   }
   const local = (st, car) => { const A = st.A, dx = car.x - A.x, dz = car.z - A.z, c = Math.cos(A.h), s = Math.sin(A.h); return [dx * c + dz * s, -dx * s + dz * c]; };
   const cmpOf = c => (typeof COMPOUNDS !== 'undefined' && COMPOUNDS[c] ? COMPOUNDS[c].color : '#cccccc');
@@ -85143,7 +85202,7 @@ const PitCrew = (() => {
         if (el != null) {
           if (st.ph !== 'stop') {
             st.ph = 'stop'; st.stopped = true;
-            st.A.x = car.x; st.A.z = car.z; st.A.h = car.h; if (v.y != null && isFinite(v.y)) st.A.y = v.y;
+            reframe(st, car.x, car.z, car.h); if (v.y != null && isFinite(v.y)) st.A.y = v.y;
             st.oldC = cmpOf(car.tyre && car.tyre.compound);
             if (st.tnAt == null) st.tnAt = st.tw;
           }
@@ -85157,7 +85216,6 @@ const PitCrew = (() => {
         st.lr = tl && st.ph === 'stop' ? 0.1 * ss(tl.rj[0], tl.rj[1], e) * (1 - ss(tl.drop[0], tl.drop[1], e)) : 0;
       } else if (st) {
         if (st.ph !== 'back') {   // the car has gone: everyone walks back in from where they stand
-          if (!K) { ST.delete(car); continue; }
           let bt = 0;
           for (const r of st.R) {
             O.hide = false; pose(st, r);
@@ -90035,12 +90093,17 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       // lane edge lines, sample-aligned with the surface ribbon and built from the same pitVis() edges.
       // Outer edge: clipped to the track side (never on the racing surface or a kerb); where there is no kerb it
       // peels out of the track's white edge line (identical white, drawn over it).
-      // Inner edge = the solid white line separating the pit entry / exit lane from the track: it follows the lane's
-      // inner edge all along the blends, including the part that runs on the track surface (where the lane still
-      // overlaps it) \u2014 but only from where it is clear of the racing line (>= RLM beyond it, towards the pit side),
-      // so racing cars never have to cross it. Over a kerb it rides on the hump.
+      // Inner edge = the solid white pit entry / exit line separating the lane from the track (2026-10-26, every circuit):
+      // off the track (the lane's inner edge past the track's edge line) it follows the lane's inner edge; along the blends,
+      // where the lane still overlaps the track, it is painted on the asphalt: on the lane's inner edge, or pushed out to
+      // stay >= RLM clear of the racing line (towards the pit side, a soft max: no kinks), merging into the track's edge
+      // line where it reaches it. It stops where a car on the lane's centre would have to cross it (the lane runs on the
+      // racing line there: no room for a line), and only pieces connected to the off-track part are drawn (through
+      // stretches merged into the edge line; no slivers). Over a kerb it rides on the hump. A pit road draws its own
+      // lines, but its open start (still on / beside the track's asphalt, track.pit.roads[k].open) is painted here, in the
+      // track frame from the road's near edge, up to where the road's own near line takes over.
       {
-        const N = T.N, st = T.step, KW = CFG.kerbWidth || 1.4, LW = 0.24, PLW = 0.25, RLM = 1.4, K = kerbArr(sd), OPENR = roadList().some(r => r.open > 0);
+        const N = T.N, st = T.step, KW = CFG.kerbWidth || 1.4, LW = 0.24, PLW = 0.25, RLM = 1.4, CW = 1.2, SMX = 1.0, K = kerbArr(sd);
         const i0 = (Math.floor(T.wrapS(pit.entryS) / st) - 1 + N) % N, cnt = Math.ceil(len / st) + 3;
         const vis = i => pitVis(i) || { inn: T.halfW[i], out: T.halfW[i] };
         const seg = (i, j, aI, bI, aJ, bJ, lift) => {
@@ -90048,36 +90111,62 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
           const y = (k, a) => Y + surfH(k * st, sd * a) + (lift ? kerbHeight(k * st, sd * a) * 1.05 + (kerbHeight(k * st, sd * a) > 0 ? 0.015 : 0) : 0);
           g.quad([PX(i, sd * aI), y(i, aI), PZ(i, sd * aI)], [PX(i, sd * bI), y(i, bI), PZ(i, sd * bI)], [PX(j, sd * bJ), y(j, bJ), PZ(j, sd * bJ)], [PX(j, sd * aJ), y(j, aJ), PZ(j, sd * aJ)], up, white);
         };
-        // inner line visibility per sample: on the lane, and either clear of the track edge / kerb or clear of the
-        // racing line; kept contiguous (from the entry blend's end backwards / the exit blend's start forwards)
-        const innOk = new Uint8Array(cnt), kMid = Math.floor(cnt / 2);
-        for (let k = 0; k < cnt; k++) {
-          const i = (i0 + k) % N, v = pitVis(i); if (!v) continue;
-          const m = K[i] ? T.halfW[i] + KW : T.halfW[i] - LW;
-          innOk[k] = v.inn >= m || v.inn >= Math.max(0.15, sd * T.raceLine[i] + RLM) ? 1 : 0;
-        }
-        let kA = kMid, kB = kMid;
-        while (kA > 0 && innOk[kA - 1]) kA--;
-        while (kB < cnt - 1 && innOk[kB + 1]) kB++;
-        // (pit roads: the line also runs from each road's ends along the lane, as far as it is clear: the pit entrance /
-        // exit line; drawn per sample in innRun)
-        const innRun = new Uint8Array(cnt);
-        for (let k = kA; k <= kB; k++) innRun[k] = 1;
-        if (roadList().length) for (let k = 1; k < cnt; k++) {
-          const i = (i0 + k) % N, ip = (i0 + k - 1 + N) % N;
-          if (onRoadI(i) !== onRoadI(ip)) {   // a road end: walk out along the lane while clear
-            const dir = onRoadI(i) ? -1 : 1;
-            for (let m = dir < 0 ? k - 1 : k; m >= 0 && m < cnt && innOk[m] && !onRoadI((i0 + m) % N); m += dir) innRun[m] = 1;
+        // (open starts: the road's near edge and centre as unsigned track offsets at the track samples they pass, by sample
+        // offset k; only while the near edge is within 0.6 m of the track's edge: past that the road's own line, which starts
+        // 0.1 m past it, overlaps the end of this one)
+        const openE = new Map(), sgI = -(sd || 1), _pr = {};
+        for (const r of roadList()) {
+          if (!(r.open > 0)) continue;
+          const E = [];
+          for (const p of roadPts(r, 0)) {
+            if (p[4] > r.open + 3) break;
+            T.project(p[0] + p[2] * sgI * p[5], p[1] + p[3] * sgI * p[5], -1, _pr); const ke = loopLen(i0 * st, _pr.s) / st, de = Math.abs(_pr.d);
+            T.project(p[0], p[1], -1, _pr);
+            E.push([ke, de, Math.abs(_pr.d)]);
+          }
+          for (let q = 0; q + 1 < E.length; q++) {
+            const a = E[q], b = E[q + 1]; if (Math.abs(b[0] - a[0]) > 20) continue;   // (across the loop's seam)
+            for (let k = Math.ceil(Math.min(a[0], b[0])); k <= Math.max(a[0], b[0]) && k < cnt; k++) {
+              const t = b[0] !== a[0] ? (k - a[0]) / (b[0] - a[0]) : 0, inn = lerp(a[1], b[1], t), i = (i0 + k) % N;
+              if (onRoadI(i) && inn < T.halfW[i] + 0.6 && !openE.has(k)) openE.set(k, [inn, lerp(a[2], b[2], t)]);
+            }
           }
         }
+        // per sample: 1 off the track (anchor), 2 painted on the asphalt, 3 merged into the track's edge line, 4 blocked (a car
+        // on the lane's centre would cross it), 5 a pit road (its own lines; an anchor); Dk = the line's track-side offset
+        const typ = new Uint8Array(cnt), Dk = new Float32Array(cnt);
+        for (let k = 0; k < cnt; k++) {
+          const i = (i0 + k) % N, hw = T.halfW[i], oe = openE.get(k);
+          let inn, a;
+          if (oe) { inn = oe[0]; a = oe[1]; }
+          else if (onRoadI(i)) { typ[k] = 5; continue; }
+          else { const v = pitVis(i); if (!v) continue; inn = v.inn; a = v.inn + lhw; }
+          if (inn >= hw - LW) { typ[k] = 1; Dk[k] = inn; continue; }
+          const rl = Math.max(0.15, sd * T.raceLine[i] + RLM), e = SMX * clamp((hw - LW - inn) / 2, 0, 1);
+          const D = (inn + rl + Math.sqrt((inn - rl) * (inn - rl) + e * e)) / 2;   // (soft max: >= both; exact at the edge line)
+          // (on the lane's inner edge: always painted, it crosses the edge line at the blend's end; pushed out by the racing
+          // line to within 0.3 m of the edge line: merged into it, the line meeting it there)
+          Dk[k] = D;
+          typ[k] = D - inn < 0.05 ? 2 : D >= hw - LW - 0.3 ? 3 : D > a - CW ? 4 : 2;
+          if (typ[k] === 3) Dk[k] = hw - LW;
+        }
+        const rch = new Uint8Array(cnt), go = t => t === 2 || t === 3, anc = q => q >= 0 && q < cnt && (typ[q] === 1 || typ[q] === 5);
+        for (let k = 0; k < cnt; k++) if (anc(k)) rch[k] = 1;
+        for (let k = 1; k < cnt; k++) if (!rch[k] && rch[k - 1] && go(typ[k])) rch[k] = 1;
+        for (let k = cnt - 2; k >= 0; k--) if (!rch[k] && rch[k + 1] && go(typ[k])) rch[k] = 1;
+        for (let k = 0; k < cnt;) {   // (a painted piece < 6 m between merged / blocked stretches: dropped)
+          if (!(rch[k] && typ[k] === 2)) { k++; continue; }
+          let e = k; while (e + 1 < cnt && rch[e + 1] && typ[e + 1] === 2) e++;
+          if ((e - k + 1) * st < 6 && !anc(k - 1) && !anc(e + 1)) for (let q = k; q <= e; q++) rch[q] = 0;
+          k = e + 1;
+        }
+        const drw = k => rch[k] && typ[k] >= 1 && typ[k] <= 3;
         for (let k = 0; k < cnt; k++) {
           const i = (i0 + k) % N, j = (i + 1) % N;
+          if (k + 1 < cnt && drw(k) && drw(k + 1) && !(typ[k] === 3 && typ[k + 1] === 3)) seg(i, j, Dk[k], Dk[k] + PLW, Dk[k + 1], Dk[k + 1] + PLW, true);
           if ((!pitVis(i) && !pitVis(j)) || onRoadI(i) || onRoadI(j)) continue;   // (a pit road draws its own lines)
           const vI = vis(i), vJ = vis(j), kb = K[i];
           const mI = kb ? T.halfW[i] + KW : T.halfW[i] - LW, mJ = kb ? T.halfW[j] + KW : T.halfW[j] - LW;
-          // (before a road's open start the near line leaves the track's edge line with the road's: none on the asphalt)
-          const onAsph = OPENR && (vI.inn < T.halfW[i] || vJ.inn < T.halfW[j]);
-          if (innRun[k] && (k + 1 >= cnt || innRun[k + 1]) && !onAsph) seg(i, j, vI.inn, vI.inn + PLW, vJ.inn, vJ.inn + PLW, true);
           seg(i, j, Math.max(vI.out - PLW, mI), Math.max(vI.out, mI), Math.max(vJ.out - PLW, mJ), Math.max(vJ.out, mJ));
         }
       }
@@ -101561,7 +101650,7 @@ const Menu = (() => {
   const DEFAULTS = {
     mode: 'race', trackId: 'vortex', laps: 5, lapPct: 0, difficulty: 'medium', teamIndex: 0, compound: 'A', view: 'chase',   // compound 'A' = AUTO (the conditions)
     assists: { tc: true, abs: true, brakeGuide: true, kb: 'normal', steer: 'off', brake: 'off', line: 'off' }, tyreWear: 'normal', twoCompound: false, volume: 0.8,
-    grid: 'random', gridPos: 5, playerName: 'Player', timeOfDay: 'day', weather: 'dry', penalties: true, penaltyLevel: 'standard',   // (penalties = level !== 'off')
+    grid: 'random', gridPos: 5, playerName: 'Player', timeOfDay: 'day', weather: 'dry', penalties: true, penaltyLevel: 'standard', pitExitPen: false,   // (penalties = level !== 'off'; pitExitPen: the pit exit line rule, race.js pitExitLine)
     grassSlip: 0.8,   // grass slipperiness 0..1 (Settings > Rules slider; CFG.grass: 0 = grips like the track, 0.8 = standard, 1 = 15 % less grip)
     weatherStart: 'dry', weatherEnd: 'wet', weatherWhen: 'mid',   // weather 'custom'
     fieldSize: 10,   // drivers on the grid (quick race / a new championship)
@@ -101773,6 +101862,7 @@ const Menu = (() => {
     // mismatch, only an old save has one); penalties kept in step = any penalties at all
     s.penaltyLevel = s.penalties === false ? 'off' : pick(s.penaltyLevel, OPT.penaltyLevel, 'standard');
     s.penalties = s.penaltyLevel !== 'off';
+    s.pitExitPen = s.pitExitPen === true;   // (off unless switched on, user 2026-10-26)
     s.grassSlip = s.grassSlip != null && s.grassSlip !== '' && isNum(+s.grassSlip) ? Math.round(Math.max(0, Math.min(1, +s.grassSlip)) * 20) / 20 : 0.8;   // (slider steps of 5 %)
     s.damage = pick(s.damage, OPT.damage, 'reduced');
     { const r = s.raceControl && typeof s.raceControl === 'object' ? s.raceControl : {}; s.raceControl = { on: r.on !== false, yellow: r.yellow !== false, vsc: r.vsc !== false, sc: r.sc !== false, red: r.red !== false, freq: pick(r.freq, OPT.rcFreq, 'realistic'), fail: r.fail !== false, crash: pick(r.crash, OPT.aiCrash, 'normal'), avoid: r.avoid !== false }; }   // race control (racecontrol.js): all on, realistic   // (default REDUCED for testing, user 2026-10-17; Settings > Rules > Damage)
@@ -101975,6 +102065,7 @@ const Menu = (() => {
     // laps; multiplayer: the host's room setting); the line under it says what the level does
     { k: 'penaltyLevel', label: 'Penalties', type: 'cycle', opts: OPT.penaltyLevel, tab: 'rules', set: v => { S.penaltyLevel = v; S.penalties = v !== 'off'; } },
     { k: 'penHelp', label: '', type: 'head', tab: 'rules', skip: true, text: () => (typeof CFG !== 'undefined' && CFG.penalties && CFG.penalties.help[S.penaltyLevel]) || '' },
+    { k: 'pitExitPen', label: 'Pit exit line penalty', type: 'toggle', tab: 'rules', showIf: () => S.penaltyLevel !== 'off' },   // (5 s for crossing the line at the pit exit; race.js pitExitLine)
     // grass slipperiness (CFG.grass, Physics + AI; multiplayer: the host's room setting): 0 = grips like the track, 80 % = the
     // standard grass (default), 100 % = 15 % less grip; from the next session (a championship: the season's rule)
     { k: 'grassSlip', label: 'Grass slipperiness', type: 'slider', tab: 'rules' },
@@ -107793,7 +107884,7 @@ const Net = (() => {
     delete h.fieldSize; delete h.penalties;
     const base = Object.assign({ mode: 'race', trackId: s.trackId, laps: s.laps, weather: ['dry', 'damp', 'wet', 'dynamic', 'custom'].includes(s.weather) ? s.weather : 'dry',
       weatherStart: s.weatherStart, weatherEnd: s.weatherEnd, weatherWhen: s.weatherWhen,   // (custom weather: the host's own, as in single player)
-      timeOfDay: s.timeOfDay, difficulty: s.difficulty === 'adaptive' ? 'medium' : s.difficulty, penaltyLevel: penLevel(s), tyreWear: s.tyreWear, twoCompound: !!s.twoCompound, contact: 'contact', grassSlip: s.grassSlip,
+      timeOfDay: s.timeOfDay, difficulty: s.difficulty === 'adaptive' ? 'medium' : s.difficulty, penaltyLevel: penLevel(s), pitExitPen: s.pitExitPen === true, tyreWear: s.tyreWear, twoCompound: !!s.twoCompound, contact: 'contact', grassSlip: s.grassSlip,
       damage: typeof Damage !== 'undefined' && Damage.enabled ? s.damage || 'reduced' : 'none', raceControl: s.raceControl }, h,
       { humanSlots: hs }, legacy ? { aiCount: null } : { aiCount: ai }, roomSettings || {});
     base.penalties = base.penaltyLevel !== 'off';
@@ -108329,6 +108420,7 @@ const Net = (() => {
     { k: 'difficulty', label: 'AI DIFFICULTY', race: true, opts: () => [['easy', 'EASY'], ['medium', 'MEDIUM'], ['hard', 'HARD'], ['extreme', 'EXTREME']] },
     { k: 'contact', label: 'COLLISIONS', race: true, opts: () => [['contact', 'CONTACT'], ['ghost', 'GHOSTING (NO CONTACT)']] },
     { k: 'penaltyLevel', label: 'PENALTIES', race: true, get: penLevel, opts: () => PEN },
+    { k: 'pitExitPen', label: 'PIT EXIT LINE PENALTY', race: true, show: st => penLevel(st) !== 'off', get: st => st.pitExitPen === true, opts: () => ONOFF },
     { k: 'tyreWear', label: 'TYRE WEAR', race: true, opts: () => [['off', 'OFF'], ['normal', 'NORMAL'], ['high', 'HIGH']] },
     { k: 'twoCompound', label: 'TWO-COMPOUND RULE', race: true, get: st => !!st.twoCompound, opts: () => ONOFF },
     { k: 'grassSlip', label: 'GRASS SLIPPERINESS', get: st => (st.grassSlip != null ? st.grassSlip : 0.8), opts: () => GRASS },
@@ -108383,9 +108475,9 @@ const Net = (() => {
   const regC = {};
   const TABS = [['ov', 'RACE OVERVIEW'], ['lv', 'LIVERY']], HTABS = [['track', 'TRACK'], ['field', 'FIELD'], ['rules', 'RULES'], ['wx', 'WEATHER']];
   const ROW_TAB = { mode: 'track', trackId: 'track', laps: 'track', humanSlots: 'field', aiCount: 'field', difficulty: 'field', grid: 'field', qualiLen: 'field', qualiQ1: 'field', qualiQ2: 'field', qualiQ3: 'field',
-    contact: 'rules', penaltyLevel: 'rules', tyreWear: 'rules', twoCompound: 'rules', grassSlip: 'rules', damage: 'rules', weather: 'wx', weatherStart: 'wx', weatherEnd: 'wx', weatherWhen: 'wx', timeOfDay: 'wx', qualiDay: 'wx' };
+    contact: 'rules', penaltyLevel: 'rules', pitExitPen: 'rules', tyreWear: 'rules', twoCompound: 'rules', grassSlip: 'rules', damage: 'rules', weather: 'wx', weatherStart: 'wx', weatherEnd: 'wx', weatherWhen: 'wx', timeOfDay: 'wx', qualiDay: 'wx' };
   for (const k of RC_KEYS) ROW_TAB['rc.' + k] = 'rules';
-  const RULE_KEYS = ['laps', 'humanSlots', 'aiCount', 'difficulty', 'grid', 'qualiLen', 'contact', 'penaltyLevel', 'tyreWear', 'twoCompound', 'grassSlip', 'damage'].concat(RC_KEYS.map(k => 'rc.' + k));
+  const RULE_KEYS = ['laps', 'humanSlots', 'aiCount', 'difficulty', 'grid', 'qualiLen', 'contact', 'penaltyLevel', 'pitExitPen', 'tyreWear', 'twoCompound', 'grassSlip', 'damage'].concat(RC_KEYS.map(k => 'rc.' + k));
   const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-label="locked"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.2c.7 0 1.3.6 1.3 1.3v9.4c0 .7-.6 1.3-1.3 1.3H5.8c-.7 0-1.3-.6-1.3-1.3v-9.4c0-.7.6-1.3 1.3-1.3zm2.6 0h4.8V7a2.4 2.4 0 0 0-4.8 0z"/></svg>';
   function build() {
     if (root) return;
@@ -110357,7 +110449,7 @@ const Game = (() => {
     G.weather = makeWeather(settings, attract, seed);
     const champNames = !attract && settings.mode === 'championship' && G.champ && G.champ.drivers ? G.champ.drivers : null;
     const opts = {
-      grid: settings.grid, gridPos: settings.gridPos, playerName: settings.playerName, playerNumber: settings.playerNumber, penalties: settings.penalties !== false, penaltyLevel: settings.penaltyLevel,
+      grid: settings.grid, gridPos: settings.gridPos, playerName: settings.playerName, playerNumber: settings.playerNumber, penalties: settings.penalties !== false, pitExitPen: settings.pitExitPen === true, penaltyLevel: settings.penaltyLevel,
       weather: settings.weather, driverNames: champNames,
       mode: attract ? 'race' : settings.mode, laps: attract ? 99 : settings.laps, difficulty: settings.difficulty,
       playerTeam: settings.teamIndex, playerCompound: settings.compound, tyreWear: attract ? 'off' : settings.tyreWear,
@@ -111050,6 +111142,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-26 10:59 -->
+<!-- Apex GP build 2026-10-27 00:07 -->
 </body>
 </html>
