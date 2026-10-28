@@ -48,8 +48,12 @@ const U = (() => {
   const spdKmh = k => k * (spdMph ? 0.621371192 : 1);
   const spdUnit = () => (spdMph ? 'MPH' : 'KM/H');
   const hexToInt = hex => parseInt(hex.replace('#', ''), 16);
-  // race laps for a share of the F1 distance (user 2026-10-19): 100 % = the fewest laps covering 305 km, 25 / 50 % = ceil(share x that)
-  const raceLaps = (pct, len) => { const full = Math.ceil(305000 / Math.max(1, len)); return pct >= 100 ? full : Math.max(1, Math.ceil(pct / 100 * full)); };
+  // race laps for a share of the F1 distance (user 2026-10-19): 100 % = the fewest laps covering 305 km, 25 / 50 % = ceil(share x that);
+  // a circuit whose real race is shorter has its own full count, TRACK_DATA[id].raceLaps (Monaco: 78 laps, 260 km)
+  const raceLaps = (pct, len, id) => {
+    const d = id && typeof TRACK_DATA !== 'undefined' ? TRACK_DATA[id] : null, full = d && d.raceLaps > 0 ? d.raceLaps : Math.ceil(305000 / Math.max(1, len));
+    return pct >= 100 ? full : Math.max(1, Math.ceil(pct / 100 * full));
+  };
   // The circuits a player can pick, in the one order every list shows them (menu cards, the championship calendar's default and
   // SELECT ALL, STATS, the multiplayer room's CIRCUIT row and the server's list): the REAL circuits by the 2026 F1 calendar,
   // then the fictional ones in TRACK_DATA order. Only ids are ordered, TRACK_DATA itself is never reordered. A real circuit
@@ -2848,6 +2852,7 @@ const TRACK_DATA = {
     name: 'Circuit de Monaco',
     country: 'Monaco',
     character: 'street',
+    raceLaps: 78,   // the real race: 78 laps (260.286 km), not the 305 km every other Grand Prix runs (U.raceLaps: 100 / 50 / 25 % RACE = 78 / 39 / 20)
     // REAL CIRCUIT (Monte Carlo / La Condamine, the Monaco Grand Prix layout, 3.337 km, 19 turns, clockwise): the centre line from
     // OpenStreetMap (ODbL, (c) OpenStreetMap contributors; circuit relation 148194) moved onto the middle of the street between its
     // kerbs on the satellite (Esri World Imagery z19, off-season; the race-day 2013 Wayback capture checked), fitted to 1.66 m rms /
@@ -8474,7 +8479,7 @@ const RaceControl = (() => {
     if (rc.vs) vscStep(G, race, rc, Lo, H, dt);
     if ((rc.scanT -= dt) > 0) return;
     rc.scanT += SCAN;
-    hzStep(G, race, rc, H);
+    if (race.laps > EV_MIN) evStep(G, race, rc); else hzStep(G, race, rc, H);
     if (rc.fq) forceStep(G, race, rc, H);
     scan(G, race, rc, Lo, H);
   }
@@ -8555,7 +8560,7 @@ const RaceControl = (() => {
   function hzPlan(G, race, rc) {
     rc.hz = [];
     const T = G.track, nc = G.cars.length;   // (every car, the human ones too: user 2026-10-18)
-    if (!race.laps || race.carSpread || rc.cfg.fail === false || !nc || !(T.length > 0)) return;   // (Mechanical failures off: none)
+    if (!race.laps || race.laps > EV_MIN || race.carSpread || rc.cfg.fail === false || !nc || !(T.length > 0)) return;   // (Mechanical failures off: none; a race over EV_MIN laps: evPlan)
     let D = race.laps * T.length, lam = hzLam(T) * Math.min(1.5, D / FULL) * (FREQ[rc.cfg.freq] || 1) * Math.min(1, nc / HZ_N);
     if (rc.cfg.freq === 'testing') lam = Math.max(lam, 3);
     let n = 0, p = Math.exp(-lam), F = p;
@@ -8579,6 +8584,86 @@ const RaceControl = (() => {
       if (c.retired) c.retired.pull = 1;
       rc.log.push([+race.t.toFixed(2), 'fail', zoneAt(layout(G.track), c.s), c.id]);
     }
+  }
+
+  // ---------- phase 8 (user 2026-10-28): how many VSC / SC / red flags a race has ----------
+  // A race over EV_MIN laps (every mode, difficulty and length; 3 / 5 laps keep hzPlan's failures) draws them from the race
+  // seed (evPlan): how many - EV_N[kind] = P(0, 1, 2, 3, 4 (street: '4 or more'; permanent: 3 = '3 or more')) - and which -
+  // EV_MIX[kind] = VSC / SC / red, the user's 65 / 50 / 25 (street) and 35 / 25 / 10 (permanent) as shares. rc.ev = [{ d: the
+  // leader distance it is due at (one per EV_D0-EV_D1 slice of the race), lv, done }]. Due (evStep): at green a live AI car fails
+  // and pulls over with that level (forceStep / rc.fw); under a VSC / SC / red flag it waits for the green + half a lap.
+  // Every incident keeps the level it deserves (user 2026-10-28: a later crash may be the worse one - nothing is capped). One
+  // that takes the race from green to a VSC / SC / red flag uses up the next event due (evGate: one of its level if any is left,
+  // else the first), so its own failure never comes; once none is left the AI makes no more crash-class mistakes (ai.js mkField:
+  // a spin / an off instead, evLeft) - what still happens (a spin into the wall, a collision) gets its flag, over the draw.
+  // Frequency (FREQ): Less keeps each drawn event with 0.6, More adds one with 0.6 per event (at least one try), Testing >= 3.
+  // Mechanical failures off: none fire, the incidents still use them up.
+  const EV_MIN = 5, EV_D0 = 0.05, EV_D1 = 0.85;
+  const EV_N = { street: [0.22, 0.55, 0.15, 0.05, 0.03], perm: [0.57, 0.30, 0.10, 0.03] };
+  const EV_MIX = { street: [65, 50, 25], perm: [35, 25, 10] };
+  // EV_O: the share of races that get one event over the draw (the tuning sims, 2026-10-28: 192 races, all difficulties,
+  // 10 / 20 laps: street 5 %, permanent 3 %), so EV_P - the table drawn from - is EV_N with that taken back out: the REAL
+  // count (drawn + unplanned) lands on EV_N (user: the race must not show 1 event when 3 happened).
+  const EV_O = { street: 0.06, perm: 0.04 };   // (384 races: 12 / 192 street, 8 / 192 permanent)
+  // EV_MD: the VSC / SC / red mix drawn from. Permanent: EV_MIX. Street: the AI's own crashes there (about 1 in 5 events; 87 %
+  // get an SC - the walls are close) take the place of planned events, which turned the real mix to 38 / 45 / 17 against
+  // EV_MIX's 46 / 36 / 18, so street draws more VSCs (a model of that, checked by the sims, lands it back on EV_MIX: 96 races
+  // at 55 / 23 / 22 gave 48 / 29 / 22, so 4 points moved from red to SC).
+  const EV_MD = { street: [55, 27, 18], perm: EV_MIX.perm };
+  const EV_P = {};
+  for (const k of Object.keys(EV_N)) {
+    const N = EV_N[k], o = EV_O[k], P = [];
+    let left = 1;
+    for (let i = 0; i < N.length - 1; i++) { P[i] = Math.max(0, (N[i] - (i ? o * P[i - 1] : 0)) / (1 - o)); left -= P[i]; }
+    P[N.length - 1] = Math.max(0, left);
+    EV_P[k] = P;
+  }
+  function evPlan(G, race, rc) {
+    rc.ev = []; rc.evLv = 0; rc.evs = [];   // (evs: [t, highest level] per event, tests / the tuning sims)
+    const T = G.track;
+    if (!(race.laps > EV_MIN) || !(T.length > 0)) return;
+    const k = layout(T).street ? 'street' : 'perm', P = EV_P[k], M = EV_MD[k], D = race.laps * T.length, f = rc.cfg.freq;
+    let u = rnd(race, 7201, 1), n = 0;
+    while (n < P.length - 1 && u >= P[n]) { u -= P[n]; n++; }
+    if (f === 'less') { let m = 0; for (let i = 0; i < n; i++) if (rnd(race, 7202, i) < 0.6) m++; n = m; }
+    else if (f === 'more') { const m = n; for (let i = 0; i < Math.max(1, m); i++) if (rnd(race, 7202, i) < 0.6) n++; }
+    else if (f === 'testing') n = Math.max(n, 3);
+    for (let i = 0; i < n; i++) {
+      const r = rnd(race, 7203, i) * (M[0] + M[1] + M[2]);
+      rc.ev.push({ d: D * (EV_D0 + (EV_D1 - EV_D0) * (i + rnd(race, 7204, i)) / n), lv: r < M[0] ? LV.vsc : r < M[0] + M[1] ? LV.sc : LV.red, done: 0 });
+    }
+  }
+  function evStep(G, race, rc) {
+    if (!rc.ev) evPlan(G, race, rc);
+    if (!rc.ev.length || rc.cfg.fail === false) return;
+    const ld = race.order && race.order[0] ? race.order[0].raceDist || 0 : 0;
+    for (const e of rc.ev) {
+      if (e.done || ld < e.d) continue;
+      if (rc.vs || rc.sp || rc.rf || rc.want >= LV.vsc || rc.fq || rc.evLv || race.t - (rc.evT || -1e9) < 60) { e.d = ld + 0.5 * G.track.length; continue; }   // (after the green; not while the last one's car is still pulling over)
+      e.done = 1; rc.fq = e.lv; e.f = 1; rc.evT = race.t;
+      rc.log.push([+race.t.toFixed(2), 'evDue', -1, e.lv]);
+      return;
+    }
+  }
+  // the next event left: one of level lv if any, else the first (null: none)
+  const evNext = (rc, lv) => rc.ev.find(e => !e.done && e.lv === lv) || rc.ev.find(e => !e.done) || null;
+  // an incident against the draw (phase 8), once, when it first wants a VSC / SC / red flag: o.ev 'u' under the event on (part
+  // of it), 'f' forced / a dev tools' failure or crash (rc.evX), else it uses up the next event left ('n'; a human's car: 'h'),
+  // none left: 'o' (over the draw). Its level is never changed.
+  function evGate(race, rc, o, ow, took) {
+    const c = o.car;
+    if (rc.evLv || took) o.ev = 'u';
+    else if (c && ((rc.fw && rc.fw[c.id]) || (rc.evX && rc.evX[c.id]))) o.ev = 'f';
+    else { const e = evNext(rc, ow); if (e) e.done = 1; o.ev = c && isHuman(c) ? 'h' : e ? 'n' : 'o'; }
+    rc.log.push([+race.t.toFixed(2), 'evGate', o.zone, ow, o.ev]);
+  }
+  // (ai.js mkField) the race's draw still to come: -1 = none (a short race, race control off)
+  function evLeft(race) {
+    const rc = race && race.rc;
+    if (!rc || !rc.on || !rc.ev || !(race.laps > EV_MIN)) return -1;
+    let n = 0;
+    for (const e of rc.ev) if (!e.done) n++;
+    return n;
   }
 
   function incOf(rc, car, kind, zone) {
@@ -8691,8 +8776,14 @@ const RaceControl = (() => {
     // well clear under a double yellow) = red; never red in the last ~lap. No escalation (user 2026-10-25): once a VSC / SC is out the
     // level never goes above it (neutral(): a new incident runs under it), so a VSC never becomes an SC, an SC never a red flag; an
     // incident from green goes straight to its level (the deployment delay picks the highest one decided meanwhile)
-    let want = 0, ww = 0, out = 0, wo = null;
-    for (const o of rc.inc) { const ow = o.cap != null && o.want > o.cap ? o.cap : o.want; if (o.kind === 'retired' && !(o.est > 0 && ow <= LV.yy)) out++; if (ow > want) { want = ow; ww = o.why; wo = o; } }   // (o.cap: dev tools' end, endStep)
+    let want = 0, ww = 0, out = 0, wo = null, took = 0;
+    const ev = !rc.q && rc.ev && race.laps > EV_MIN;   // (phase 8: the race's draw of VSC / SC / red flags, evGate)
+    for (const o of rc.inc) {
+      let ow = o.cap != null && o.want > o.cap ? o.cap : o.want;   // (o.cap: dev tools' end, endStep)
+      if (ev && ow >= LV.vsc && o.ev == null) { evGate(race, rc, o, ow, took); took = 1; }   // (one event per pass from green: the rest are part of it)
+      if (o.kind === 'retired' && !(o.est > 0 && ow <= LV.yy)) out++;
+      if (ow > want) { want = ow; ww = o.why; wo = o; }
+    }
     if (pileUp(G, rc)) { want = LV.red; ww = W.pile; wo = null; }   // (user 2026-10-20: a real 3+ car crash, wherever the cars sit)
     else if (out >= 3) { want = LV.red; ww = W.multi; wo = null; }
     else if (want >= LV.yy && blocked(G, race, rc)) { want = LV.red; ww = W.track; }
@@ -8714,6 +8805,13 @@ const RaceControl = (() => {
     want = effLevel(want, cfg);   // (the max over the live incidents: it drops only once every incident behind it has ended)
     const nl = neutral(rc);
     if (nl && want > nl && ww !== W.rain) want = nl;   // (no escalation; the rain's red flag is the weather, not an incident)
+    if (ev) {   // (phase 8) an event: from green to a VSC / SC / red flag (rc.evs [t, its highest level]) until green again
+      if (!rc.evLv && want >= LV.vsc && !nl && !rc.rf) {
+        if (!took) { const e = evNext(rc, want); if (e) e.done = 1; }   // (no incident behind it - rain, a blocked track: it uses one up too)
+        rc.evLv = want; rc.evs.push([+t.toFixed(2), want]); rc.log.push([+t.toFixed(2), 'ev', -1, want]);
+      } else if (rc.evLv && want > rc.evLv) { rc.evLv = want; rc.evs[rc.evs.length - 1][1] = want; }
+      else if (rc.evLv && want < LV.vsc && !nl && !rc.rf && rc.lvl < LV.vsc) rc.evLv = 0;
+    }
     if (want !== rc.want) {
       rc.want = want; rc.wantWhy = ww;
       rc.wantZ = wo && ww === wo.why ? wo.zone : -1; rc.wantC = wo && ww === wo.why ? (wo.car ? wo.car.id : wo.by != null ? wo.by : -1) : -1;   // (the incident behind it: the engineer's why)
@@ -11291,7 +11389,7 @@ const RaceControl = (() => {
     actors, stopInput, jobInfo, obstacles, aiVsc, vscV, delta, deltaView, ownStep, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
-    aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar,
+    aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
     bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral };
 })();
 
@@ -15223,6 +15321,7 @@ const AI = (() => {
       if (e.d > lead) break;
       if (e.done) continue;
       if (e.a >= (1 + T.wet * wx) / (1 + T.wet)) { e.done = 2; continue; }   // (thinned: a dry track)
+      if (e.c === 0 && typeof RaceControl !== 'undefined' && RaceControl.evLeft && RaceControl.evLeft(race) === 0) { e.c = 1; e.x = 1; }   // (the race's VSC / SC / red flags all used up, racecontrol phase 8: a spin / an off instead of a crash)
       const car = mkPick(G, race, A, M, e);
       if (car) { car._mk = { c: e.c, t: race.t, i: e.id, h: e.h }; e.done = 1; M.cnt[e.c]++; }
       else e.d = lead + 150;   // (nobody fit: a little later)
@@ -16946,7 +17045,7 @@ const Race = (() => {
       else checkJumpStart(G, race, car);
       progress(G, race, car, dt, racing);
       aeroLockStep(track, car, rc, race);
-      if (racing) { stuckCheck(G, race, car); trackLimitsStep(G, race, car, dt); rejoinStep(G, race, car, dt); histStep(race, car, rc); }
+      if (racing) { stuckCheck(G, race, car); trackLimitsStep(G, race, car, dt); rejoinStep(G, race, car, dt); histStep(race, car, rc); paceStep(G, race, car, rc); }
       rc.pvx = car.vx || 0; rc.pvz = car.vz || 0; rc.pbr = car.brake || 0;   // pre-contact state for the next step's collisions
     }
     if (racing) for (let i = 0; i < cars.length; i++) { const rc = cars[i]._race; if (rc && (rc.tlPost || (rc.gb && rc.gb.length))) advStep(G, race, cars[i], dt); }
@@ -17256,6 +17355,29 @@ const Race = (() => {
     }
   }
   // per-car look-back history (race time, s, d) sampled every HQ_DT s while racing
+  // the car's own pace, PM_BIN m at a time: rc.pm[b] = the s it took over bin b on its last clean pass (green, on the track,
+  // out of the lane, no give-back owed). A time give-back is measured against it (advStep): before, against its speed ratio
+  // over the 1.5 s before it went off (rc.tlK) - Monaco's chicane cut flat out after the tunnel was 'given back' just by
+  // taking the next corners at a human's usual ~90 % of the AI's pace, no penalty (user 2026-10-27). No pass yet (lap 1):
+  // the AI's speed there x the lower of that ratio and its ~20 s one (rc.tlK2)
+  const PM_BIN = 10;
+  function paceStep(G, race, car, rc) {
+    const T = G.track, nb = Math.ceil(T.length / PM_BIN);
+    if (!rc.pm || rc.pm.length !== nb) { rc.pm = new Float32Array(nb); rc.pmB = -1; }
+    const b = Math.min(nb - 1, Math.floor(T.wrapS(car.s) / PM_BIN)), R = race.rc;
+    const clean = !car.inPitLane && !car.kinematic && !rc.pit && !rc.tlOff && !rc.tlPost && !(rc.gb && rc.gb.length) && (car.speed || 0) > 5 &&
+      !(car.d != null && Math.abs(car.d) > T.halfW[car.idx >= 0 ? car.idx : T.idxAt(car.s)] + 2) && !(R && R.on && (R.vs || R.sp || R.rf));
+    if (b !== rc.pmB) {
+      if (rc.pmB >= 0 && rc.pmOk && b === (rc.pmB + 1) % nb) rc.pm[rc.pmB] = race.t - rc.pmT;   // (one bin on: a whole clean pass of it)
+      rc.pmB = b; rc.pmT = race.t; rc.pmOk = clean;
+    } else if (!clean) rc.pmOk = false;
+  }
+  // s per metre the car itself takes at s (its last clean pass there), else the AI's speed there x its pace ratio
+  function paceAt(T, rc, s, i, k) {
+    const p = rc.pm && rc.pm[Math.min(rc.pm.length - 1, Math.floor(T.wrapS(s) / PM_BIN))];
+    if (p > 0) return p / PM_BIN;
+    return 1 / Math.max(8, T.raceSpeed[i] * (rc.tlK2 != null ? Math.min(k, rc.tlK2) : k));
+  }
   function histStep(race, car, rc) {
     let q = rc.hq;
     if (!q) q = rc.hq = { n: 0, i: 0, last: -1, t: new Float64Array(HQ), s: new Float64Array(HQ), d: new Float32Array(HQ), v: new Float32Array(HQ) };
@@ -17571,7 +17693,10 @@ const Race = (() => {
     if (lc) rc.lcT = race.t;
     if (!off) {
       const i = car.idx >= 0 ? car.idx : 0, vr = T.raceSpeed[i];
-      if ((car.speed || 0) > 8 && vr > 1) rc.tlK = rc.tlK == null ? 0.95 : rc.tlK + (U.clamp(car.speed / vr, 0.5, 1.15) - rc.tlK) * Math.min(1, dt / 1.5);
+      if ((car.speed || 0) > 8 && vr > 1) {
+        rc.tlK = rc.tlK == null ? 0.95 : rc.tlK + (U.clamp(car.speed / vr, 0.5, 1.15) - rc.tlK) * Math.min(1, dt / 1.5);
+        if (!rc.tlPost && !(rc.gb && rc.gb.length)) rc.tlK2 = rc.tlK2 == null ? rc.tlK : rc.tlK2 + (U.clamp(car.speed / vr, 0.5, 1.15) - rc.tlK2) * Math.min(1, dt / 20);   // (its pace over ~20 s: corners and straights; not while it lifts after a cut / gives time back)
+      }
       if (rc.tlOff) { const x = rc.tlOff; rc.tlOff = null; x.tR = race.t; x.D1 = rc.dist; rc.tlPost = x; }   // back on: judged adv.rejoin s later (advStep)
       return;
     }
@@ -17579,6 +17704,12 @@ const Race = (() => {
     if (rc.tlPost) { const x = rc.tlPost; rc.tlPost = null; tlJudge(G, race, car, x); }   // (off again within the window)
     if (!rc.tlOff) rc.tlOff = offStart(G, race, car);
     if (lc) rc.tlOff.spun = true;
+    // (a contact from 1.5 s before leaving the track to 0.5 s after: hit off by a car at fault (rc.hitT) = not judged; any other
+    // touch = no strike, but a place gained or a corner cut still counts - a car that tapped the one ahead and then cut the
+    // Monaco chicane past it got away with the place, user 2026-10-27; before, any contact during the off cleared it all)
+    const xo = rc.tlOff, nearT = t => t != null && t >= xo.t0 - 1.5 && t <= xo.t0 + 0.5;
+    if (nearT(rc.touchT)) xo.knocked = true;
+    if (nearT(rc.hitT)) xo.hit = true;
   }
   // the start of a trip off the track (judged once back on, tlJudge): the cars just ahead (or level) as it leaves the track
   // (a place on one of them gained off track), forced wide, a spin just before
@@ -17698,12 +17829,13 @@ const Race = (() => {
   function tlJudge(G, race, car, x) {
     const rc = car._race, T = G.track, D1 = x.D1 != null ? x.D1 : rc.dist, len = D1 - x.D0, tAct = (x.tR != null ? x.tR : race.t) - x.t0;
     const tR = x.tR != null ? x.tR : race.t;
-    if (!(len > 1) || len > 800 || (rc.touchT != null && rc.touchT >= x.t0 - 1.5 && rc.touchT <= tR + 0.05)) return;   // (backwards / knocked off)
+    if (!(len > 1) || len > 800 || x.hit) return;   // (backwards / hit off by a car at fault: trackLimitsStep)
+    if (rc.lastColPen != null && rc.lastColPen >= x.t0 - 1.5 && rc.lastColPen <= tR + 0.05) return;   // (one incident, one penalty: its own contact's, given then)
     const tl = race.pen.tl;
     let tRef = 0;
     for (let u = 0; u < len; u += 2) tRef += Math.min(2, len - u) / Math.max(8, T.raceSpeed[Math.round(T.wrapS(x.s0 + u) / T.step) % T.N] * x.k);
     const gain = tRef - tAct, adv = race.pen.adv, race1 = race.mode !== 'timetrial' && !qLike(race);
-    const strike = !(gain <= tl.gain || ((x.wide || x.spun) && gain <= tl.cut));   // (not: lost time / forced wide by a car alongside / lost control: a spin or slide off, unless it cut a corner)
+    const strike = !(gain <= tl.gain || ((x.wide || x.spun || x.knocked) && gain <= tl.cut));   // (not: lost time / forced wide by a car alongside / lost control: a spin or slide off / a touch as it went off, unless it cut a corner)
     if (race1 && adv && passedOff(G, race, car, x, adv).length) { if (strike) raceDelLap(G, race, car, x); return; }   // GIVE THE PLACE BACK, whatever the time (no strike then)
     if (!strike) return;
     const turn = turnLabel(T, x.s0 + len * 0.5), where = turn ? ' (' + turn + ')' : '';
@@ -17784,7 +17916,7 @@ const Race = (() => {
       } else {
         const i = car.idx >= 0 ? car.idx : T.idxAt(car.s), dD = rc.dist - o.lastD;
         o.lastD = rc.dist;
-        if (!car.finished) o.lost += dt - Math.max(0, dD) / Math.max(8, T.raceSpeed[i] * o.k);
+        if (!car.finished) o.lost += dt - Math.max(0, dD) * paceAt(T, rc, car.s, i, o.k);
         if (car.inPitLane || rc.pit) how = 'pitted';
         else if (o.lost >= o.need * (1 - (adv ? adv.slack : 0))) how = 'returned';
       }
@@ -19324,13 +19456,14 @@ const Race = (() => {
 // battery, a spin, the box call). Kick is the server's (rooms), not here.
 // apply(G, op, car, o) -> { ok, txt (the notice), why (refused), loc (multiplayer: the owner's part), k (wx state) }.
 const DevTools = (() => {
-  // op -> [key, label, car: 2 a click needed / 1 own car without a click / 0 none, local only (no host needed)]
+  // op -> [key, label, car: 2 a click needed / 1 own car without a click / 0 none / 3 a click on a circuit card (menus: devinfo), local only (no host needed)]
   const OPS = {
     vsc: ['1', 'force a VSC', 0], sc: ['2', 'force a safety car', 0], red: ['3', 'force a red flag', 0], end: ['4', 'end the SC / VSC now', 0],
     kick: ['K', 'kick that player (multiplayer)', 2], fail: ['F', 'mechanical failure', 2], crash: ['X', 'crash at the next corner', 2],
     punct: ['U', 'puncture', 2], box: ['B', 'pits next lap', 2], spec: ['V', 'spectate that car (local)', 2, 1],
     wx: ['W', 'weather: dry > rain > heavy > drying', 0], last: ['L', 'jump to the final lap', 0],
     bat: ['E', 'full battery (own car)', 1], fix: ['Z', 'repair all damage (own car)', 1], yel: ['Y', 'yellow flag at your zone', 0],
+    trk: ['C', 'clear a circuit\'s best lap / sectors / top speed', 3, 1],
     list: ['/', 'this list', 0, 1],
   };
   const KEY = {};   // event.code -> op
@@ -19424,7 +19557,7 @@ const DevTools = (() => {
   // a tool on the authoritative side (single player: the page; multiplayer: the server). o: { who: 'Host' | 'You', srv }
   function apply(G, op, car, o = {}) {
     const who = o.who || 'You', race = G && G.race, srv = !!o.srv;
-    if (!OPS[op] || op === 'list' || op === 'spec') return no('not a tool');
+    if (!OPS[op] || op === 'list' || op === 'spec' || op === 'trk') return no('not a tool');
     if (op === 'kick') return no('multiplayer only');
     if (!race || G.attract || race.attract || race.mode === 'timetrial') return no('no race');
     const T = G.track, rc = race.rc, RC = typeof RaceControl !== 'undefined' ? RaceControl : null;
@@ -19461,6 +19594,7 @@ const DevTools = (() => {
         if (typeof Race === 'undefined' || !Race.retire) return no('no race code');
         Race.retire(G, race, car, WHY[nFail++ % WHY.length]);
         if (car.retired) car.retired.pull = 1;
+        if (rc) (rc.evX || (rc.evX = {}))[car.id] = 1;   // (its own level, not the race's draw of VSC / SC / red flags: racecontrol evGate)
         return yes(who + ' gave ' + X + ' a mechanical failure');
       }
       case 'crash': {
@@ -19473,6 +19607,7 @@ const DevTools = (() => {
         if (typeof AI === 'undefined' || !AI._mk) return no('no AI code');
         if (!race.mk) race.mk = AI._mk.plan(G, race);
         car._mk = { c: 0, t: race.t - 1, h: 1, dev: 1 };   // (ai.js mkArm: the next corner that fits; `avoid` skipped)
+        if (rc) (rc.evX || (rc.evX = {}))[car.id] = 1;   // (its own level: racecontrol evGate)
         return yes(who + ' made ' + X + ' crash at the next corner');
       }
       case 'punct': {
