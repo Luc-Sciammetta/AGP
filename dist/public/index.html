@@ -102746,7 +102746,7 @@ const Menu = (() => {
     { k: 'resume', label: 'Resume', type: 'action', act: () => { sfx('back'); if (H.onResume) H.onResume(); } },
     // Q1 / Q2 / Q3 qualifying, on track: straight into the garage (the drive back's time passes at once, qualifying section)
     { k: 'qReturn', label: 'Return to garage', type: 'action', showIf: () => qCanReturn(), act: () => { sfx('select'); if (H.onQualiReturn) H.onQualiReturn(); } },
-    { k: 'restart', label: 'Restart race', label2: () => { const g = gState(), r = g && g.race; return r && r.phase === 'quali' ? 'Restart qualifying' : 'Restart race'; },   // (user 2026-10-30: in qualifying the whole session again; in the race the race alone, same grid) type: 'action', act: () => { sfx('select'); if (H.onRestart) H.onRestart(); } },
+    { k: 'restart', label: 'Restart race', label2: () => { const g = gState(), r = g && g.race; return r && r.phase === 'quali' ? 'Restart qualifying' : 'Restart race'; }, type: 'action', act: () => { sfx('select'); if (H.onRestart) H.onRestart(); } },   // (user 2026-10-30: in qualifying the whole session again; in the race the race alone, same grid)
     // [rewind agent] REWIND (offline; rewind.js / main's rewind section): ~20 s back, then 20 s of racing before the next (greyed + countdown)
     { k: 'rewind', label: 'Rewind', type: 'action', showIf: () => rwSt().show, label2: () => rwLabel(),
       act: () => { if (rwSt().ok && H.onRewind && H.onRewind()) sfx('select'); else sfx('move'); } },
