@@ -55347,6 +55347,14 @@ const CFG = {
     // races shorter than this wear as if they were this long (7: a mediums / hards run lasts a 3-lap sprint at normal
     // wear \u2014 no stop needed; at 5 the softest compounds could not do 3 laps and short races got 1-2 stops each)
     minRefLaps: 7,
+    // circuit wear (user 2026-10-30: one stop in 10-20 laps, two over 20, everywhere - too predictable): x the wear on that
+    // circuit, from Pirelli's 2025 compound choices (harder trio = harder on tyres) and each circuit's known character;
+    // the fictional ones by theirs. Everybody knows it (the plans use it). dayVar: a hidden race-day factor on top, up to
+    // +- that share (seeded): nobody knows it at the start - the teams read it from the laps (strategy wk, Race.wearRead)
+    trackWear: { bahrain: 1.3, sepang: 1.3, silverstone: 1.25, kotori: 1.2, spa: 1.15, leman: 1.1, serrano: 1.05, vortex: 1.0,
+      mexico: 0.95, montreal: 0.95, singapore: 0.95, dorado: 0.95, albertpark: 0.9, mirage: 0.9, jeddah: 0.85, lasvegas: 0.8,
+      harbour: 0.8, kettle: 0.8, monaco: 0.6 },
+    dayVar: 0.15,
     baseUse: 0.45,        // wear-rate factor = (baseUse + loadUse * tyreUsage^2 + lockups/spin/off-track) / usageNorm
     loadUse: 1.0,
     usageNorm: 0.8,       // calibrated so an average lap \u2248 1.0
@@ -63653,6 +63661,29 @@ const RaceControl = (() => {
     }
   }
 
+  // ---------- the AI's cheap stop under the VSC / SC (user 2026-10-30) ----------
+  // Decided once per neutralisation, the first time the car is CH.lo-CH.hi m before its pit entry (a later dive under the SC
+  // had the car behind attack / pass it: rc_test U3). Too late for this entry: next lap, in the bunched queue - CH.q. The stop's cost (k x the pit loss, Race.vscPit): VSC_PIT / SC_PIT; once it sits in the SC queue
+  // (no gap to the car ahead: the field has bunched) CH.q - the field goes by while it stops, little to win; and when the
+  // neutralisation will be over before it is through the lane (its read of what is left, ncLeft: the VSC's minimum, the
+  // marshals' jobs; an SC + CH.scLap of the lap to pick it up; +- CH.err), CH.over - no cheap stop.
+  const CH = { lo: 150, hi: 900, q: 0.85, over: 0.9, err: 0.25, scLap: 0.8, inG: 40 };
+  function ncLeft(race, rc, t, kind) {
+    let e = kind === 'vsc' ? rc.vsT0 + (rc.vsMin || 0) : t;
+    for (const J of rc.jobs || []) if (J && J.clr > e) e = J.clr;
+    return Math.max(0, e - t) + (kind === 'sc' ? CH.scLap * (race.lapTimeEst || 90) : 0);
+  }
+  function cheapTry(G, race, rc, H, c, cs, R, kind) {
+    const to = R.nextEntry - R.dist, v = c.speed || 0, lo = CH.lo;
+    if (!(to > lo && to < CH.hi)) return;
+    cs.vp = rc.vsN;
+    const t = race.t, left = ncLeft(race, rc, t, kind) * (1 - CH.err + 2 * CH.err * rnd(race, 7301 + (c.id | 0), rc.vsN)), arrive = to / Math.max(10, v);
+    let k = kind === 'sc' ? SC_PIT : VSC_PIT;
+    if (kind === 'sc' && cs.sm !== 1 && cs.sg != null && cs.sg < CH.inG) k = CH.q;   // (in the queue already)
+    if (left < arrive + 0.6 * (race.pitLossEst || 22)) k = Math.max(k, CH.over);
+    H.vscPit(G, race, c, k);
+  }
+
   // ---------- phase 8 (user 2026-10-28): how many VSC / SC / red flags a race has ----------
   // A race over EV_MIN laps (every mode, difficulty and length; 3 / 5 laps keep hzPlan's failures) draws them from the race
   // seed (evPlan): how many - EV_N[kind] = P(0, 1, 2, 3, 4 (street: '4 or more'; permanent: 3 = '3 or more')) - and which -
@@ -64501,10 +64532,7 @@ const RaceControl = (() => {
       const cs = csOf(rc, c), lane = !!(c.inPitLane || R.pit);
       if (R.h && !R.h.nt) R.h.nt = 1;   // (a VSC lap: lap cards)
       if (!deltaCar(G, race, rc, Lo, H, dt, c, cs, lane, 'vsc')) continue;
-      if (rc.vs === 1 && H.vscPit && !lane && cs.vp !== rc.vsN && !isHuman(c)) {   // (the AI: a cheaper stop? decided once, 150-900 m before its pit entry)
-        const to = R.nextEntry - R.dist;
-        if (to > 150 && to < 900) { cs.vp = rc.vsN; H.vscPit(G, race, c, VSC_PIT); }
-      }
+      if (rc.vs === 1 && H.vscPit && !lane && cs.vp !== rc.vsN && !isHuman(c)) cheapTry(G, race, rc, H, c, cs, R, 'vsc');   // (the AI: a cheaper stop? decided once, before its pit entry)
     }
   }
   // one car's delta (the VSC; the SC until it is in the queue: kind 'scd'): cs.vD / vU, the pit lane (VSC), a human under
@@ -65129,10 +65157,7 @@ const RaceControl = (() => {
       if (prevId === -1) rc.lg = gap;   // (the SC waits for a car falling back behind it)
       cs.sm = m; cs.sa = prevId; cs.sg = gap;
       // (m 1, catching the SC: no delta, full speed up to the queue - user 2026-10-19; no overtaking still)
-      if (rc.sp === 1 && H.vscPit && cs.vp !== rc.vsN && !isHuman(c)) {   // (the AI: a cheaper stop? decided once, 150-900 m before its pit entry)
-        const to = R.nextEntry - R.dist;
-        if (to > 150 && to < 900) { cs.vp = rc.vsN; H.vscPit(G, race, c, SC_PIT); }
-      }
+      if (rc.sp === 1 && H.vscPit && cs.vp !== rc.vsN && !isHuman(c)) cheapTry(G, race, rc, H, c, cs, R, 'sc');   // (the AI: a cheaper stop? decided once, before its pit entry)
       prevB = b; prevId = c.id; first = false;
     }
     // (the SC's lights green while a car is being waved past it)
@@ -69756,7 +69781,9 @@ const AI = (() => {
   // Resets (beached, stuck) wait for a gap too and put the car at the edge on its side.
   // (user 2026-10-30: it was too timid - it may come back on slowly with cars coming, they go round it; it only must not join
   // just as a car gets there: RJ.go 3.2 -> 1.4 s, and off the track only the cars in the lane it joins, RJ.lane m of its edge)
-  const RJ = { go: 1.4, go2: 1.2, wait: 4, dec: 0.25, turnT: 1.5, hold: 0.9, lane: 4.5, near: 3, slow: 0.6, pace: 0.8, rate: 1.2, edge: 1.5, vWait: 18, max: 25,
+  // (under a double yellow / VSC / SC / red flag the old caution - RJ.ncGo / ncGo2 / ncHold, every car on the track: the bunched field at
+  // neutralised pace; rejoining in front of the SC queue made swaps / contacts there, rc_test RC4)
+  const RJ = { go: 1.4, go2: 1.2, wait: 4, dec: 0.25, turnT: 1.5, hold: 0.9, lane: 4.5, ncGo: 3.2, ncGo2: 3.0, ncHold: 1.8, near: 3, slow: 0.6, pace: 0.8, rate: 1.2, edge: 1.5, vWait: 18, max: 25,
     obV: 8, obA: 200, obM: 1.0, obIn: 6, obOut: 70 };
   // spun / stopped cars (< RJ.obV m/s) on or by the asphalt from 10 m behind to RJ.obA m ahead -> b.rjOb [s, d, half width
   // across the track, half length along it, ...] (their heading: a car sideways reaches its half length across; null = none).
@@ -69804,7 +69831,7 @@ const AI = (() => {
       if (Math.abs(o.d || 0) > A.hw[oi] + 2.5) continue;   // (off the track itself)
       if (dl != null && Math.abs((o.d || 0) - dl) > RJ.lane) continue;   // (dl: the lane it joins - a car further across goes by)
       const ds = wrapDS(A, s - o.s);                      // m it is behind s
-      if (ds < -(LEN + 2) || ds > vo * RJ.go + 80) continue;
+      if (ds < -(LEN + 2) || ds > vo * Math.max(RJ.go, RJ.ncGo) + 80) continue;   // (in range for the longer, neutralised gap too)
       const t = Math.max(0, ds - LEN) / vo;
       if (t < tm) tm = t;
     }
@@ -69812,11 +69839,14 @@ const AI = (() => {
   }
   // true = wait (traffic): the gap needed is RJ.go s + extra (a turn's time), after RJ.wait s of waiting down by RJ.dec s per
   // s to RJ.go2 (a slow stream of cars under a yellow); `held` s once under way (0: the full gap). b.rjW = s waited
+  // a double yellow up (a stopped / crashed car - the SC may be coming), a VSC / SC / red flag: the old, cautious gaps
+  const rjNc = race => { const R = race && race.rc; return !!(R && R.on && (R.vs || R.sp || R.rf || (R.lvl | 0) >= 2)); };
   function rjNeed(b, car, G, A, dt, held, extra = 0, dl) {
     const race = G.race;
     if (!race || (race.phase !== 'racing' && !inQ(race)) || car.finished) return false;
-    const need = held > 0 ? held : Math.max(RJ.go2, RJ.go + extra - RJ.dec * Math.max(0, (b.rjW || 0) - RJ.wait));
-    const wait = rjEta(car, G, A, car.s, dl) < need;
+    const nc = rjNc(race);
+    const need = held > 0 ? (nc ? Math.max(held, RJ.ncHold) : held) : Math.max(nc ? RJ.ncGo2 : RJ.go2, (nc ? RJ.ncGo : RJ.go) + extra - RJ.dec * Math.max(0, (b.rjW || 0) - RJ.wait));
+    const wait = rjEta(car, G, A, car.s, nc ? null : dl) < need;
     b.rjW = wait ? (b.rjW || 0) + dt : 0;
     if (wait) car.aiRjT = race.t;   // (read by Race's stuck check: no reset onto the line while it waits for a gap)
     return wait;
@@ -69825,7 +69855,7 @@ const AI = (() => {
   // at the edge on its side (not mid-track); -> true when done
   function rjReset(b, car, G, A) {
     if (typeof Physics === 'undefined' || !Physics.resetToTrack) return false;
-    if (rjEta(car, G, A, car.s) < RJ.go2) { b.rjHold = true; return false; }
+    if (rjEta(car, G, A, car.s) < (rjNc(G.race) ? RJ.ncGo2 : RJ.go2)) { b.rjHold = true; return false; }
     const sd = car.d < 0 ? -1 : 1;
     Physics.resetToTrack(car, G.track);
     const i = car.idx >= 0 ? car.idx : G.track.idxAt(car.s);
@@ -70683,6 +70713,8 @@ const Race = (() => {
   }
   const nextPoint = (x, p, L) => p + (Math.floor((x - p) / L) + 1) * L;   // smallest p + kL strictly > x
   const refLaps = race => Math.max(race.laps || 0, CFG.tyre.minRefLaps);
+  // the world's wear per metre (Physics): the planned scale x the race-day factor (main / server set world.wearPerMetre)
+  const wearPerMetre = (race, track) => (race && race.wearScale > 0 && track && track.length > 0 ? race.wearScale * (race.wearDay || 1) / (refLaps(race) * track.length) : 0);
   const remainingLaps = (race, car, L) => (race.laps ? Math.max(0, (race.laps * L - car._race.dist) / L) : Infinity);
 
   // nominal laps until a fresh set reaches its cliff (same wear model as Physics + main's wearPerMetre)
@@ -71038,11 +71070,13 @@ const Race = (() => {
     let k = st.pending ? st.stops.indexOf(st.pending) : -1;
     if (k < 0) { const x = st.stops.find(y => !y.done); if (x && x.compound === cur && Math.abs(x.lap - off) <= 3) k = st.stops.indexOf(x); }
     let pl = null;
+    const rp = race.wx ? race : wkRace(race, car._race && car._race.wk);   // (the wear it has read so far, wearRead)
     if (n > 0 && race.wearScale > 0) {
-      if (k >= 0 && st.stops[k].compound === cur) pl = keepPlan(race, st.stops.slice(k + 1), n, off, cur, car.compoundsUsed, (st.margin || 0) + 1);
-      if (!pl) pl = choosePlan(race, st, n, cur, car.compoundsUsed, off, 'best') || fallbackStops(race, n, cur, off);
+      if (k >= 0 && st.stops[k].compound === cur) pl = keepPlan(rp, st.stops.slice(k + 1), n, off, cur, car.compoundsUsed, (st.margin || 0) + 1);
+      if (!pl) pl = choosePlan(rp, st, n, cur, car.compoundsUsed, off, 'best') || fallbackStops(rp, n, cur, off);
     }
     setPlan(st, cur, pl);
+    if (rp !== race) st.wk0 = car._race.wk;
   }
   // tyre for a stop at the end of this lap (worn out, nothing planned): the start of the best plan for the laps after it
   function nextTyre(race, car, L) {
@@ -71050,17 +71084,60 @@ const Race = (() => {
     const pl = st && st.key != null && race.wearScale > 0 && n > 0 && !race.wx ? choosePlan(race, st, n, null, car.compoundsUsed, race.laps - n, 'best') : null;
     return pl && tyreSuits(race, pl.seq[0], car) ? pl.seq[0] : null;   // (null: Race picks, pickCompound)
   }
+  // ---------- the wear the teams read (user 2026-10-30: the strategy follows the real wear, faster or slower) ----------
+  // car._race.wk = its observed wear per lap / the planned one (each green lap of a dry set after its first 2, blended
+  // across sets): the race-day factor (race.wearDay) x its own driving. wkRace: the race as that car sees it (planOptions /
+  // choosePlan on wearScale x wk, the proxy cached per 0.02 step). WK.re: the AI re-plans the rest once its read is that far
+  // from the one its plan used (st.wk0); the player's plan (psOptions) always uses it - the engineer: 'holding up' / 'faster'
+  const WK = { min: 2, re: 0.08, blend: 0.35 };
+  function wearRead(race, car, L) {
+    const R = car._race, c = car.tyre && car.tyre.compound, k = COMPOUNDS[c];
+    if (!R) return;
+    const rc = race.rc, nc = !!(rc && rc.on && (rc.vs || rc.sp || rc.rf)), w = car.tyre.wear || 0, d = R.tyreDist || 0, m = R.wkM;
+    R.wkM = { w, d, c, nc };   // (this lap start: the next read is the lap since - green at both ends, the same set)
+    if (!k || isWetTyre(c) || !(race.wearScale > 0) || (race.wx && (race.wx.wet || 0) > 0.03) || car.inPitLane) return;
+    if (!m || m.nc || nc || m.c !== c || d <= m.d + 0.5 * L || d < (WK.min + 1) * L || !(w > m.w)) return;   // (not the slow SC / VSC laps: they wear far less)
+    const r = ((w - m.w) / ((d - m.d) / L)) / (SC.wearK * race.wearScale / (k.life * refLaps(race)));   // (vs the plans' own rate: racing wears SC.wearK x nominal)
+    if (!(r > 0.3 && r < 3)) return;
+    R.wk = R.wk == null ? r : R.wk + (r - R.wk) * WK.blend;
+  }
+  function wkRace(race, wk) {
+    if (wk == null || Math.abs(wk - 1) < 0.01) return race;
+    const q = Math.round(wk * 50) / 50, P = race._wkP || (race._wkP = {});
+    let r = P[q];
+    if (!r || r._wkBase !== race.wearScale) { r = P[q] = Object.create(race); r._wkBase = race.wearScale; r.wearScale = race.wearScale * q; r._stT = null; }
+    return r;
+  }
+  // the AI: its read far from its plan's -> the rest re-planned on it, from the set it is on (its laps so far counted)
+  function wearReplan(G, race, car, L) {
+    const st = car.strategy, R = car._race, cur = car.tyre.compound, k = COMPOUNDS[cur];
+    if (!st || st.auto === false || R.wk == null || !k || race.wx || st.pending || Math.abs(R.wk - (st.wk0 || 1)) < WK.re) return;
+    const rc = race.rc;
+    if (rc && rc.on && (rc.vs || rc.sp || rc.rf)) return;   // (under a VSC / SC / red flag: the cheap-stop call decides - re-plan at a green lap start)
+    const n = Math.round(remainingLaps(race, car, L));
+    if (n < 2) return;
+    const rp = wkRace(race, R.wk), u = Math.max(0, Math.round((car.tyre.wear || 0) / (SC.wearK * rp.wearScale / (k.life * refLaps(race)))));
+    const prev = car.compoundsUsed.length > 1 ? car.compoundsUsed.filter(x => x !== cur) : [];
+    const pl = choosePlan(rp, st, n + u, cur, prev.concat(cur), race.laps - n - u, 'best');
+    if (!pl) return;
+    const was = st.plan;
+    for (const x of pl.stops) if (x.lap <= car.lap) x.lap = car.lap + 1;   // (a stint already over: next lap - worn out sooner, strategyHook's cliff stop)
+    setPlan(st, cur, pl); st.wk0 = R.wk;
+    emit(G, { type: 'stratWear', car, wk: R.wk, plan: st.plan, was });
+  }
   // AI pit decisions, evaluated when a car starts a lap (the pit entry is at the end of that lap)
   function strategyHook(G, race, car) {
     // a dynamic-weather race that turns wet is declared wet: the two-compound rule is off for everyone (HUD reads the flag)
     if (race.wx && race.twoCompoundActive && (race.wx.wet || 0) >= WET_DECLARED) { race.twoCompoundActive = false; race.wetDeclared = true; }
     if (race.stratMoves && race.stratMoves.length) settleMoves(G, race);
+    if (!car.finished && race.laps) wearRead(race, car, G.track.length);
     if (car.isPlayer || car.finished || !race.laps) return;
     const st = car.strategy, auto = !!st && st.auto !== false;
     if (car.lap >= race.laps) { if (auto) car.wantPit = false; return; }   // final lap: stay out
     if (auto && !car.kinematic) stuckTrack(race, car, st);
     if (!auto || car.wantPit) return;
     const L = G.track.length;
+    if (!race.wx) wearReplan(G, race, car, L);
     if (!race.wx && !tyreSuits(race, car.tyre.compound) && race.laps - car.lap >= 1) { car.wantPit = true; car.nextCompound = pickCompound(race, car, L, false); return; }
     let next = null;
     for (const x of st.stops) if (!x.done) { next = x; break; }
@@ -71114,6 +71191,7 @@ const Race = (() => {
     let c = null;
     if (next && tyreSuits(race, next.compound, car)) {
       const dl = next.lap - e;
+      if (k >= 0.8 && dl > 1) return false;   // (no cheap stop: the queue has bunched / it ends before the stop - racecontrol cheapTry)
       if (dl >= 3 && rr() < 0.2) return false;   // (track position: a split strategy)
       if (dl > VSC_LAPS || (dl > 0 && !moveFits(race, car, next, e))) {
         // (user 2026-10-21: the planned stop can't just come forward - a fresh plan from this stop that needs no more stops
@@ -71482,6 +71560,12 @@ const Race = (() => {
     { const o = opts.raceControl != null ? opts.raceControl : gs.raceControl, lv = o && o.crash; race.aiCrash = { lvl: ['off', 'low', 'normal', 'high'].includes(lv) ? lv : 'off', avoid: !(o && o.avoid === false) }; }   // (Settings > Rules > Mechanical failures: everyone or no one, user 2026-10-18)
     // (waived: a sprint of <= TWO_COMPOUND_MIN_LAPS laps \u2014 nobody needs a stop there \u2014 and a wet start; a race that turns
     // wet later is declared wet in strategyHook, see ruleOpen)
+    // circuit wear (CFG.tyre.trackWear: known, in every plan) and the hidden race-day factor (race.wearDay: only the wear the
+    // cars really get, Physics via wearPerMetre; the teams read it from the laps, wearRead)
+    if (race.wearScale > 0) {
+      race.wearTrack = opts.wearTrack != null ? +opts.wearTrack : (CFG.tyre.trackWear && CFG.tyre.trackWear[track.id]) || 1; race.wearScale *= race.wearTrack;   // (opts.wearTrack: tests)
+      race.wearDay = opts.wearDay != null ? +opts.wearDay : 1 + (CFG.tyre.dayVar || 0) * (2 * U.rng((seed ^ 0x7e3a91c5) >>> 0)() - 1);
+    } else { race.wearTrack = 1; race.wearDay = 1; }
     race.twoCompoundActive = race.twoCompound && race.wearScale > 0 && laps > TWO_COMPOUND_MIN_LAPS && wet < 0.25;
     race.pitG = pitGeometry(track);
     race.pitLossEst = estimatePitLoss(track, diff.pace * 0.97, race.pitG); race.pitTrackT = pitTrackT;
@@ -73600,7 +73684,7 @@ const Race = (() => {
     for (let j = 0; j <= nA; j++) {
       if (j > jMax && !(j === nA && nA <= toC + PS.past)) { if (j < nA) { cum += lapS(race, cur, wE + (j + 0.5) * r); continue; } break; }
       if (j === nA) { ns = cum; if (!open) { out.push({ j, t: cum, stops: 0, ms: [], alloc: [] }); alt[0] = cum; } break; }
-      const os = planOptions(race, nA - j, null, used), base = cum + pl * (j ? 1 : pitK), seen = {};
+      const os = planOptions(wkRace(race, rc.wk), nA - j, null, used), base = cum + pl * (j ? 1 : pitK), seen = {};
       for (const o of os) {   // (the quickest for each stop count: a plan's own count is kept unless another is clearly quicker)
         const s = 1 + o.stops;
         if (seen[s]) continue;
@@ -74522,6 +74606,7 @@ const Race = (() => {
     // the player's strategy (race.ps: the plan, the box call, the last rival read; see psStep) and where a stop at his next
     // entry would rejoin now ({ pos, a, ga, b, gb }: the stop's loss by his pace, cheaper under a VSC / SC)
     playerStrategy: G => (G.race && G.race.ps) || null,
+    wearPerMetre,   // (main / server: world.wearPerMetre from the race - circuit x race-day wear)
     rejoinAt: (G, car) => { const race = G.race; return race && car && car._race && race.laps ? rejoin(G, race, car, psLoss(race, car) * psK(psCheap(race))) : null; },
     newChampionship, applyResults, standingsTable,
     // field size: pickField(playerTeam, n) -> team indices, champField(champ) -> a season's entry list, fieldSize(n) clamp
@@ -76518,7 +76603,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-30 13:34';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-10-30 17:01';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -110945,7 +111030,7 @@ const Game = (() => {
     G.world = {
       track: G.track, cars: G.cars, race: G.race, events: G.events, weather: G.weather,
       assists: attract ? { tc: true, abs: true } : settings.assists,
-      wearPerMetre: wearPerMetre(settings, G.track, attract),
+      wearPerMetre: attract ? 0 : M.race && M.race.wearPerMetre ? M.race.wearPerMetre(G.race, G.track) : wearPerMetre(settings, G.track, attract),   // (circuit x race-day wear, Race.wearPerMetre)
       grassSlip: attract || !CFG.grass ? undefined : CFG.grass.val(settings.grassSlip),   // (Physics + AI: CFG.grass.table; multiplayer: the room's)
       // contact damage (damage.js, flag): races only; multiplayer: the room's (server-authoritative: this client only reports)
       damage: typeof Damage === 'undefined' || attract || settings.mode === 'timetrial' ? null
@@ -111619,6 +111704,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-10-30 13:34 -->
+<!-- Apex GP build 2026-10-30 17:01 -->
 </body>
 </html>
