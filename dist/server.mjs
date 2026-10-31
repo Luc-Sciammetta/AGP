@@ -486,7 +486,10 @@ class RaceSim {
     N.copyState(s, rep); rep.s = this._pr.s; rep.idx = this._pr.idx;
     n.recvT = t; n.n++;
     if (FAST) relayNear(this, car, rep, n.epoch, t, this.race.t);
-    if (s.pitc >= 1 && s.pitc <= 5) { car.nextCompound = N.COMP[s.pitc - 1]; car.wxStop = true; }
+    const pc = s.pitc & 15;
+    if (pc >= 1 && pc <= 5) { car.nextCompound = N.COMP[pc - 1]; car.wxStop = true; }
+    const fc = (s.pitc >> 4) & 3;
+    car.fwCall = fc > 2 ? 0 : fc;   // (the driver's front-wing call, Damage.pitRepair)
     if (!car.kinematic) { car.tyre.wear = U.clamp(s.wear, 0, 1); car.battery = s.bat * (car.batteryCap || CFG.energy.cap); }
   }
   onReclaim(p) { const car = this.byPid.get(p.id); if (car && car.net && car.net.afk) { car.net.afk = false; car.net.lobby = false; car.net.recvT = now(); } }
@@ -589,6 +592,7 @@ class RaceSim {
     log(`room ${this.room.code}: dev ${op}${car ? ' #' + car.id : ''} (host #${p.id})`);
   }
   onPitc(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c)) { car.nextCompound = m.c; car.wxStop = true; } }
+  onPitw(p, m) { const car = this.byPid.get(p.id); if (car && (m.w === 0 || m.w === 1 || m.w === 2)) car.fwCall = m.w; }   // (the front-wing call changed in the lane)
   // ---- control hand-over (epochs): the client ignores / the server rejects everything from an older epoch
   ctl(car, stT) {   // stT: the time of the car's state (its last physics step) when handing it back
     const n = car.net, msg = { t: 'ctl', id: car.id, epoch: n.epoch, auth: n.auth, why: n.why };
@@ -1182,6 +1186,7 @@ function onText(p, raw) {
     case 'reclaim': if (sim) sim.onReclaim(p); break;
     case 'away': if (sim && sim.onAway) sim.onAway(p, m); break;   // (m.lobby: went back to the lobby)
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
+    case 'pitw': if (sim && sim.onPitw) sim.onPitw(p, m); break;
     case 'rft': if (sim && sim.onRft) sim.onRft(p, m); break;   // (the red flag: a tyre choice for the restart)
     case 'rcx': if (sim && sim.onRcx) sim.onRcx(p, m); break;   // (tests only: --rc-test)
     case 'rulesq': if (ARG['rules-test'] && sim && sim.onRulesQ) sim.onRulesQ(p); break;   // (tests only: --rules-test)
