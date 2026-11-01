@@ -8891,13 +8891,16 @@ const RaceControl = (() => {
     if (!rc.sp && !rc.vs && !rc.dpT && want < LV.vsc) rc.esc = 0;   // (green: nothing kept)
     if (want < LV.vsc || want >= LV.red) return want;
     let lv = Math.max(want, rc.esc || 0);
-    if (lv === LV.vsc && !rc.sp && !rc.scH && (rc.vs ? (ld - (rc.vD0 || 0)) / L : 0) + (need + END_T + END_R / 2) / (VSC_K * lt) > VSC_L1) lv = LV.sc;
+    // (2026-11-01: not with the SC switched off - rc.esc kept SC, effLevel turned it back into the VSC: a VSC that never ended)
+    if (lv === LV.vsc && rc.cfg.sc && !rc.sp && !rc.scH && (rc.vs ? (ld - (rc.vD0 || 0)) / L : 0) + (need + END_T + END_R / 2) / (VSC_K * lt) > VSC_L1) lv = LV.sc;
     if (lv >= LV.vsc && lv < LV.red && (lv >= LV.sc || rc.sp === 1) && rc.cfg.red && G.track.pit && (rc.sp ? (ld - (rc.sD0 || 0)) / L : 0) + need / (SC_K * lt) + 1 > SC_L1) lv = LV.red;
     if (lv > (rc.esc || 0) && lv > want) { rc.esc = lv; rc.log.push([+t.toFixed(2), 'esc', -1, lv]); }
     return lv;
   }
   // the SC called, held (a client too: rc.want is packed): the field on the delta until the SC can come out ahead of the leader
-  function scHeld(rc) { return !!rc && rc.vs === 1 && !rc.sp && rc.want >= LV.sc; }
+  // (2026-11-01: rc.scH, packed for clients - was rc.want >= SC: a VSC whose SC was still in its 3-8 s deployment delay was shown
+  // as the SC, its VSC delta under 'SC DEPLOYED')
+  function scHeld(rc) { return !!rc && rc.vs === 1 && !rc.sp && !!rc.scH; }
   // (user 2026-10-19) a VSC / SC / red flag is deployed DEP_T..+DEP_R s after it is decided (seeded per decision, rc.dpN);
   // meanwhile the local flags (rc.lvl at most double yellow). A drop, or a level
   // with its own timing (now: rain, qualifying's stranded car), at once. The deployment (vsc / scLevel, red) brings the banner
@@ -9597,8 +9600,8 @@ const RaceControl = (() => {
       const R = c._race;
       if (!R || c.finished || c.dnf) continue;
       const cs = csOf(rc, c), lane = !!(c.inPitLane || R.pit);
-      if (R.h && !R.h.nt) R.h.nt = 1;   // (a VSC lap: lap cards)
-      if (!deltaCar(G, race, rc, Lo, H, dt, c, cs, lane, 'vsc')) continue;
+      if (R.h && (R.h.nt | 0) < (rc.scH ? 2 : 1)) R.h.nt = rc.scH ? 2 : 1;   // (a VSC lap: lap cards; the SC held: an SC lap)
+      if (!deltaCar(G, race, rc, Lo, H, dt, c, cs, lane, rc.scH ? 'scd' : 'vsc')) continue;   // (user 2026-11-01: the held SC is the SC - its delta, its warnings; no VSC delta under 'SC DEPLOYED')
       if (rc.vs === 1 && H.vscPit && !lane && cs.vp !== rc.vsN && !isHuman(c)) cheapTry(G, race, rc, H, c, cs, R, 'vsc');   // (the AI: a cheaper stop? decided once, before its pit entry)
     }
   }
@@ -9617,7 +9620,7 @@ const RaceControl = (() => {
     if (z !== cs.vZ) {   // (a zone end: its minimum time)
       const zz = cs.vZ;
       cs.vZ = z;
-      if (!lane && D < -DTOL && t - (kind === 'vsc' ? rc.vsT0 : rc.scT0) > 2) { offence(G, race, rc, Lo, H, c, zz, kind, D); if (isHuman(c)) cs.vD = 0; }
+      if (!lane && D < -DTOL && t - (kind === 'vsc' || rc.vs ? rc.vsT0 : rc.scT0) > 2) { offence(G, race, rc, Lo, H, c, zz, kind, D); if (isHuman(c)) cs.vD = 0; }
     }
     return true;
   }
@@ -9643,6 +9646,7 @@ const RaceControl = (() => {
     let o = rc.ow;
     if (!key || car.finished || car.dnf || race.phase !== 'racing') { if (o) o.key = ''; return; }
     const lane = !!(car.inPitLane || (car._race && car._race.pit));
+    if (o && o.key !== key && o.key === 'v' + rc.vsN && key[0] === 's' && o.id === car.id) o.key = key;   // (the SC called after its hold: the same delta runs on)
     if (!o || o.key !== key) {
       if (!o) o = rc.ow = { h: new Float64Array(2 * OW_N) };
       o.key = key; o.id = car.id; o.vD = D0; o.vC = DCAP; o.vE = D0; o.vL = lane; o.s = car.s; o.c = 0; o.cT = 0; o.n = 0; o.hn = 0; o.st = rc.dlT;
@@ -9712,7 +9716,7 @@ const RaceControl = (() => {
     }
     if (!rc.vs) return null;
     const cs = rc.cs[car.id];
-    _dl.sc = 0; _dl.dz = 0; _dl.on = rc.vs; _dl.d = od != null ? od : cs && cs.vN === rc.vsN ? cs.vD : rc.dl[car.id] != null ? rc.dl[car.id] : D0;
+    _dl.sc = rc.vs === 1 && rc.scH ? 1 : 0; _dl.dz = 0; _dl.on = rc.vs; _dl.d = od != null ? od : cs && cs.vN === rc.vsN ? cs.vD : rc.dl[car.id] != null ? rc.dl[car.id] : D0;   // (sc: the SC held - its delta is the SC's)
     _dl.end = rc.vs === 2 ? Math.max(0, rc.vsEnd - G.race.t) : 0;
     return _dl;
   }
@@ -10072,7 +10076,8 @@ const RaceControl = (() => {
   }
   function scDeploy(G, race, rc, Lo, k) {
     const T = G.track, t = race.t, tr = refLap(T, Infinity);
-    rc.sp = 1; rc.scN++; rc.vsN++; rc.scT0 = t; rc.sD0 = leadD(race); rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.dE = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
+    const held = !!(rc.scH && rc.vs === 1);   // (the SC called after its hold: the field's delta runs on - one SC delta from the call, user 2026-11-01)
+    rc.sp = 1; rc.scN++; if (!held) rc.vsN++; rc.scT0 = t; rc.sD0 = leadD(race); rc.scL = 0; rc.scLp = race.leaderLap | 0; rc.lapW = 0; rc.inL = 0; rc.dE = 0; rc.fin = 0; rc.pick = 0; rc.go = 0; rc.goS = -1; rc.nl = 0; rc.clrT = 0;
     if (rc.vs) { rc.vs = 0; rc.vsEnd = 0; }   // (a VSC turns into the SC)
     rc.vq = tr / Math.max(20, race.lapTimeEst || tr); rc.sdk = k > 0 && k < 1 ? +k.toFixed(3) : 1; rc.vf = VC_K * rc.vq * rc.sdk; rc.vc = vscCap(T, tr);
     rc.pkT = 0;
@@ -10738,11 +10743,11 @@ const RaceControl = (() => {
     const cs = rc.cs[car.id];
     if (!cs || cs.sN !== rc.scN) {   // (the step of the call, before the chain has seen it: the delta from +D0)
       if (rc.sp !== 1 || (rc.sc && rc.sc.st === 2) || car.inPitLane || (car._race && car._race.pit) || car.finished || car.dnf) return null;
-      _q.m = 1; _q.gap = 0; _q.sx = 0; _q.lw = 0; _q.dl = 1; _q.d = D0; _q.dE = 0; _q.dz = 0;
+      _q.m = 1; _q.gap = 0; _q.sx = 0; _q.lw = 0; _q.dl = 1; _q.d = cs && cs.vN === rc.vsN ? cs.vD : D0; _q.dE = 0; _q.dz = 0;
       return _q;
     }
     const run = cs.vN === rc.vsN, out = !!(rc.sc && rc.sc.st === 2);   // (shown by the rule itself at every step: the transition steps too)
-    _q.m = cs.sm | 0; _q.gap = cs.sg || 0; _q.sx = cs.sx === rc.scN ? 1 : 0; _q.lw = cs.lw === rc.scN ? 1 : 0; _q.dl = rc.sp === 1 && (out ? run && cs.iz > 0 : cs.sm === 1) ? 1 : 0; _q.d = run ? cs.vD : D0; _q.dE = cs.dE | 0; _q.dz = cs.iz | 0;
+    _q.m = cs.sm | 0; _q.gap = cs.sg || 0; _q.sx = cs.sx === rc.scN ? 1 : 0; _q.lw = cs.lw === rc.scN ? 1 : 0; _q.dl = rc.sp === 1 && cs.sm > 0 && (out ? run && cs.iz > 0 : cs.sm === 1) ? 1 : 0; _q.d = run ? cs.vD : D0; _q.dE = cs.dE | 0; _q.dz = cs.iz | 0;   // (dl: sm 0, not in the chain - an incident's car / kinematic - kept a stale iz: none, 2026-11-01)
     return _q;
   }
   // the HUD / engineer: { sp, m, gap (car lengths), sc (the SC is the one ahead), inL, lapW, fin, wave (passing), lapped,
@@ -10792,7 +10797,7 @@ const RaceControl = (() => {
     const qa = [];
     if (rc.sp) for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN && (cs.sm === 2 || cs.sm === 4)) qa.push(+id, cs.sa); if (cs.sN === rc.scN) q.push(+id, cs.sm | 0, Math.round(cs.sg || 0), cs.sx === rc.scN ? 1 : cs.lw === rc.scN ? 2 : 0, cs.vN === rc.vsN ? r2(cs.vD) : D0, rc.sp === 3 && cs.gE > 0 ? Math.round((cs.gD || 0) * 1e4) : 0); }
     const sd = [];   // (the cars whose SC delta runs: [id, its start count, in an incident zone 0 / 1 / 2, ...])
-    if (rc.sp === 1) for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN && (cs.vN === rc.vsN || cs.iz)) sd.push(+id, cs.dE | 0, cs.iz | 0); }
+    if (rc.sp === 1) { const out = !!(rc.sc && rc.sc.st === 2); for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.sN === rc.scN && cs.sm > 0 && (out ? cs.vN === rc.vsN && cs.iz > 0 : cs.sm === 1)) sd.push(+id, cs.dE | 0, cs.iz | 0); } }   // (as scQ's dl: a client showed a stale delta)
     return [rc.sp, rc.scN, rc.inL | 0, rc.lapW | 0, rc.fin | 0, rc.pick | 0, rc.scL | 0, vp(V), vp(M), r2(race.t), q, rc.go | 0, qa, +rc.vq.toFixed(4), r2(rc.vc), sd, rc.sdk || 1];
   }
   function scUnpack(race, rc, a, G) {
@@ -10917,7 +10922,7 @@ const RaceControl = (() => {
         const z = zoneAt(Lo, c.s);
         rc.log.push([+race.t.toFixed(2), 'pass', z, c.id * 100 + Yc.id]);
         H.emit(G, { type: 'rcPass', car: c, other: Yc, zone: z, turn: Lo.zones[z].turn });
-        if (race.pen && race.pen.adv && isHuman(c)) H.giveBack(G, race, c, { kind: 'place', to: Yc, turn: Lo.zones[z].turn, win: race.pen.adv.passWin, sec: 5, reason: rc.vs ? 'Overtaking under the VSC' : rc.sp >= 2 ? 'Overtaking before the restart line' : 'Overtaking under the safety car' });
+        if (race.pen && race.pen.adv && isHuman(c)) H.giveBack(G, race, c, { kind: 'place', to: Yc, turn: Lo.zones[z].turn, win: race.pen.adv.passWin, sec: 5, reason: rc.vs && !rc.scH ? 'Overtaking under the VSC' : rc.vs ? 'Overtaking under the safety car' : rc.sp >= 2 ? 'Overtaking before the restart line' : 'Overtaking under the safety car' });
       }
     }
     prevPos(race, pp);
@@ -11278,7 +11283,7 @@ const RaceControl = (() => {
   }
   // (the pack: [rf, rfN, left, rain, why, order, laps down, lights, lap, tyres [id, c, ...]] | 0)
   function rfPack(race, rc) {
-    if (rc.qr) return [4, rc.rfN, Math.round(Math.max(0, rc.qrEnd - race.t) * 10) / 10, 0, rc.rfWhy | 0, [], [], 0, 0, []];
+    if (rc.qr) return [4, rc.rfN, Math.round(Math.max(0, rc.qrEnd - race.t) * 10) / 10, 0, rc.rfWhy | 0, [], [], rc.qr, 0, []];   // ([7]: qualifying's phase, 2 = the restart announced)
     if (!rc.rf) return 0;
     const ty = [];
     for (const id in rc.rfTy || {}) ty.push(+id, rc.rfTy[id]);
@@ -11288,9 +11293,9 @@ const RaceControl = (() => {
   function rfUnpack(race, rc, a, G) {
     const ev = G && G.events, qa = Array.isArray(a) && a[0] === 4;
     if (qa || rc.qr) {   // (qualifying's red flag)
-      if (qa && !rc.qr && ev) ev.push({ type: 'rcRed', on: 1, n: a[1] | 0, why: WHY[a[4] | 0] || '', q: 1 });
-      else if (!qa && rc.qr && ev) ev.push({ type: 'rcRed', on: 0, n: rc.rfN, q: 1 });
-      rc.qr = qa ? 1 : 0; if (qa) { rc.rfN = a[1] | 0; rc.rfWhy = a[4] | 0; rc.qrEnd = race.t + (+a[2] || 0); }
+      const ph = qa ? (a[7] === 2 ? 2 : 1) : 0;
+      if (ph !== (rc.qr | 0) && ev) ev.push(ph ? { type: 'rcRed', on: ph, n: a[1] | 0, why: WHY[a[4] | 0] || '', q: 1, left: +a[2] || 0 } : { type: 'rcRed', on: 0, n: rc.rfN, q: 1 });
+      rc.qr = ph; if (qa) { rc.rfN = a[1] | 0; rc.rfWhy = a[4] | 0; rc.qrEnd = race.t + (+a[2] || 0); }
       return;
     }
     const was = rc.rf | 0, rf = Array.isArray(a) ? a[0] | 0 : 0;
@@ -11314,16 +11319,22 @@ const RaceControl = (() => {
   // pit exit closed, the session clock stopped (quali.js) for QR_T..+QR_TR s, then the track clear (a car still out there
   // taken to its garage, H.qBox) and green. (user 2026-10-30: what would be a VSC in a race is a red flag too; it lasts until a
   // crashed car's recovery has cleared it - at most QR_REC s more)
-  const Q_Y1 = 0.97, Q_STOP = 20, QR_T = 45, QR_TR = 45, QR_REC = 240;
+  // (user 2026-11-01) rc.qr 1: the red flag, the cars in; it stays (clock stopped) until every car is in (QR_IN s after the last
+  // one) and the track is clear (qClear) - then rc.qr 2: race control announces the restart QR_GO s ahead (rc.qrEnd: the HUD /
+  // garage countdown); the pit exit opens at zero (qGreen) and the cars (AI too) go out again. A car still out at rc.qrCap: boxed
+  const Q_Y1 = 0.97, Q_STOP = 20, QR_T = 45, QR_TR = 45, QR_REC = 240, QR_GO = 120, QR_IN = 10;
   function qStep(G, race, dt, H) {
     const rc = race.rc;
     if (!rc || !rc.on || race.phase !== 'quali' || race.attract) return;
     const Lo = layout(G.track);
     rc.q = 1;
     if (rc.jobs.length) jobsStep(G, race, rc);
+    if (rc.qr === 2) { if (race.t >= rc.qrEnd) qGreen(G, race, rc, Lo, H); return; }
     if (rc.qr) {
       for (const J of rc.jobs) { const e = Math.min(J.clr + 2, rc.qrCap || 0); if (J.car >= 0 && e > rc.qrEnd + 0.5) { rc.qrEnd = e; rc.rev++; } }   // (the recovery first)
-      if (race.t >= rc.qrEnd) qGreen(G, race, rc, Lo, H);
+      const out = qOut(G, rc, H);
+      if (out) rc.qrIn = 0; else if (!rc.qrIn) rc.qrIn = race.t;
+      if (race.t >= rc.qrEnd && ((rc.qrIn && race.t >= rc.qrIn + QR_IN) || race.t >= rc.qrCap)) qClear(G, race, rc, Lo, H);
       return;
     }
     if (rc.yel) judgeSlow(G, race, rc, Lo, H, dt);
@@ -11333,24 +11344,46 @@ const RaceControl = (() => {
   }
   function qRed(G, race, rc, Lo, H) {
     const t = race.t;
-    rc.qr = 1; rc.rfN = (rc.rfN | 0) + 1; rc.rfWhy = rc.wantWhy; rc.qrEnd = t + QR_T + QR_TR * rnd(race, rc.rfN, 85); rc.qrCap = rc.qrEnd + QR_REC; rc.rev++;
+    rc.qr = 1; rc.qrIn = 0; rc.rfN = (rc.rfN | 0) + 1; rc.rfWhy = rc.wantWhy; rc.qrEnd = t + QR_T + QR_TR * rnd(race, rc.rfN, 85); rc.qrCap = rc.qrEnd + QR_REC; rc.rev++;
     for (const c of G.cars) if (c.q && H.qIn) H.qIn(G, c);
     rc.log.push([+t.toFixed(2), 'qRed', -1, rc.rfWhy]);
     H.emit(G, { type: 'rcRed', on: 1, n: rc.rfN, why: WHY[rc.rfWhy] || '', q: 1 });
   }
-  function qGreen(G, race, rc, Lo, H) {
+  // the cars still out (H.qAway: on the track / in the lane), not counting the ones race control holds (an incident's, a job's)
+  function qOut(G, rc, H) {
+    if (!H.qAway) return 0;
+    let n = 0;
+    for (const c of G.cars) if (H.qAway(G, c) && !rc.inc.some(o => o.car === c) && !rc.jobs.some(J => J.car === c.id)) n++;
+    return n;
+  }
+  // the track clear: the recovered cars where their jobs end, the ones still out into their garages; the restart announced
+  function qClear(G, race, rc, Lo, H) {
     const t = race.t, T = G.track;
     for (const J of rc.jobs) if (J.car >= 0) { const c = carById(G, J.car); if (c) { carAt(T, J, J.P.length - 1, 1, _cp); if (_cp.k) placeCar(T, c, _cp); c.kinematic = true; c.rcLift = 0; } }
     for (const o of rc.inc) if (o.car && H.qBox) H.qBox(G, o.car);   // (still out there: taken to its garage)
+    if (H.qBox && H.qAway) for (const c of G.cars) if (H.qAway(G, c)) H.qBox(G, c);   // (rc.qrCap: one that never came in)
     rc.inc.length = 0; rc.jobs.length = 0; rc.busy = {};
     if (rc.bar && rc.bar.length) { rc.bar.length = 0; rc.brv++; }
-    rc.qr = 0; rc.want = 0; rc.lvl = 0; rc.dpT = 0; rc.rev++;
-    for (let z = 0; z < rc.n; z++) rc.gT[z] = t + 8;
     for (const id in rc.cs) { const cs = rc.cs[id]; cs.stop = cs.slow = cs.off = 0; cs.dyT = cs.dyR = cs.dyO = 0; }
+    for (const c of G.cars) c.rcAuto = false;
+    rc.qr = 2; rc.qrEnd = t + QR_GO; rc.rev++;
+    flags(G, race, rc, Lo, H);
+    rc.log.push([+t.toFixed(2), 'qRestart', -1, QR_GO]);
+    H.emit(G, { type: 'rcRed', on: 2, n: rc.rfN, q: 1, left: QR_GO });
+  }
+  function qGreen(G, race, rc, Lo, H) {
+    const t = race.t;
+    rc.qr = 0; rc.qrIn = 0; rc.want = 0; rc.lvl = 0; rc.dpT = 0; rc.rev++;
+    for (let z = 0; z < rc.n; z++) rc.gT[z] = t + 8;
     for (const c of G.cars) c.rcAuto = false;
     flags(G, race, rc, Lo, H);
     rc.log.push([+t.toFixed(2), 'qGreen', -1, 0]);
     H.emit(G, { type: 'rcRed', on: 0, n: rc.rfN, q: 1 });
+  }
+  // qualifying's red flag for the HUD / garage: { ph 1 the cars in | 2 the restart announced, left (s to the pit exit opening: ph 2) } | null
+  function qRedInfo(G) {
+    const race = G && G.race, rc = race && race.rc;
+    return rc && rc.qr ? { ph: rc.qr, left: rc.qr === 2 ? Math.max(0, rc.qrEnd - (race.t || 0)) : 0 } : null;
   }
   // ---------- phase 6: movable barriers ----------
   // bars(T) (static, memoised on the layout): the barrier drawn on each side at each track sample (quad i -> i + 1), kind
@@ -11599,7 +11632,7 @@ const RaceControl = (() => {
     if (!rc.vs) return 0;
     const d = [];
     for (const id in rc.cs) { const cs = rc.cs[id]; if (cs.vN === rc.vsN) d.push(+id, r2(cs.vD)); }
-    return [rc.vs, rc.vsN, r2(rc.vsEnd), d, +rc.vq.toFixed(4), r2(rc.vc), r2(race.t)];
+    return [rc.vs, rc.vsN, r2(rc.vsEnd), d, +rc.vq.toFixed(4), r2(rc.vc), r2(race.t), rc.scH ? 1 : 0];   // ([7]: the SC held)
   }
   // (a client: the flags as the server has them; events for its HUD / engineer on every change, like offline)
   function unpack(race, p, G) {
@@ -11610,6 +11643,7 @@ const RaceControl = (() => {
     if (vs !== rc.vs && G && G.events) G.events.push(vs ? { type: 'rcVsc', on: vs, n: v[1] | 0, end: +v[2] || 0 } : { type: 'rcVsc', on: 0, n: rc.vsN });
     rc.vs = vs;
     if (v) { rc.vsN = v[1] | 0; rc.vsEnd = +v[2] || 0; rc.dl = {}; const d = v[3] || []; for (let k = 0; k + 1 < d.length; k += 2) rc.dl[d[k]] = +d[k + 1]; rc.vq = +v[4] || 0; rc.vc = +v[5] || 0; rc.vf = VC_K * rc.vq; if (v[6] != null) rc.dlT = +v[6]; }
+    rc.scH = v && v[7] ? 1 : 0;
     scUnpack(race, rc, p[6], G);
     rfUnpack(race, rc, p[7], G);
     barUnpack(race, rc, p[8]);
@@ -11638,7 +11672,7 @@ const RaceControl = (() => {
     actors, stopInput, jobInfo, obstacles, bluePanels, aiVsc, vscV, delta, deltaView, ownStep, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
-    aiRed, redInfo, resume, chooseTyre, qStep, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
+    aiRed, redInfo, resume, chooseTyre, qStep, qRedInfo, QR_GO, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
     bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral, VSC_L0, VSC_L1, SC_L0, SC_L1, pxAt, spotFor };
 })();
 
@@ -17993,9 +18027,10 @@ const Race = (() => {
   // THE PLACE BACK; else a gain > tl.cut s (a cut chicane) = GIVE THE TIME BACK; a gain > adv.big s = a penalty at once.
   // One breach = one of those, never a strike as well. Going off and losing more than -tl.gain s is no offence, nor is a
   // breach within 1.5 s of a contact or one forced by a car alongside on the inside (unless it gained more than tl.cut). Time trial: an advantage breach (the level's tl.gain) invalidates the lap. Penalties off: nothing.
-  function wheelsOff(track, car, strict) {   // (strict: the pit lane / roads count as off the track too - an entry-road trip)
+  function wheelsOff(track, car, strict, m) {   // (strict: the pit lane / roads count as off the track too - an entry-road trip; m: the line m further out, tlSlack)
     const i = car.idx >= 0 ? car.idx : Math.round(track.wrapS(car.s) / track.step) % track.N, pit = track.pit;
-    if (Math.abs(car.d || 0) < track.halfW[i] - 1.2) return false;   // (cheap: nowhere near an edge)
+    m = m > 0 ? m : 0;
+    if (Math.abs(car.d || 0) < track.halfW[i] + m - 1.2) return false;   // (cheap: nowhere near an edge)
     if (pit && pit.roadD && Math.abs(car.d || 0) > pit.roadD / 2) return !!strict;   // (on a pit road: its own coordinates)
     const ch = Math.cos(car.h), sh = Math.sin(car.h), tx = track.tx[i], tz = track.tz[i];
     const cosR = ch * tx + sh * tz, sinR = sh * tx - ch * tz, C = CFG.car, hw = (C.trackWidth || 1.6) / 2;
@@ -18003,7 +18038,7 @@ const Race = (() => {
       const s = track.wrapS(car.s + ax * cosR), d0 = car.d + ax * sinR, j = Math.round(s / track.step) % track.N;
       for (const sd of [-hw, hw]) {
         const d = d0 + sd, din = d - Math.sign(d) * TYRE_HALF_W;
-        if (Math.abs(din) <= track.halfW[j]) return false;   // (on or inside the white line)
+        if (Math.abs(din) <= track.halfW[j] + m) return false;   // (on or inside the white line)
         if (!strict && (track.surface(s, din) === SURF.PIT || (track.inPitArea && track.inPitArea(s, din)))) return false;
       }
     }
@@ -18020,6 +18055,19 @@ const Race = (() => {
     return !!e && T.wrapS(car.s - e[0]) <= T.wrapS(e[1] - e[0]);
   }
   const exitSpans = new WeakMap();   // (per track.pit: [exit road start s, lane end s] or null)
+  // (user 2026-11-01) leniency: on a wet track (wet enough for intermediates: wxCross) or with the car moderately damaged or
+  // worse (Damage.major, or a body part at its 'broken' stage - orange / red on the HUD's outline; a chip is not) the
+  // track-limits line is TL_SLACK m beyond the white line; both together: still TL_SLACK. Every car, the AI too
+  const TL_SLACK = 1, TL_BODY = ['fwL', 'fwR', 'rw', 'fl', 'pdL', 'pdR'];
+  function tlSlack(G, race, car) {
+    const W = G.weather, w = W && W.wet != null ? +W.wet || 0 : race.wet || 0;
+    if (w > 0.05 && w >= wxCross().I) return TL_SLACK;
+    const d = car.dmg;
+    if (!d || typeof Damage === 'undefined') return 0;
+    if (Damage.major(car)) return TL_SLACK;
+    for (const k of TL_BODY) if ((d[k] || 0) >= Damage.STAGE[1]) return TL_SLACK;
+    return 0;
+  }
   function trackLimitsStep(G, race, car, dt) {
     const rc = car._race, T = G.track;
     if ((race.phase !== 'racing' && !qLike(race)) || race.attract || car.finished || car.dnf || car.kinematic || car.inPitLane || !T.halfW) { rc.tlOff = null; return; }
@@ -18031,7 +18079,7 @@ const Race = (() => {
     // damaged; before, Damage.major dropped every off and its verdict): a slow damaged car loses time (no strike), a slide is lost control
     // lost control - a spin / big slide (body slip > 0.3 rad; not lostControl's heading test: a car cutting a chicane
     // straight on points off the track's direction too): an off that comes with it is no track-limits strike (user 2026-10-10)
-    const off = wheelsOff(T, car, onExitSide(T, rc, car)), lc = Math.abs(Math.atan2(car.vLat || 0, Math.max(3, Math.abs(car.vLong || 0)))) > 0.3;
+    const off = wheelsOff(T, car, onExitSide(T, rc, car), tlSlack(G, race, car)), lc = Math.abs(Math.atan2(car.vLat || 0, Math.max(3, Math.abs(car.vLong || 0)))) > 0.3;
     if (lc) rc.lcT = race.t;
     if (!off) {
       const i = car.idx >= 0 ? car.idx : 0, vr = T.raceSpeed[i];
@@ -18168,6 +18216,7 @@ const Race = (() => {
     for (const c of G.cars) for (const e of c.lapHist || []) if (!e.invalid && e.time > 0 && (!f || e.time < f.time)) f = { car: c, time: e.time, lap: e.lap };
     return f;
   }
+  const tlCase = (race, car) => invActive(race) && race.inv.list.some(c => c.car === car && c.tl);   // (its track-limits case: pending or open)
   function tlJudge(G, race, car, x) {
     const rc = car._race, T = G.track, D1 = x.D1 != null ? x.D1 : rc.dist, len = D1 - x.D0, tAct = (x.tR != null ? x.tR : race.t) - x.t0;
     const tR = x.tR != null ? x.tR : race.t;
@@ -18193,6 +18242,10 @@ const Race = (() => {
     const cut = gain > tl.cut, open = rc.gb && rc.gb.length ? rc.gb : null;
     // race: the breach deletes that lap's time (as in F1): no best lap, no fastest lap (raceDelLap)
     const del = raceDelLap(G, race, car, x), late = del != null && (del !== car.lap || car.finished);
+    // (user 2026-11-01) one track-limits investigation at a time: while this car's case is pending (silent) or open its count
+    // stays frozen - no warning, no strike, no new case; a car struggling round a corner is fine then. Only a blatant one
+    // (a cut gaining > tl.cut s: give the time back / 'Corner cut') still counts
+    if (!cut && tlCase(race, car)) return;
     // (an order still open covers this breach too: a time order already counts everything since it was given, a place
     // order the advantage; no new order, no strike)
     if (adv && open) return;
@@ -19073,7 +19126,9 @@ const Race = (() => {
     let u = track.wrapS(car.s - pit.entryS);
     if (u > L / 2) u -= L;
     // in the lane from the limiter line to just short of its end (never the release line itself): the takeover
-    const manual = manualPit(race, car), i = car.idx >= 0 ? car.idx : Math.round(car.s / track.step) % track.N;
+    // (car.rcAuto: the player's car the AI drives in under qualifying's red flag - taken like an AI car's: the AI never steered it
+    // onto the entry road, so it lapped on and never reached the garage, user 2026-11-01)
+    const manual = manualPit(race, car) && !car.rcAuto, i = car.idx >= 0 ? car.idx : Math.round(car.s / track.step) % track.N;
     // (2026-10-20, §67: an AI car is taken only when it drives in under control - a spinning / sliding car is left to its
     // own recovery (ai.js rec / safe rejoin): the autopilot used to take a car spinning into Montreal's pit entry at its
     // speed and drive it off sideways. In the limited lane a moving unsettled car is taken once it has slowed / settled.)
@@ -19092,7 +19147,7 @@ const Race = (() => {
       // committed to the lane (an AI car brushing the pit-entry line is not a pit stop)
       if (car.isPlayer || car.wantPit || pit.side * car.d - track.halfW[i] > 2 || u > 30) { startPit(G, race, car, u); return; }
     }
-    if (!car.isPlayer && car.wantPit && ((race.phase === 'racing' && race.laps && car.lap < race.laps) || inQ(race))) startPit(G, race, car, u);
+    if ((!car.isPlayer || car.rcAuto) && car.wantPit && ((race.phase === 'racing' && race.laps && car.lap < race.laps) || inQ(race))) startPit(G, race, car, u);
   }
   // the car's d is in the same frame as the lane path at u (both on a pit road's coordinates, or both on the track's)
   function laneFrameOk(track, pit, pg, car, u) {
@@ -20654,6 +20709,7 @@ const Quali = (() => {
       if (car.isPlayer && !qs.mp) { q.st = 'in'; car.rcAuto = true; car.wantPit = true; car.qPace = QP.in; }
     },
     qBox: (G, car) => { const race = G.race, qs = race && race.qs; if (qs && car.q && away(car)) toGarage(G, race, qs, car); },
+    qAway: (G, car) => { const qs = G.race && G.race.qs; return !!(qs && car.q && away(car) && inSess(qs, car)); },   // (the red flag: still out - the restart waits, user 2026-11-01)
   };
   // live mode (Race.update; the multiplayer server): physics + AI drive everyone
   function update(G, dt) {
@@ -21243,7 +21299,7 @@ const Quali = (() => {
     if (car.qOut >= 0 || !inSess(qs, car)) return { ok: false, why: 'out' };
     if (car.q.wreck) return { ok: false, why: 'wreck' };   // (contact damage: a wrecked car is out for the rest of qualifying)
     if (qs.st !== 'green') return { ok: false, why: qs.st === 'break' ? 'break' : 'flag' };
-    if (race.rc && race.rc.qr) return { ok: false, why: 'red' };   // (race control's red flag: the pit exit closed)
+    if (race.rc && race.rc.qr) return { ok: false, why: 'red', wait: race.rc.qr === 2 ? Math.max(0, race.rc.qrEnd - race.t) : 0 };   // (race control's red flag: the pit exit closed; wait: the restart announced, user 2026-11-01)
     if (car.q.st !== 'garage') return { ok: false, why: 'track' };
     if (qs.clock < car.q.lock - 1e-6) return { ok: false, why: 'lock', wait: car.q.lock - qs.clock };
     if (!qs.mp) { qs.speed = 1; for (const c of G.cars) if (c.q && c.q.sim) handBack(G, c); }
@@ -22548,6 +22604,7 @@ const NetCore = (() => {
       let input;
       const racing = race.phase === 'racing' || race.phase === 'finished' || (quali && !!S.qClk);
       if (!sc && !racing) input = HOLD;                        // waiting for everyone to load
+      else if (me.dnf && me.rcPull && typeof Damage !== 'undefined' && Damage.retireInput) input = Damage.retireInput(me, G.track);   // (retired by its player (pause menu RETIRE) or a mechanical failure: pulls over, whatever the race control / damage settings)
       else if (me.dnf && G.race && G.race.rc && G.race.rc.on && typeof RaceControl !== 'undefined' && RaceControl.stopInput) input = me.rcPull && typeof Damage !== 'undefined' && Damage.retireInput ? Damage.retireInput(me, G.track) : RaceControl.stopInput(me);   // (race control on: it stays where it stops; a mechanical failure (dnf 2): pulls over first)
       else if (me.dnf && G.world && G.world.damage && typeof Damage !== 'undefined') input = Damage.retireInput(me, G.track);   // (contact damage: retired by the server)
       else if (me.finished || (S.bot && racing)) input = S.drive ? S.drive(S, dt) : aiInput(S, dt);   // cool-down lap (bots: always)

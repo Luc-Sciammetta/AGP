@@ -558,6 +558,16 @@ class RaceSim {
     if (tNow - (n.bhT || 0) > 1000) { n.bhT = tNow; n.bhN = 0; }
     for (const h of m.h.slice(0, 8)) if (n.bhN++ < 40) RaceControl.barHit(this.G, car, h);
   }
+  // the pause menu's RETIRE (a client's own car, racing): DNF, the car pulls over (retired.pull, dnf 2 in the race packet: the client drives it
+  // off, race control on: the server from now on); the race goes on for the others and the client watches it to the results
+  onRetire(p) {
+    const car = this.byPid.get(p.id), race = this.race;
+    if (!car || !car.net || !race || race.phase !== 'racing' || race.qs || this.phase !== 'run' || car.dnf || car.finished || car.kinematic || car.inPitLane
+      || (car._race && car._race.pit) || (race.rc && race.rc.on && race.rc.rf)) return;
+    Race.retire(this.G, race, car, 'Retired');
+    if (car.retired) car.retired.pull = 1;
+    log(`room ${this.room.code}: #${p.id} ${dname(p)} retired`);
+  }
   onRft(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c) && typeof RaceControl !== 'undefined') RaceControl.chooseTyre(this.G, car, m.c); }   // (the red flag: the restart's tyres)
   onRcx(p, m) {   // (tests only: node server.mjs --rc-test, tools/rc_mp_test.mjs) race control on demand: m.cfg the switches, m.n AI cars (<= 3) retired where they are
     const race = this.race, G = this.G;
@@ -1187,6 +1197,7 @@ function onText(p, raw) {
     case 'away': if (sim && sim.onAway) sim.onAway(p, m); break;   // (m.lobby: went back to the lobby)
     case 'pitc': if (sim && sim.onPitc) sim.onPitc(p, m); break;
     case 'pitw': if (sim && sim.onPitw) sim.onPitw(p, m); break;
+    case 'retire': if (sim && sim.onRetire) sim.onRetire(p); break;   // (the pause menu's RETIRE)
     case 'rft': if (sim && sim.onRft) sim.onRft(p, m); break;   // (the red flag: a tyre choice for the restart)
     case 'rcx': if (sim && sim.onRcx) sim.onRcx(p, m); break;   // (tests only: --rc-test)
     case 'rulesq': if (ARG['rules-test'] && sim && sim.onRulesQ) sim.onRulesQ(p); break;   // (tests only: --rules-test)
