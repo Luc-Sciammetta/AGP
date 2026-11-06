@@ -1884,8 +1884,8 @@ html.agp-touch .agp-snd-hint .is-touch { display: inline; }
 .agp-lv-spr > span { display: flex; align-items: baseline; gap: .7em; margin-bottom: .35em; }
 .agp-lv-spr > span b { font: 700 .78em/1 var(--agp-fd); letter-spacing: .1em; }
 .agp-lv-spr > span small { font: 700 .56em/1 var(--agp-fd); letter-spacing: .14em; color: var(--agp-dim); }
-.agp-lv-spr > div { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .3em; }
-.agp-lv-spr canvas { display: block; width: 100%; height: auto; aspect-ratio: 140 / 50; border-radius: .18em; cursor: pointer; }
+.agp-lv-spr > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35em; }
+.agp-lv-spr canvas { display: block; width: 100%; height: auto; aspect-ratio: 200 / 72; border-radius: .18em; cursor: pointer; }
 .agp-lv-spr canvas:hover { outline: .12em solid rgba(255, 255, 255, .6); }
 .agp-lv-spr canvas.is-cur { outline: .12em dashed #fff; }
 .agp-lv-spr canvas.is-on { outline: .18em solid var(--agp-red); }
@@ -1941,11 +1941,11 @@ html.agp-touch .agp-lv-spots small { display: none; }
 .agp-lvs-sw i { flex: 1; }
 .agp-lvs-info b { font: italic 800 1.05em/1 var(--agp-ft); letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agp-lvs-info small { font: 700 .6em/1 var(--agp-fd); letter-spacing: .14em; color: var(--agp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agp-lvs-acts { display: flex; gap: .4em; }
-.agp-lvs-acts b { display: flex; align-items: center; height: 2.4em; padding: 0 1em; border-radius: .22em; cursor: pointer; background: rgba(255, 255, 255, .08); font: 700 .72em/1 var(--agp-fd); letter-spacing: .14em; }
+.agp-lvs-acts { display: flex; gap: .6em; }
+.agp-lvs-acts b { display: flex; align-items: center; justify-content: center; min-width: 8.5em; height: 3.2em; padding: 0 1.6em; border-radius: .26em; cursor: pointer; background: rgba(255, 255, 255, .1); font: 800 1.05em/1 var(--agp-fd); letter-spacing: .14em; }
 .agp-lvs-acts b:hover { background: rgba(255, 255, 255, .16); }
 .agp-lvs-acts b.is-del:hover { background: rgba(225, 6, 0, .55); }
-.agp-lvs-acts.is-dim b, .agp-lvs .agp-mn-start.is-dim { opacity: .35; pointer-events: none; }
+.agp-lvs-acts.is-dim b { opacity: .35; pointer-events: none; }
 
 .agp-lv [data-k="lvNew"] { margin-top: .7em; }
 .agp-lv [data-k="lvDel"] .agp-row-btn { color: #ff6b62; }
@@ -77104,7 +77104,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-06 08:29';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-06 14:07';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -82551,7 +82551,8 @@ const NetCore = (() => {
 // sets. Declares only `Sponsors`. Loads in Node (no DOM at load); drawing needs a 2D canvas context.
 //   LIST[i] = { id, name, ind (industry), tag (strapline), a / b (brand colours), plate, font, mark } \u2014 40, append-only
 //     (livery data stores the index: livery.js SP_N). Every sponsor has its own mark (MARKS: 40 different shapes).
-//   DESIGNS = [WORDMARK, BADGE, STACKED, SINGLE COLOUR, LONG STRIP]; SIZES = [S, M, L] (car_model.js scales the spot box).
+//   DESIGNS = [WORDMARK, BADGE, STACKED, SINGLE COLOUR, LONG STRIP] (wordmark / single colour: no background, straight on
+//   the paint; no strapline shown anywhere); SIZES = [S, M, L] (car_model.js SIZE_BOX).
 //   draw(g, i, d, W, H, bg) draws sponsor i in design d centred on the origin, fitted into W x H (current units);
 //     bg = '#rrggbb' behind it (wordmark / single colour pick a readable colour against it).
 //   aspect(i, d) natural width / height.   teamSet(team) -> sponsor map for a fixed team (custom liveries: team.sponsors).
@@ -82697,8 +82698,8 @@ const Sponsors = (() => {
     const s = LIST[i], tw = textW(s, label(s), 74);
     let r;
     if (d === 1) r = [100, 100];
-    else if (d === 2) r = [Math.max(textW(s, label(s), 34), textW(s, s.tag, 14, 0.12), 50) + 30, 100];
-    else if (d === 4) r = [20 + 70 + 18 + textW(s, label(s), 60) + 30 + textW(s, s.tag, 34, 0.1) + 26, 100];
+    else if (d === 2) r = [Math.max(textW(s, label(s), 36), 50) + 30, 100];
+    else if (d === 4) r = [20 + 70 + 18 + textW(s, label(s), 60) + 30, 100];
     else r = [100 + 20 + tw, 100];
     NAT.set(k, r);
     return r;
@@ -82732,22 +82733,18 @@ const Sponsors = (() => {
       plateShape(g, s.shape, 50, on === '#ffffff' || on === '#111111' ? shade(on, on === '#ffffff' ? -0.04 : 0.1) : on);
       plateShape(g, s.shape, 44, s.a);
       mark(g, s, 0, s.shape === 'shield' ? -6 : 0, 58, on, on === s.b ? onCol(s.a) : s.b, s.a);
-    } else if (d === 2) {   // stacked: mark over the name over the strapline, on the brand plate
-      const P = s.plate, nc = readable(P, s.a, s.b), tc = readable(P, s.b, s.a);
+    } else if (d === 2) {   // stacked: mark over the name, on the brand plate (no strapline: user 2026-11-06)
+      const P = s.plate, nc = readable(P, s.a, s.b);
       rrect(g, x0, -50, nw, 100, 10, P);
-      mark(g, s, 0, -21, 46, con(s.a, P) >= 1.6 ? s.a : nc, con(s.b, P) >= 1.4 ? s.b : nc, P);
-      text(g, s, nm, 0, 22, 34, nc, 'center');
-      text(g, s, s.tag, 0, 40, 14, tc, 'center', 0.12);
-    } else {   // long strip: brand bar, mark, name | strapline, a keyline in the second colour
+      mark(g, s, 0, -17, 52, con(s.a, P) >= 1.6 ? s.a : nc, con(s.b, P) >= 1.4 ? s.b : nc, P);
+      text(g, s, nm, 0, 29, 36, nc, 'center');
+    } else {   // long strip: brand bar, mark, name, a keyline in the second colour
       const tc = con(s.b, s.a) >= 3 ? s.b : onCol(s.a), ac = con(s.b, s.a) >= 1.3 ? s.b : onCol(s.a);
       rrect(g, x0, -50, nw, 100, 8, s.a);
       rrect(g, x0, 34, nw, 9, 0, ac);
       mark(g, s, x0 + 55, -6, 66, tc, tc, s.a);
       const tx = x0 + 108;
       text(g, s, nm, tx, -2, 60, tc);
-      const t2 = tx + textW(s, nm, 60) + 15;
-      g.fillStyle = tc; g.globalAlpha = 0.6; g.fillRect(t2, -26, 3, 46); g.globalAlpha = 1;
-      text(g, s, s.tag, t2 + 15, -2, 34, tc, 'left', 0.1);
     }
     g.restore();
   }
@@ -83781,25 +83778,27 @@ const buildCarModel = (() => {
 
   // ---- sponsors (sponsors.js art, livery.js SPOTS): where each spot sits on the livery canvas. s = side bands (0 right,
   // 1 left), t = top-band copies [x, z, rot]; x / y centre (car metres), r = tilt (+ = rising towards the nose), w x h = the
-  // LARGE box (m). m = a remap into a side-band area no body surface uses: the halo (part 11) and the front wing endplates
+  // most the spot holds (m; the sizes: SIZE_BOX). m = a remap into a side-band area no body surface uses: the halo (part 11) and the front wing endplates
   // (part 13) read the livery texture there (FRAG_COLOR), painted in their palette colour (an empty spot looks as before)
   const HALO_MAP = { x0: -0.15, y0: 0.90, ox: 0.8, oy: 0.74, kx: 2.8, ky: 3.83 }, END_MAP = { x0: 0, y0: 0, ox: 0, oy: 0.8, kx: 1, ky: 1 };
   const SPOT_GEO = {
-    nose: { s: [0, 1], x: 1.86, y: 0.30, r: -0.15, w: 0.62, h: 0.075 },
-    fwing: { t: [[2.45, 0.5, -Math.PI / 2], [2.45, -0.5, -Math.PI / 2]], w: 0.62, h: 0.14 },
+    nose: { s: [0, 1], x: 1.86, y: 0.30, r: -0.15, w: 0.75, h: 0.09 },
+    fwing: { t: [[2.45, 0.5, -Math.PI / 2], [2.45, -0.5, -Math.PI / 2]], w: 0.78, h: 0.28 },
     fwend: { s: [0, 1], x: 2.6, y: 0.17, r: 0, w: 0.44, h: 0.12, m: END_MAP },
-    chassis: { s: [0, 1], x: 0.95, y: 0.40, r: -0.08, w: 0.62, h: 0.12 },
+    chassis: { s: [0, 1], x: 0.95, y: 0.40, r: -0.08, w: 0.85, h: 0.17 },
     halol: { s: [1], x: 0.08, y: 0.97, r: 0.066, w: 0.34, h: 0.03, m: HALO_MAP },
     halor: { s: [0], x: 0.08, y: 0.97, r: 0.066, w: 0.34, h: 0.03, m: HALO_MAP },
-    pod: { s: [0, 1], x: -0.30, y: 0.395, r: 0.09, w: 0.86, h: 0.11 },
-    airbox: { s: [0, 1], x: -0.38, y: 0.93, r: 0.1, w: 0.30, h: 0.075 },
-    ecfront: { t: [[-0.74, 0.1, 0], [-0.74, -0.1, Math.PI]], w: 0.42, h: 0.11 },
+    pod: { s: [0, 1], x: -0.30, y: 0.395, r: 0.09, w: 1.7, h: 0.32 },
+    airbox: { s: [0, 1], x: -0.38, y: 0.93, r: 0.1, w: 0.36, h: 0.09 },
+    ecfront: { t: [[-0.74, 0.1, 0], [-0.74, -0.1, Math.PI]], w: 0.5, h: 0.12 },
     ecrear: { t: [[-1.62, 0.075, 0], [-1.62, -0.075, Math.PI]], w: 0.40, h: 0.08 },
-    fin: { s: [0, 1], x: -1.5, y: 0.765, r: 0.245, w: 0.62, h: 0.10 },   // (one spot, both sides - user 2026-11-06)
-    rwtop: { t: [[-2.69, 0, -Math.PI / 2]], w: 0.92, h: 0.14 },   // (reads from the front on the steep upper face, from behind on the back: FRAG_COLOR)
-    rwend: { s: [0, 1], x: -2.60, y: 1.0, r: 0, w: 0.40, h: 0.10 },
+    fin: { s: [0, 1], x: -1.5, y: 0.765, r: 0.245, w: 0.8, h: 0.15 },   // (one spot, both sides - user 2026-11-06)
+    rwtop: { t: [[-2.69, 0, -Math.PI / 2]], w: 1.0, h: 0.24 },   // (reads from the front on the steep upper face, from behind on the back: FRAG_COLOR)
+    rwend: { s: [0, 1], x: -2.60, y: 1.0, r: 0, w: 0.5, h: 0.16 },
   };
-  const SIZE_K = [0.62, 0.8, 1];
+  // S / M / L (user 2026-11-06): small = a nose sponsor, medium = a bit more than a rear wing one, large = really big (a title
+  // sponsor across the sidepod); each also capped at 60 / 80 / 100 % of what the spot holds, so a small spot keeps 3 sizes
+  const SIZE_BOX = [[0.5, 0.06], [1.0, 0.16], [1.7, 0.32]], SIZE_K = [0.6, 0.8, 1];
   // 3D anchor of each spot (car frame: the livery editor's hotspots)
   const SPOT_PTS = { nose: [1.86, 0.33, 0.1], fwing: [2.45, 0.2, 0.5], fwend: [2.6, 0.18, 0.9], chassis: [0.95, 0.42, 0.26], halol: [0.08, 0.97, -0.25],
     halor: [0.08, 0.97, 0.25], pod: [-0.30, 0.42, 0.6], airbox: [-0.38, 0.95, 0.13], ecfront: [-0.74, 0.97, 0.1], ecrear: [-1.62, 0.7, 0.08],
@@ -83958,7 +83957,7 @@ const buildCarModel = (() => {
     if (set) for (const id of SPOT_ORDER()) {
       const v = set[id], P = SPOT_GEO[id];
       if (!v || !P) continue;
-      const f = SIZE_K[v[2]] || 0.8, W = P.w * f * 1000, H = P.h * f * 1000;
+      const z = SIZE_K[v[2]] ? v[2] : 1, W = Math.min(SIZE_BOX[z][0], P.w * SIZE_K[z]) * 1000, H = Math.min(SIZE_BOX[z][1], P.h * SIZE_K[z]) * 1000;
       if (P.t) {
         for (const [x, z, r] of P.t) {
           const bg = bgAt(px(x), rowT(z));
@@ -107473,7 +107472,7 @@ const Menu = (() => {
   // ---------- SPONSORS tab (livery.js SPOTS + data.sp, sponsors.js art, car_model.js SPOT_GEO): click a spot (a marker on
   // the car or the spot list), then a sponsor design in the grid (40 sponsors x 5 designs); size S / M / L; clear. The camera
   // turns and zooms to the chosen spot. Keys: arrows over the grid + Enter, PgUp / PgDn the spot, 1 2 3 size, Del clear ----------
-  let lvTab = 'paint', lvSpot = 'pod', spCur = [0, 0], spDrawn = false, hotV = null;
+  let lvTab = 'paint', lvSpot = 'pod', spCur = [0, 0], spDrawn = '', hotV = null;
   const SPS = () => (typeof Sponsors !== 'undefined' ? Sponsors : null);
   // per spot: turntable yaw, camera elevation (rad), distance (x the whole-car distance)
   const SPOT_VIEW = { nose: [-0.75, 0.2, 0.5], fwing: [-1.0, 0.55, 0.6], fwend: [-0.5, 0.15, 0.45], chassis: [-0.35, 0.18, 0.55], halol: [Math.PI + 0.45, 0.3, 0.38], halor: [-0.45, 0.3, 0.38],
@@ -107492,7 +107491,7 @@ const Menu = (() => {
   function spInit() {
     const S2 = SPS(), L = LV();
     if (!S2 || !LE.spg) return;
-    LE.spg.innerHTML = S2.LIST.map(s => `<div class="agp-lv-spr" data-s="${s.i}"><span><b>${esc(s.name)}</b><small>${esc(s.ind.toUpperCase())}</small></span><div>${S2.DESIGNS.map((d, j) => `<canvas data-d="${j}" width="140" height="50" title="${esc(s.name + ' · ' + d[1])}" role="button"></canvas>`).join('')}</div></div>`).join('');
+    LE.spg.innerHTML = S2.LIST.map(s => `<div class="agp-lv-spr" data-s="${s.i}"><span><b>${esc(s.name)}</b></span><div>${S2.DESIGNS.map((d, j) => `<canvas data-d="${j}" width="200" height="72" title="${esc(s.name + ' · ' + d[1])}" role="button"></canvas>`).join('')}</div></div>`).join('');
     LE.spots.innerHTML = L.SPOTS.map(([id, lab]) => `<b data-spot="${id}" role="button"><em>${lab}</em><small></small></b>`).join('');
     LE.hot.innerHTML = L.SPOTS.map(([id, lab]) => `<b data-spot="${id}" role="button" title="${lab}"><i></i><span>${lab}</span></b>`).join('');
     LE.tabs.addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b && screen === 'livery' && b.dataset.t !== lvTab) lvTabSet(b.dataset.t); });
@@ -107503,15 +107502,16 @@ const Menu = (() => {
     LE.hot.addEventListener('click', spotClick);
     LE.sprow.addEventListener('click', e => { if (screen !== 'livery') return; const z = e.target.closest('[data-z]'), a = e.target.closest('[data-act]'); if (z) spSize(+z.dataset.z); else if (a) spAct(a.dataset.act); });
   }
-  // the 200 thumbnails, drawn once on the first visit (140 x 50 each, ~5.6 MB of canvases)
+  // the 200 thumbnails (200 x 72 each), on the livery's main colour so the plain designs (wordmark, single colour) show how
+  // they sit straight on the paint; redrawn when that colour changes
   function spThumbs() {
-    const S2 = SPS();
-    if (spDrawn || !S2 || !LE.spg) return;
-    spDrawn = true;
+    const S2 = SPS(), bg = (lvCur && lvCur.primary) || '#262a35';
+    if (spDrawn === bg || !S2 || !LE.spg || lvTab !== 'spon') return;
+    spDrawn = bg;
     LE.spg.querySelectorAll('canvas').forEach(c => {
       const g = c.getContext('2d'), i = +c.parentNode.parentNode.dataset.s, d = +c.dataset.d;
-      g.fillStyle = '#262a35'; g.fillRect(0, 0, c.width, c.height);
-      g.save(); g.translate(c.width / 2, c.height / 2); S2.draw(g, i, d, c.width - 16, c.height - 14, '#262a35'); g.restore();
+      g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
+      g.save(); g.translate(c.width / 2, c.height / 2); S2.draw(g, i, d, c.width - 18, c.height - 16, bg); g.restore();
     });
   }
   function spFocus(id, quiet) {
@@ -107537,6 +107537,7 @@ const Menu = (() => {
   function spPaint(scroll) {
     const S2 = SPS(), L = LV(), d = lvCur;
     if (!S2 || !d || !LE.spg) return;
+    spThumbs();
     const sp = d.sp || {}, cur = sp[lvSpot], lab = (L.SPOTS.find(x => x[0] === lvSpot) || ['', ''])[1], n = Object.keys(sp).length;
     LE.spn.textContent = n ? String(n) : '';
     LE.sptitle.textContent = lab + (cur ? ' · ' + S2.LIST[cur[0]].name + ' · ' + S2.DESIGNS[cur[1]][1] : ' · EMPTY');
@@ -107588,7 +107589,8 @@ const Menu = (() => {
 
   // ---------- livery select page ('lvsel', home > LIVERY CREATOR): a card per saved livery (a 3D snapshot of the car,
   // the editor's turntable renderer; 2D side view without WebGL) + NEW; EDIT (or click the car), DUPLICATE, DELETE (the
-  // confirm), USE THIS LIVERY. Keys: arrows, Enter edit, D duplicate, Del delete, U use, N new, Esc home ----------
+  // confirm). Which livery you race is picked on the TEAM step. Keys: arrows, Enter edit, D duplicate, Del delete, N new,
+  // Esc home ----------
   const LSE = {}, SNAP = new Map();   // (SNAP: team id -> snapshot canvas, newest 12)
   let lsSel = '', lsNote = '', lsQ = [], lsRaf = 0;
   const LS_TPL = `<section class="agp-scr agp-mn-main agp-lvs" data-scr="lvsel">
@@ -107602,15 +107604,13 @@ const Menu = (() => {
       <footer class="agp-mn-foot"><span><kbd>\u2190</kbd><kbd>\u2192</kbd><kbd>\u2191</kbd><kbd>\u2193</kbd>SELECT</span><span><kbd>ENTER</kbd>EDIT</span><span><kbd>D</kbd>DUPLICATE</span><span><kbd>DEL</kbd>DELETE</span><span><kbd>ESC</kbd>BACK</span></footer>
       <div class="agp-mn-note" data-ls="note"></div>
       <div class="agp-lvs-acts" data-ls="acts"><b data-a="edit" role="button">EDIT</b><b data-a="dup" role="button">DUPLICATE</b><b data-a="del" role="button" class="is-del">DELETE</b></div>
-      <div class="agp-mn-start" data-ls="go" role="button"><span>USE THIS LIVERY</span><i></i></div>
     </div>
   </section>`;
   function lsInit() {
     E.menu.insertAdjacentHTML('beforeend', LS_TPL);
     E.menu.lastElementChild.querySelectorAll('[data-ls]').forEach(el => { LSE[el.dataset.ls] = el; });
-    for (const el of [LSE.back, LSE.go, LSE.acts]) el.addEventListener('pointerdown', e => e.preventDefault());
+    for (const el of [LSE.back, LSE.acts]) el.addEventListener('pointerdown', e => e.preventDefault());
     LSE.back.addEventListener('click', () => { if (screen === 'lvsel') lsBack(); });
-    LSE.go.addEventListener('click', () => { if (screen === 'lvsel') lsAct('use'); });
     LSE.acts.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (b && screen === 'lvsel') lsAct(b.dataset.a); });
     LSE.grid.addEventListener('click', e => {
       const c = e.target.closest('.agp-lvs-card');
@@ -107647,7 +107647,7 @@ const Menu = (() => {
     let on = null;
     LSE.grid.querySelectorAll('.agp-lvs-card').forEach(c => { const y = lsSel ? c.dataset.id === lsSel : !!c.dataset.new; c.classList.toggle('is-sel', y); if (y) on = c; });
     const d = LV().get(lsSel);
-    LSE.acts.classList.toggle('is-dim', !d); LSE.go.classList.toggle('is-dim', !d);
+    LSE.acts.classList.toggle('is-dim', !d);
     LSE.note.innerHTML = lsNote ? esc(lsNote) : d ? (S.livery === d.id ? '<b>RACING THIS LIVERY</b> · ' : '') + esc(d.name.toUpperCase()) : 'MAKE YOUR FIRST LIVERY';
     lsNote = '';
     if (scroll !== false && on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
@@ -107659,7 +107659,6 @@ const Menu = (() => {
     if (a === 'edit') lvOpen(d.id, 'lvsel');
     else if (a === 'dup') { const c = L.duplicate(d.id); if (!c) return full(); lsSel = c.id; lsNote = 'COPIED AS ' + c.name.toUpperCase(); sfx('select'); buildSwatches(); lsBuild(); }
     else if (a === 'del') lvAskDelete(d.id);
-    else if (a === 'use') { S.livery = d.id; commit(false); sfx('select'); lsNote = 'YOUR CAR NOW RACES ' + d.name.toUpperCase(); lsBuild(); }
   }
   function lsKey(e) {
     const c = e.code;
@@ -107670,7 +107669,6 @@ const Menu = (() => {
     if (c === 'Enter' || c === 'NumpadEnter' || c === 'Space') lsAct(lsSel ? 'edit' : 'new');
     else if (c === 'KeyD') lsAct('dup');
     else if (c === 'Delete') lsAct('del');
-    else if (c === 'KeyU') lsAct('use');
     else if (c === 'KeyN') lsAct('new');
     else if (c === 'Escape' || c === 'Backspace') lsBack();
     else return false;
@@ -113136,6 +113134,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-06 08:29 -->
+<!-- Apex GP build 2026-11-06 14:07 -->
 </body>
 </html>
