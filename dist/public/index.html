@@ -1590,7 +1590,8 @@ html.agp-touch .agp-setup-car .agp-cs-swp path { stroke-width: 2; }
    trackGroups), equal width, each with its own head and its own scrolling list (2 cards per row); portrait: stacked,
    each list one row that scrolls sideways. The panel fills the column, the lists take what is left. */
 .agp-menu[data-tab="circuit"] [data-r="tracksPanel"], .agp-menu[data-tab="rounds"] [data-r="tracksPanel"] { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
-.agp-menu[data-tab="circuit"] .agp-pk-bar { display: none; }   /* (the group heads name the cards) */
+.agp-menu[data-tab="circuit"] .agp-pk-bar { justify-content: flex-end; flex: none; margin-bottom: .6em; }   /* (the group heads name the cards; the bar only holds RANDOM) */
+.agp-menu[data-tab="circuit"] .agp-pk-bar .agp-mn-ptitle { display: none; }
 .agp-mn-panel[data-r="tracksPanel"] .agp-mn-cards { flex: 0 1 auto; min-height: 0; display: flex; gap: 1em; }
 .agp-tg { --tg: var(--agp-red); --tgi: #fff; position: relative; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: .75em .45em .35em .7em;
   border-radius: .3em; background: rgba(255, 255, 255, .028); border: .1em solid rgba(255, 255, 255, .055); }
@@ -1643,7 +1644,9 @@ html.agp-touch .agp-menu[data-tab="circuit"] .agp-mn-tdesc { min-height: 0; marg
 .agp-menu[data-tab="rounds"] .agp-mn-tdesc { display: none; }
 .agp-menu[data-tab="rounds"] .agp-pk-bar { flex: none; margin-bottom: .6em; }
 .agp-menu[data-tab="rounds"] .agp-pk-bar .agp-mn-ptitle { padding-bottom: 0; }
-.agp-menu[data-tab="rounds"] .agp-pk-btns { display: flex; gap: .4em; }
+.agp-menu[data-tab="rounds"] .agp-pk-btns, .agp-menu[data-tab="circuit"] .agp-pk-btns { display: flex; gap: .4em; }
+.agp-menu[data-tab="circuit"] .agp-pk-btn:not(.agp-pk-rand), .agp-menu[data-tab="rounds"] .agp-pk-rand { display: none; }
+.agp-pk-rand.is-on { background: #fff; color: var(--agp-ink); border-color: #fff; }
 .agp-pk-btn { display: flex; align-items: center; height: 2.6em; padding: 0 1.1em; border-radius: .25em; background: rgba(31, 35, 46, .95); border: .12em solid rgba(255, 255, 255, .1);
   font: 700 .78em/1 var(--agp-fd); letter-spacing: .16em; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
 .agp-pk-btn:hover { background: rgba(48, 53, 68, .96); }
@@ -1858,6 +1861,91 @@ html.agp-touch .agp-snd-hint .is-touch { display: inline; }
 .agp-lv-colrow .agp-lv-chip { flex: none; width: 1.25em; height: 1.25em; border-radius: .2em; box-shadow: inset 0 0 0 .1em rgba(255, 255, 255, .35), 0 0 0 .06em rgba(0, 0, 0, .5); }
 .agp-lv-colrow .agp-row-v b { min-width: 5.2em; text-align: left; }
 .agp-lv-colrow.is-pick:not(.is-focus) { box-shadow: inset 0 0 0 .1em rgba(255, 255, 255, .3); }
+/* livery editor layout, scoped (the settings page's .agp-menu[data-tab] widths used to stretch this left column and shrink the car) */
+.agp-menu .agp-lv.agp-mn-main .agp-lv-left { display: flex; flex-direction: column; flex: 0 0 auto; width: 30em; max-width: 40%; min-width: 0; min-height: 0; }
+.agp-menu .agp-lv.agp-mn-main .agp-lv-side { flex: 1 1 0; min-width: 0; max-width: none; }
+.agp-menu .agp-lv .agp-lv-paint { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.agp-lv .agp-lv-stage { min-height: 16em; }
+.agp-lv-tabs { display: flex; gap: .35em; margin: 0 0 .7em; }
+.agp-lv-tabs b { flex: 1; height: 2.3em; display: flex; align-items: center; justify-content: center; gap: .5em; border-radius: .22em; cursor: pointer; background: rgba(255, 255, 255, .06);
+  font: 700 .78em/1 var(--agp-fd); letter-spacing: .16em; color: #c1c7d2; }
+.agp-lv-tabs b:hover { background: rgba(255, 255, 255, .12); }
+.agp-lv-tabs b small { min-width: 1.5em; padding: .2em .35em; border-radius: 1em; background: var(--agp-red); color: #fff; font-size: .85em; letter-spacing: 0; text-align: center; }
+.agp-lv-tabs b small:empty { display: none; }
+.agp-lv[data-tab="paint"] .agp-lv-tabs [data-t="paint"], .agp-lv[data-tab="spon"] .agp-lv-tabs [data-t="spon"] { background: #fff; color: var(--agp-ink); box-shadow: inset 0 -.2em 0 var(--agp-red); }
+.agp-lv[data-tab="spon"] .agp-lv-paint, .agp-lv[data-tab="spon"] .agp-lv-pick, .agp-lv[data-tab="paint"] .agp-lv-spl, .agp-lv[data-tab="paint"] .agp-lv-spk, .agp-lv[data-tab="paint"] .agp-lv-hot { display: none; }
+.agp-lv-spl { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.agp-lv-sph { display: flex; flex-direction: column; gap: .35em; margin-bottom: .6em; }
+.agp-lv-sph b { font: italic 800 1.05em/1 var(--agp-ft); letter-spacing: .02em; }
+.agp-lv-sph small { font: 700 .6em/1 var(--agp-fd); letter-spacing: .16em; color: var(--agp-dim); }
+.agp-lv-spg { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: .3em; }
+.agp-lv-spr { padding: .45em .5em .5em; margin-bottom: .3em; border-radius: .25em; background: rgba(255, 255, 255, .04); }
+.agp-lv-spr.is-on { background: rgba(225, 6, 0, .14); box-shadow: inset .2em 0 0 var(--agp-red); }
+.agp-lv-spr > span { display: flex; align-items: baseline; gap: .7em; margin-bottom: .35em; }
+.agp-lv-spr > span b { font: 700 .78em/1 var(--agp-fd); letter-spacing: .1em; }
+.agp-lv-spr > span small { font: 700 .56em/1 var(--agp-fd); letter-spacing: .14em; color: var(--agp-dim); }
+.agp-lv-spr > div { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .3em; }
+.agp-lv-spr canvas { display: block; width: 100%; height: auto; aspect-ratio: 140 / 50; border-radius: .18em; cursor: pointer; }
+.agp-lv-spr canvas:hover { outline: .12em solid rgba(255, 255, 255, .6); }
+.agp-lv-spr canvas.is-cur { outline: .12em dashed #fff; }
+.agp-lv-spr canvas.is-on { outline: .18em solid var(--agp-red); }
+.agp-lv-spk { flex: none; padding: .8em 1em .9em; }
+.agp-lv-spots { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3em; margin-bottom: .7em; }
+.agp-lv-spots b { min-width: 0; display: flex; flex-direction: column; gap: .3em; padding: .45em .5em; border-radius: .2em; cursor: pointer; background: rgba(255, 255, 255, .06); }
+.agp-lv-spots b:hover { background: rgba(255, 255, 255, .12); }
+.agp-lv-spots em, .agp-lv-spots small { font: 700 .56em/1 var(--agp-fd); font-style: normal; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agp-lv-spots em { color: #c1c7d2; }
+.agp-lv-spots small { color: var(--agp-dim); }
+.agp-lv-spots b.is-set small { color: #fff; }
+.agp-lv-spots b.is-on { background: #fff; box-shadow: inset 0 -.2em 0 var(--agp-red); }
+.agp-lv-spots b.is-on em, .agp-lv-spots b.is-on small { color: var(--agp-ink); }
+.agp-lv-sprow { display: flex; align-items: center; gap: .45em; }
+.agp-lv-sprow > i { flex: 1; }
+.agp-lv-sprow b { display: flex; align-items: center; justify-content: center; height: 2.1em; padding: 0 .9em; border-radius: .22em; cursor: pointer; background: rgba(255, 255, 255, .08);
+  font: 700 .66em/1 var(--agp-fd); letter-spacing: .12em; color: #e6e9ef; white-space: nowrap; }
+.agp-lv-sprow b:hover { background: rgba(255, 255, 255, .16); }
+.agp-lv-sz { display: flex; align-items: center; gap: .35em; margin-right: .5em; font: 700 .66em/1 var(--agp-fd); letter-spacing: .16em; color: var(--agp-dim); }
+.agp-lv-sz b { width: 2.6em; padding: 0; font-size: 1em; }
+.agp-lv-sprow b.is-on { background: #fff; color: var(--agp-ink); box-shadow: inset 0 -.2em 0 var(--agp-red); }
+.agp-lv-sprow b.is-dim { opacity: .35; pointer-events: none; }
+.agp-lv-hot { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.agp-lv-hot b { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: auto; cursor: pointer; }
+.agp-lv-hot b i { position: absolute; left: -.75em; top: -.75em; width: 1.5em; height: 1.5em; box-sizing: border-box; border-radius: 50%; border: .18em solid #fff;
+  background: rgba(20, 22, 30, .55); box-shadow: 0 0 0 .1em rgba(0, 0, 0, .5); transition: transform .12s; }
+.agp-lv-hot b.is-set i { background: var(--agp-red); }
+.agp-lv-hot b:hover i { transform: scale(1.25); }
+.agp-lv-hot b i { width: 1.1em; height: 1.1em; left: -.55em; top: -.55em; opacity: .85; }
+.agp-lv-hot b.is-on i { width: 2.2em; height: 2.2em; left: -1.1em; top: -1.1em; background: transparent; border-color: #fff; box-shadow: 0 0 0 .14em var(--agp-red), 0 0 .6em rgba(0, 0, 0, .6); opacity: 1; }
+.agp-lv-hot b span { display: none; position: absolute; left: 1.5em; top: -2.4em; padding: .35em .55em; border-radius: .2em; background: rgba(10, 12, 18, .85);
+  font: 700 .62em/1 var(--agp-fd); letter-spacing: .12em; white-space: nowrap; color: #fff; pointer-events: none; }
+.agp-lv-hot b:hover span, .agp-lv-hot b.is-on span { display: block; }
+.agp-lv-hot b.is-far { opacity: .35; }
+html.agp-touch .agp-menu .agp-lv.agp-mn-main .agp-lv-left { width: 24em; }
+html.agp-touch .agp-lv-spots { grid-template-columns: repeat(7, minmax(0, 1fr)); margin-bottom: .5em; }
+html.agp-touch .agp-lv-spots small { display: none; }
+/* livery select page (home > LIVERY CREATOR; menu.js "livery select page") */
+.agp-lvs .agp-lvs-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(17em, 1fr)); gap: 1em; align-content: start; padding: .3em; }
+.agp-lvs-card { display: flex; flex-direction: column; border-radius: .35em; overflow: hidden; background: rgba(20, 22, 30, .82); box-shadow: inset 0 0 0 .1em rgba(255, 255, 255, .08); cursor: pointer; }
+.agp-lvs-card:hover { background: rgba(32, 35, 46, .9); }
+.agp-lvs-card.is-sel { box-shadow: inset 0 0 0 .16em #fff, 0 0 0 .12em var(--agp-red); }
+.agp-lvs-pic { position: relative; aspect-ratio: 400 / 216; background: radial-gradient(ellipse at 50% 62%, #2b3142 0%, #161922 58%, #101218 100%); }
+.agp-lvs-pic canvas { display: block; width: 100%; height: 100%; }
+.agp-lvs-pic em, .agp-lvs-pic u { position: absolute; top: .6em; padding: .32em .5em; border-radius: .2em; font: 700 .6em/1 var(--agp-fd); font-style: normal; text-decoration: none; letter-spacing: .16em; }
+.agp-lvs-pic em { left: .6em; background: var(--agp-red); color: #fff; }
+.agp-lvs-pic u { right: .6em; background: rgba(255, 255, 255, .92); color: var(--agp-ink); opacity: 0; transition: opacity .12s; }
+.agp-lvs-card:hover .agp-lvs-pic u, .agp-lvs-card.is-sel .agp-lvs-pic u { opacity: 1; }
+.agp-lvs-pic > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 300 4em/1 var(--agp-fd); color: rgba(255, 255, 255, .5); }
+.agp-lvs-info { display: grid; grid-template-columns: auto 1fr; column-gap: .7em; row-gap: .35em; align-items: center; padding: .7em .8em .8em; min-width: 0; }
+.agp-lvs-card.is-new .agp-lvs-info { grid-template-columns: 1fr; }
+.agp-lvs-sw { grid-row: span 2; display: flex; flex-direction: column; width: .9em; height: 2.2em; border-radius: .15em; overflow: hidden; }
+.agp-lvs-sw i { flex: 1; }
+.agp-lvs-info b { font: italic 800 1.05em/1 var(--agp-ft); letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agp-lvs-info small { font: 700 .6em/1 var(--agp-fd); letter-spacing: .14em; color: var(--agp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agp-lvs-acts { display: flex; gap: .4em; }
+.agp-lvs-acts b { display: flex; align-items: center; height: 2.4em; padding: 0 1em; border-radius: .22em; cursor: pointer; background: rgba(255, 255, 255, .08); font: 700 .72em/1 var(--agp-fd); letter-spacing: .14em; }
+.agp-lvs-acts b:hover { background: rgba(255, 255, 255, .16); }
+.agp-lvs-acts b.is-del:hover { background: rgba(225, 6, 0, .55); }
+.agp-lvs-acts.is-dim b, .agp-lvs .agp-mn-start.is-dim { opacity: .35; pointer-events: none; }
 
 .agp-lv [data-k="lvNew"] { margin-top: .7em; }
 .agp-lv [data-k="lvDel"] .agp-row-btn { color: #ff6b62; }
@@ -1999,6 +2087,17 @@ html.agp-touch .agp-stp-cards { grid-template-columns: repeat(auto-fill, minmax(
 .agp-ld-bar { margin-top: 22px; width: 220px; height: 3px; background: #222a3a; overflow: hidden; border-radius: 2px; }
 .agp-ld-bar i { display: block; width: 40%; height: 100%; background: #e10600; animation: agp-ld-move 1.1s ease-in-out infinite; will-change: transform; }
 @keyframes agp-ld-move { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
+/* DNF spectating prompt (main.js DW): KEEP WATCHING / RESULTS, then a RESULTS pill while watching */
+.agp-dnfw { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; align-items: center; gap: .7em; padding: 1em 1.4em; border-radius: .4em; background: rgba(14, 16, 22, .88); border: .12em solid rgba(255, 255, 255, .14); color: #fff; font: 800 1em/1 var(--agp-fd, sans-serif); letter-spacing: .14em; }
+.agp-dnfw-t { font-size: .95em; }
+.agp-dnfw-b { display: flex; gap: .6em; }
+.agp-dnfw-b b { display: flex; align-items: center; gap: .6em; padding: .8em 1.2em; border-radius: .25em; background: rgba(31, 35, 46, .95); border: .12em solid rgba(255, 255, 255, .12); font-size: .8em; cursor: pointer; }
+.agp-dnfw-b b:hover { background: #fff; color: #11141b; }
+.agp-dnfw-b kbd { padding: .2em .5em; border-radius: .2em; background: rgba(255, 255, 255, .14); font: inherit; font-size: .8em; }
+.agp-dnfw.is-watch { bottom: 3%; flex-direction: row; padding: .4em; }
+.agp-dnfw.is-watch .agp-dnfw-t { display: none; }
+.agp-dnfw.is-watch .agp-dnfw-keep { display: none; }
 
 </style>
 </head>
@@ -55805,10 +55904,10 @@ CFG.aiCrash = {
   spin: [0.4, 1.5],
   levels: { off: 0, low: 0.5, normal: 1, high: 2 },
   ref: 9, fieldExp: 0.5,
-  diff: { easy: 1.25, medium: 1, adaptive: 1, hard: 0.9, extreme: 1.6 },   // (extreme 1.6 on the halved table = its old 0.8, 2026-10-25)
+  diff: { easy: 1.25, medium: 1, adaptive: 1, hard: 0.9, extreme: 1 },   // (extreme 1.6 on the halved table = its old 0.8, 2026-10-25; 1, 2026-11-05: fewer SCs / DNFs in Extreme seasons)
   wet: 1.5,
   wetDiff: { extreme: 0.4 },   // (user 2026-10-30: Extreme in the wet went off / hit the wall far too often - 1.6 x 2.5 = 4 x Normal's dry rate; 0.4: 1.6 x 1.4 = 2.25, Hard's 0.9 x 2.5)
-  hot: { lap1: 0.45, restart: 0.25, laps: 2 },
+  hot: { lap1: 0.25, restart: 0.1, laps: 2 },   // (2026-11-05: was 0.45 / 0.25 - less lap-1 / restart chaos)
   w: { battle: 1.8, cold: 1.6, worn: 1.5, slide: 2 },
   quali: 1,
 };
@@ -55821,7 +55920,8 @@ CFG.aiCrash = {
 // places: the player's car takes the slot (pit box, entry index) of a team that sits this race out. The car's number is
 // the player's race number (settings.playerNumber), never the livery's.
 //   data   { id, name (<= 20), short (3 letters), number 1..99 (old saves / the wire only: not chosen, not raced), primary,
-//            secondary, accent, design, helmet, helmet2 } (#rrggbb)
+//            secondary, accent, design, helmet, helmet2 (#rrggbb), sp: { spot: [sponsor 0..SP_N-1, design 0..4, size 0..2] } }
+//            (sponsors on the car: SPOTS ids, sponsors.js catalog index / design, car_model.js paints them; empty spots left out)
 //   clean(o) -> data | null (server + storage sanitiser)      team(data) -> TEAMS-shaped team object (cached per content)
 //   list() / get(id) / save(data) / remove(id) / duplicate(id) / create() (localStorage 'apexgp.liveries', at most MAX)
 //   forSession(settings, champ, seed) -> { slot, team, data } | null (main: the player's car in a quick race / time trial /
@@ -55840,6 +55940,28 @@ const Livery = (() => {
     ['prisma', 'PRISM FADE'], ['velocita', 'RACING STRIPES'], ['seraph', 'HALO ACCENT'], ['quartz', 'SHARDS'], ['tessera', 'TRICOLOUR'],
   ];
   const IDS = PATTERNS.map(p => p[0]);
+  // sponsor spots (car_model.js SPOT_GEO places them; menu order, front to back): [id, label, default design, default size]
+  const SPOTS = [['nose', 'NOSE', 0, 1], ['fwing', 'FRONT WING', 4, 1], ['fwend', 'FRONT ENDPLATES', 3, 1], ['chassis', 'CHASSIS SIDE', 0, 1],
+    ['halol', 'HALO LEFT', 3, 2], ['halor', 'HALO RIGHT', 3, 2], ['pod', 'SIDEPODS', 0, 2], ['airbox', 'AIRBOX', 1, 1],
+    ['ecfront', 'COVER FRONT', 2, 1], ['ecrear', 'COVER REAR', 3, 1], ['finl', 'FIN LEFT', 3, 1], ['finr', 'FIN RIGHT', 3, 1],
+    ['rwtop', 'REAR WING TOP', 0, 2], ['rwend', 'REAR ENDPLATES', 3, 1]];
+  const SPOT_IDS = SPOTS.map(s => s[0]);
+  const SP_N = 40, SP_D = 5, SP_Z = 3;   // sponsors (sponsors.js LIST length, append-only), designs, sizes
+  // sponsor map -> clean copy (only known spots, integer indices in range; null when empty)
+  function cleanSp(o) {
+    if (!o || typeof o !== 'object') return null;
+    const r = {};
+    let n = 0;
+    for (const k of SPOT_IDS) {
+      const v = o[k];
+      if (!Array.isArray(v)) continue;
+      const s = Math.round(+v[0]), d = Math.round(+v[1]), z = Math.round(+v[2]);
+      if (!(s >= 0 && s < SP_N)) continue;
+      r[k] = [s, d >= 0 && d < SP_D ? d : 0, z >= 0 && z < SP_Z ? z : 1]; n++;
+    }
+    return n ? r : null;
+  }
+  const spKey = sp => (sp ? SPOT_IDS.map(k => (sp[k] ? sp[k].join('.') : '')).join(',') : '');
   // editor swatches (also new liveries' colours)
   const PRESETS = ['#e10600', '#ff6a13', '#ffc400', '#c4e000', '#43b02a', '#00897b', '#00c3ff', '#1e6fd9', '#1a2a6c', '#6a2bd9',
     '#ff3ea5', '#7c1c3e', '#cdb07a', '#6e2c12', '#f4f4f4', '#c9ced6', '#4f5963', '#141414', '#d4af37', '#8fd1ff'];
@@ -55864,9 +55986,9 @@ const Livery = (() => {
     const n = Math.round(+o.number);
     const primary = hex(o.primary, '#1e6fd9'), secondary = hex(o.secondary, '#ffffff'), accent = hex(o.accent, '#ffc400');
     return { id, name, short: codeOf(o.short, name), number: isNum(n) && n >= 1 && n <= 99 ? n : 7, primary, secondary, accent,
-      design: IDS.includes(o.design) ? o.design : 'classic', helmet: hex(o.helmet, secondary), helmet2: hex(o.helmet2, accent) };
+      design: IDS.includes(o.design) ? o.design : 'classic', helmet: hex(o.helmet, secondary), helmet2: hex(o.helmet2, accent), sp: cleanSp(o.sp) };
   }
-  const ckey = d => [d.name, d.short, d.number, d.primary, d.secondary, d.accent, d.design, d.helmet, d.helmet2].join('|');
+  const ckey = d => [d.name, d.short, d.number, d.primary, d.secondary, d.accent, d.design, d.helmet, d.helmet2, spKey(d.sp)].join('|');
   function fnv(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
   // TEAMS-shaped object (perf 1: the AI's neutral pace, the player's car has no perf at all). Same content -> the same
   // object, so the renderers' per-team caches (livery material, HUD colours) are reused; an edit makes a new one
@@ -55878,7 +56000,7 @@ const Livery = (() => {
     let t = cache.get(k);
     if (t) return t;
     t = { id: 'lv' + fnv(k).toString(36), custom: true, name: d.name, short: d.short, primary: d.primary, secondary: d.secondary,
-      accent: d.accent, design: d.design, helmet: { base: d.helmet, stripe: d.helmet2 }, perf: 1, driver: { first: '', last: d.name, code: d.short, number: d.number } };
+      accent: d.accent, design: d.design, helmet: { base: d.helmet, stripe: d.helmet2 }, sponsors: d.sp, perf: 1, driver: { first: '', last: d.name, code: d.short, number: d.number } };
     if (cache.size > 64) cache.delete(cache.keys().next().value);
     cache.set(k, t);
     return t;
@@ -55952,7 +56074,7 @@ const Livery = (() => {
   const champTeam = (champ, ti) => (champ && champ.livery && isNum(champ.team) && (ti | 0) === (champ.team | 0) ? team(champ.livery)
     : (typeof TEAMS !== 'undefined' && TEAMS[ti]) || null);
 
-  return { KEY, MAX, NAME_MAX, PATTERNS, IDS, PRESETS, clean, hex, team, list, get, save, remove, duplicate, create, freeName, forSession, patch, champTeam, pickSlot,
+  return { KEY, MAX, NAME_MAX, PATTERNS, IDS, PRESETS, SPOTS, SPOT_IDS, SP_N, SP_D, SP_Z, cleanSp, clean, hex, team, list, get, save, remove, duplicate, create, freeName, forSession, patch, champTeam, pickSlot,
     reload: () => { mem = null; return list(); } };   // (tests: re-read storage)
 })();
 
@@ -61103,7 +61225,36 @@ const Weather = (() => {
     return { now: nw, cells };
   }
 
+  // ---------- time of day over a session (settings timeOfDay + todTo; pure, shared by every client) ----------
+  // phase 0 = day, 1 = dusk, 2 = night; a change only moves forward (day -> dusk (-> night), dusk -> night, night -> day:
+  // sunrise, the phase runs 2 -> 0 through a dawn). Progress: race = the leader's race distance / race distance (the race
+  // block carries raceDist to every client), time trial = driving time / todMins; qualifying / pre-race hold the start.
+  const TOD_PH = { day: 0, dusk: 1, night: 2 }, TOD_TO = { day: ['dusk', 'night'], dusk: ['night'], night: ['day'] };
+  function todPath(from, to) {
+    if (!(from in TOD_PH) || !TOD_TO[from].includes(to)) return null;
+    return { a: TOD_PH[from], b: TOD_PH[to], rise: from === 'night' };
+  }
+  function todProgress(W, G) {
+    const r = G && G.race;
+    if (!W || !r || G.attract || r.qs || r.phase === 'quali') return 0;
+    if (r.mode === 'timetrial') return clamp((r.phase === 'racing' || r.phase === 'finished' ? +r.t || 0 : 0) / (60 * Math.max(1, +W.todMins || 20)), 0, 1);
+    const L = G.track && G.track.length, n = +r.laps || 0;
+    if (!L || !n || n >= 999) return 0;
+    let d = 0;
+    for (const c of G.cars || []) if (c.raceDist > d) d = c.raceDist;
+    return clamp(d / (n * L), 0, 1);
+  }
+  // phase now (monotonic per weather object: a rewind / late race-block never winds the clock back)
+  function todPhase(W, G) {
+    const P = W && todPath(W.timeOfDay, W.todTo);
+    if (!P) return W ? (TOD_PH[W.timeOfDay] != null ? TOD_PH[W.timeOfDay] : 0) : 0;
+    const p = Math.max(W.todP || 0, todProgress(W, G));
+    W.todP = p;
+    return P.a + (P.b - P.a) * clamp(p / 0.97, 0, 1);
+  }
+
   return {
+    todPath, todProgress, todPhase, TOD_PH, TOD_TO,
     MODES, LV, WHEN, create, bind, step, forecast, probRain, windows, slots, rainIn, wetAhead, plan, bestNow, startChoice, odds,
     allowed, category, gripAt, crossovers: () => { tables(); return { I: CROSS.I, W: CROSS.W }; }, wetStep, eqW,
     rainLabel, trackLabel, nowKind, kindOf, iconSVG, cat, now, winSize, RAIN_T,
@@ -63652,7 +63803,7 @@ const RaceControl = (() => {
   function hzPlan(G, race, rc) {
     rc.hz = [];
     const T = G.track, nc = G.cars.length;   // (every car, the human ones too: user 2026-10-18)
-    if (!race.laps || race.laps > EV_MIN || race.carSpread || rc.cfg.fail === false || !nc || !(T.length > 0)) return;   // (Mechanical failures off: none; a race over EV_MIN laps: evPlan)
+    if (!race.laps || race.laps > EV_MIN || (race.carSpread && !race.carSpread.quick) || rc.cfg.fail === false || !nc || !(T.length > 0)) return;   // (Mechanical failures off: none; a race over EV_MIN laps: evPlan)
     let D = race.laps * T.length, lam = hzLam(T) * Math.min(1.5, D / FULL) * (FREQ[rc.cfg.freq] || 1) * Math.min(1, nc / HZ_N);
     if (rc.cfg.freq === 'testing') lam = Math.max(lam, 3);
     let n = 0, p = Math.exp(-lam), F = p;
@@ -63714,7 +63865,12 @@ const RaceControl = (() => {
   // Frequency (FREQ): Less keeps each drawn event with 0.6, More adds one with 0.6 per event (at least one try), Testing >= 3.
   // Mechanical failures off: none fire, the incidents still use them up.
   const EV_MIN = 5, EV_D0 = 0.05, EV_D1 = 0.85;
-  const EV_N = { street: [0.22, 0.55, 0.15, 0.05, 0.03], perm: [0.57, 0.30, 0.10, 0.03] };
+  // EV_N is a FULL-length race's table (FULL m; user 2026-11-05: about 1 VSC / SC every two races, near real F1 - was street
+  // 22 / 55 / 15 / 5 / 3, permanent 57 / 30 / 10 / 3 % at any length: 1-4 a 10-lap championship race with the unplanned ones).
+  // A shorter race keeps each drawn event with evKeep(D) = EV_K0 + (1 - EV_K0) x D / FULL (EV_K0: the start / lap 1's share,
+  // there in any race): a 10-15-lap race ~0.5-0.55 of a full race's events.
+  const EV_N = { street: [0.38, 0.45, 0.12, 0.04, 0.01], perm: [0.62, 0.28, 0.08, 0.02] };
+  const EV_K0 = 0.4, evKeep = D => Math.min(1, EV_K0 + (1 - EV_K0) * Math.max(0, D) / FULL);
   const EV_MIX = { street: [65, 50, 25], perm: [35, 25, 10] };
   // EV_O: the share of races that get one event over the draw (the tuning sims, 2026-10-28: 192 races, all difficulties,
   // 10 / 20 laps: street 5 %, permanent 3 %), so EV_P - the table drawn from - is EV_N with that taken back out: the REAL
@@ -63740,6 +63896,9 @@ const RaceControl = (() => {
     const k = layout(T).street ? 'street' : 'perm', P = EV_P[k], M = EV_MD[k], D = race.laps * T.length, f = rc.cfg.freq;
     let u = rnd(race, 7201, 1), n = 0;
     while (n < P.length - 1 && u >= P[n]) { u -= P[n]; n++; }
+    const kp = evKeep(D); let m0 = 0;
+    for (let i = 0; i < n; i++) if (rnd(race, 7205, i) < kp) m0++;   // (a shorter race: fewer)
+    n = m0;
     if (f === 'less') { let m = 0; for (let i = 0; i < n; i++) if (rnd(race, 7202, i) < 0.6) m++; n = m; }
     else if (f === 'more') { const m = n; for (let i = 0; i < Math.max(1, m); i++) if (rnd(race, 7202, i) < 0.6) n++; }
     else if (f === 'testing') n = Math.max(n, 3);
@@ -66740,7 +66899,7 @@ const RaceControl = (() => {
     actors, stopInput, jobInfo, obstacles, bluePanels, aiVsc, vscV, delta, deltaView, ownStep, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
-    aiRed, redInfo, resume, chooseTyre, qStep, qRedInfo, QR_GO, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
+    aiRed, redInfo, resume, chooseTyre, qStep, qRedInfo, QR_GO, RF_K, RF_WAIT, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, evKeep, EV_K0, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
     bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral, VSC_L0, VSC_L1, SC_L0, SC_L1, pxAt, spotFor };
 })();
 
@@ -71865,6 +72024,7 @@ const Race = (() => {
     }
     const player = cars.find(c => c.isPlayer);
     if (race.championship && !opts.attract && !tt && (!diff.allOut || (CFG.setup && CFG.setup.lapTime))) carSpread(race, cars, track, opts.spreadAll ? -1 : playerTeam, diff);   // (a championship: the cars differ)
+    else if (opts.spread === true && mode === 'race' && !opts.attract && (!diff.allOut || (CFG.setup && CFG.setup.lapTime))) carSpread(race, cars, track, opts.spreadAll ? -1 : playerTeam, diff, { rounds: [track.id], field: race.field, wxSeed: (seed ^ 0x3c6ef372) & 0x3fffffff, round: 0 });   // (a single-player quick race, main.js: the same kind of order, seeded per race)
     // car setup (front / rear wing, CFG.setup): the player's from opts.setup = {fw, rw}; each AI car picks its own for
     // the circuit (skill by difficulty and driver, team taste for front bias, more wing in the wet; opts.aiSetups false = off)
     if (player && !opts.attract && CFG.setup && CFG.setup.apply) CFG.setup.apply(player, opts.setup);
@@ -71934,9 +72094,10 @@ const Race = (() => {
   }
 
   // ---------- championships: a real grid at every level (user 2026-10-17 / 2026-10-24, HANDOFF §60 + "Championship pecking order") ----------
-  // In a championship (every level; never quick races, the time trial, attract, multiplayer) the AI cars differ like a real
-  // grid, and each SEASON draws its own competitive shape from its seed (GRID.nW .. back): how many cars fight at the front
-  // (1 = a dominant car well clear .. 5 within a few tenths), the gap behind them, the midfield's and the back's spread, how
+  // In a championship (every level) and a single-player quick race (opts.spread, 2026-11-05: a one-round season from the race
+  // seed; never the time trial, attract, multiplayer) the AI cars differ like a real grid, and each SEASON draws its own
+  // competitive shape from its seed (GRID.nW .. back; HANDOFF "Pecking order per driver"): how many drivers fight for wins (1 = a
+  // dominant car well clear .. 4 within a few tenths), the gap behind them, a chasing group, the midfield and the back, how
   // much the order develops through the season (GRID.dev) and a per-round track affinity (GRID.aff). The team order = TEAMS
   // perf + a seeded shake-up (GRID.jit). Per round a car's deficit D (lap-time share behind the quickest AI car, which stays
   // exactly the level's top pace, so easier levels stay as beatable) -> car.seasonK = {D, lap: 1 + D, pace}:
@@ -71952,18 +72113,22 @@ const Race = (() => {
   // (cal: the AI's real solo laps lose more per lever than the lap model says - Extreme at the limit, 4 circuits: power
   // x1.27, downforce x1.24, drag x1.8 the model's elasticity; x0.93 for the 40 / 40 / 20 mix together)
   const GRID = {
-    // the season's shape (lap-time shares): front group size n (weights for 1..5, at most a quarter of the AI cars), its span
-    // per extra car, the gap behind it, a dominant car's lead (n = 1), the midfield (55 % of the rest) span, the step to the
-    // back and its span; interior cars of each group at sorted uniform places
-    nW: [0.22, 0.28, 0.24, 0.16, 0.10], fSpan: [0.0003, 0.0008], gap: [0.0010, 0.0035], lead: [0.0020, 0.0055],
-    mid: [0.0030, 0.0065], step: [0.0005, 0.0025], back: [0.0015, 0.0045],
-    jit: 0.010,                 // team order: (1 - TEAMS perf) + jit x U(-.5, .5)
-    dev: [0.0005, 0.0040],      // development by the last round: per team U(-1, 1) x the season's amount
-    aff: [0.0008, 0.0020],      // per round: per team U(-1, 1) x the season's amount (a track that suits the car; at 0.04-0.12 % a
-                                // 0.04 % edge at Extreme - pole, then lap 1 - still won 12 of 16 in a 6-close season)
-    // per level: x the deficits (the slower levels' own noise - mistakes, slow getaways, line noise - shuffles more: a wider
-    // field keeps the same season shape; the quickest AI car stays at the level's top pace either way)
-    lv: { easy: 1.6, medium: 1.4, hard: 1.3, extreme: 1, adaptive: 1 },
+    // the season's shape (lap-time shares; user 2026-11-05: per driver - no team-mates, one car per team -, a new shape and
+    // order every season): nF = 1..4 drivers fighting for wins (weights nW, at most a fifth of the AI cars) spanning fSpan per
+    // extra car, the gap behind them (lead: a lone leader's), a chasing group (~30 % of the cars: usually P5-P11, the odd podium),
+    // a step, the midfield, a step, the backmarkers (~20 %); the cars inside each group at sorted uniform places
+    nW: [0.20, 0.35, 0.30, 0.15], fSpan: [0.0002, 0.0008], gap: [0.0025, 0.0045], lead: [0.0030, 0.0055],
+    ch: [0.0015, 0.0035], chN: 0.30, step: [0.0005, 0.0015], mid: [0.0040, 0.0065], step2: [0.0008, 0.0020], back: [0.0020, 0.0040], backN: 0.20,
+    jit: 0.030,                 // the driver order: (1 - TEAMS perf) + jit x U(-.5, .5) (perf spans 0.025: the big names a bit
+                                // more often near the front, any driver can top a season)
+    dev: [0.0003, 0.0015],      // development by the last round: per car U(-1, 1) x the season's amount
+    aff: [0.0003, 0.0006],      // per round: per car U(-1, 1) x the season's amount (a track that suits the car; at Extreme 0.04 %
+                                // - pole, then lap 1 - decides a race between equal cars)
+    qUp: 0.012, qUpK: [0.5, 0.9],   // a great qualifying day: per car per round qUp, its quali laps x (1 - D x U(qUpK)) - seasonK.q
+    // per level: x the deficits, the same season shape (the quickest AI car stays at the level's top pace); user 2026-11-05: Q1
+    // pole -> last ~1.5-1.9 s Extreme, 1.8-2.3 Hard, 2.2-2.8 Medium, 2.7-3.4 Easy (with each level's own quali noise and mistakes;
+    // tools/champ_grid.mjs --qonly)
+    lv: { easy: 1.35, medium: 1.2, hard: 1.05, extreme: 1, adaptive: 1 },
     // per level: the pace factor's lap-time elasticity (solo laps at 1 vs 0.985, 8 circuits: Easy 0.62-1.05, Medium 0.72-0.86,
     // Hard 0.57-1.01; Adaptive: the band's own offsets)
     el: { easy: 0.89, medium: 0.77, hard: 0.70, adaptive: 0.77 },
@@ -71986,16 +72151,21 @@ const Race = (() => {
   const uIn = (r, a) => a[0] + (a[1] - a[0]) * r();
   // the season's sorted deficits for n AI cars (the shape; r = the season's own stream)
   function gridShape(r, n) {
-    const W = GRID.nW, cap = Math.max(1, Math.min(W.length, Math.round(n / 4)));
+    const W = GRID.nW, cap = Math.max(1, Math.min(W.length, Math.round(n / 5)));
     let tot = 0; for (let i = 0; i < cap; i++) tot += W[i];
     let nF = 1, x = r() * tot;
     while (nF < cap && x >= W[nF - 1]) { x -= W[nF - 1]; nF++; }
+    nF = Math.min(nF, n);
+    const nR = n - nF, nB = Math.min(nR, Math.round(n * GRID.backN)), nC = Math.min(nR - nB, Math.max(nR - nB > 0 ? 1 : 0, Math.round(n * GRID.chN + (r() - 0.5)))), nM = nR - nB - nC;
     const span = nF > 1 ? uIn(r, GRID.fSpan) * (nF - 1) : 0, gap = uIn(r, nF > 1 ? GRID.gap : GRID.lead);
-    const nR = Math.max(0, n - nF), nM = Math.min(nR, Math.max(1, Math.round(nR * 0.55))), nB = nR - nM;
-    const mid = uIn(r, GRID.mid), step = uIn(r, GRID.step), back = uIn(r, GRID.back);
+    const chS = uIn(r, GRID.ch), st = uIn(r, GRID.step), mid = uIn(r, GRID.mid), st2 = uIn(r, GRID.step2), back = uIn(r, GRID.back);
     const fill = (k, a, w, out) => { const u = []; for (let i = 0; i < k; i++) u.push(i === 0 ? 0 : i === k - 1 ? 1 : r()); u.sort((p, q) => p - q); for (const v of u) out.push(a + w * v); };
     const d = [];
-    fill(nF, 0, span, d); fill(nM, span + gap, mid, d); fill(nB, span + gap + mid + step, back, d);
+    let a = 0;
+    fill(nF, a, span, d); a += span + gap;
+    fill(nC, a, chS, d); if (nC) a += chS + st;
+    fill(nM, a, mid, d); if (nM) a += mid + st2;
+    fill(nB, a, back, d);
     return { d: d.slice(0, n), nF };
   }
   const seasons = new Map();   // season key -> its draws (fixed for the season)
@@ -72033,14 +72203,16 @@ const Race = (() => {
     return out;
   }
   // this round's spread on the cars: car.seasonK / carK / drvK / relia
-  function carSpread(race, cars, T, playerTeam, diff) {
-    const ch = race.championship, field = Array.isArray(ch.field) && ch.field.length ? ch.field : cars.map(c => c.teamIndex);   // (an old save without a field: its cars)
+  // (chQ: a quick race's own one-round "season" from its seed, Race.create opts.spread: the same kind of order, no reliability -
+  // race control's failures stay)
+  function carSpread(race, cars, T, playerTeam, diff, chQ) {
+    const ch = chQ || race.championship, field = Array.isArray(ch.field) && ch.field.length ? ch.field : cars.map(c => c.teamIndex);   // (an old save without a field: its cars)
     const nR = Math.max(1, (ch.rounds ? ch.rounds.length : 1) - 1), round = U.clamp(ch.round | 0, 0, nR), level = diff.allOut ? 'extreme' : diff.id;
     const o = seasonOf(ch, playerTeam, field), Dm = seasonD(ch, playerTeam, round, level, field), by = new Map(o.teams.map(t => [t.ti, t]));
     if (!o.teams.length) return;
     let S = 0; for (const ti in Dm) S = Math.max(S, Dm[ti]);
     const E = diff.allOut ? gridElastic(T) : null, L = T.length, laps = race.laps || 1, el = GRID.el[level] || 1;
-    race.carSpread = { S, round, n: o.teams.length, nF: o.nF, level };
+    race.carSpread = { S, round, n: o.teams.length, nF: o.nF, level, quick: !!chQ };
     // (reliability by the race's distance, as race control's failures: the table's rate over a full GP, at least failD[0] of it;
     // 2026-10-24: per race whatever its length it gave a 5-8 lap 20-car race ~0.5 failures - most of the extra SCs / VSCs)
     const relK = U.clamp(laps * L / GRID.failD[1], GRID.failD[0], 1);
@@ -72049,7 +72221,8 @@ const Race = (() => {
       const t = by.get(car.teamIndex);
       if (!t || (car.isPlayer && playerTeam >= 0)) continue;
       const D = Dm[car.teamIndex] || 0;
-      car.seasonK = { D, lap: 1 + D, pace: diff.allOut ? 1 : Math.pow(1 + D, -1 / el) };
+      const qr = U.rng(mix32(mix32(o.ss, 6000 + car.teamIndex), round + 1)), qUp = qr() < GRID.qUp;   // (a great qualifying day: Quali expLap, one-shot quali)
+      car.seasonK = { D, lap: 1 + D, pace: diff.allOut ? 1 : Math.pow(1 + D, -1 / el), q: qUp ? 1 - D * uIn(qr, GRID.qUpK) / (1 + D) : 1 };
       if (E) {
         let wP = GRID.mix[0] + GRID.mixJ * t.mP, wC = GRID.mix[1] + GRID.mixJ * t.mC, wD = Math.max(0.05, 1 - wP - wC);
         const sw = wP + wC + wD; wP /= sw; wC /= sw; wD /= sw;
@@ -72057,8 +72230,9 @@ const Race = (() => {
       }
       car.drvK = diff.allOut ? { aggr: U.lerp(GRID.aggr[0], GRID.aggr[1], t.u[0]), err: U.lerp(GRID.err[0], GRID.err[1], t.u[1]), mist: U.lerp(GRID.mist[0], GRID.mist[1], t.u[2]) }
         : { aggr: U.clamp((diff.aggression || 0.55) * U.lerp(GRID.aggrL[0], GRID.aggrL[1], t.u[0]), 0.1, 1), err: U.lerp(GRID.err[0], GRID.err[1], t.u[1]), mist: (diff.mistake || 0) * U.lerp(GRID.mistL[0], GRID.mistL[1], t.u[2]) };
-      car.relia = fail(car, U.lerp(GRID.fail[0], GRID.fail[1], S > 0 ? D / S : 0));
+      if (!chQ) car.relia = fail(car, U.lerp(GRID.fail[0], GRID.fail[1], S > 0 ? D / S : 0));
     }
+    if (chQ) return;
     // the player's car fails too (its team's stream, the grid's mean rate; Mechanical failures off: no one), user 2026-10-18
     for (const car of cars) if (car.isPlayer && playerTeam >= 0) car.relia = fail(car, (GRID.fail[0] + GRID.fail[1]) / 2);
   }
@@ -72128,7 +72302,7 @@ const Race = (() => {
     // (\u22480.3 s of CPU); fall back to the lap estimate if the AI/physics aren't available
     let ref = simQualiLap(G, diff);
     if (!(ref > 20)) ref = race.lapTimeEst * QUALI_K;
-    const times = G.cars.filter(c => c !== P).map(car => ({ car, time: (race.carSpread ? ref * (car.seasonK ? car.seasonK.lap : 1) : ref / car.team.perf) * (1 + (rnd() + rnd() - 1) * 0.006) }));   // (carSpread: the car's own pace)
+    const times = G.cars.filter(c => c !== P).map(car => ({ car, time: (race.carSpread ? ref * (car.seasonK ? car.seasonK.lap * (car.seasonK.q || 1) : 1) : ref / car.team.perf) * (1 + (rnd() + rnd() - 1) * 0.006) }));   // (carSpread: the car's own pace, its quali day)
     // track limits, judged as the player's lap (the level's rules): each AI lap is a solo flying lap, deleted as often as
     // the AI's real solo push laps are at this difficulty and level (OS_DEL) -> NO TIME, the back of the grid (own stream)
     const dr = U.rng((race.seed ^ 0x3c6ef372) >>> 0), pd = race.pen && OS_DEL[race.difficulty] ? OS_DEL[race.difficulty][race.penaltyLevel] || 0 : 0;
@@ -75432,8 +75606,12 @@ const Quali = (() => {
   }
   // expected push lap (s, no noise) of `car` on compound c at track wetness w
   function expLap(G, qs, car, c, w) {
-    return qs.ref.lap * Math.pow(qs.ref.pace / paceOf(G, car), CAL.e) * (CAL.k[G.race.difficulty] || 1) * (CAL.s[G.race.difficulty] || 1) * lapF(c || 'S', w) / lapF('S', 0) * (1 + CAL.wet * Math.min(1, (w || 0) / 0.5))
-      * (car && car.carK ? car.carK.lap : 1);   // (a championship at Extreme: the car's own pace, race.js carSpread; the other levels: in the brain's pace)
+    // (a car in the pecking order at Easy / Medium / Hard, race.js carSpread: its brain's pace without the season's factor, x the
+    // season's lap factor seasonK.lap - the physical lap's, GRID.el; (ref / pace)^e alone made the order ~1 / el too wide)
+    const d = DIFFICULTY[G.race.difficulty] || {}, sk = car && car.seasonK && car.seasonK.pace > 0 && car.seasonK.lap > 0 && !d.allOut && !d.adaptive ? car.seasonK : null;
+    return qs.ref.lap * Math.pow(qs.ref.pace / (sk ? paceOf(G, car) / sk.pace : paceOf(G, car)), CAL.e) * (sk ? sk.lap : 1) * (CAL.k[G.race.difficulty] || 1) * (CAL.s[G.race.difficulty] || 1) * lapF(c || 'S', w) / lapF('S', 0) * (1 + CAL.wet * Math.min(1, (w || 0) / 0.5))
+      * (car && car.carK ? car.carK.lap : 1)   // (a championship at Extreme: the car's own pace, race.js carSpread; the other levels: in the brain's pace)
+      * (car && car.seasonK && car.seasonK.q > 0 ? car.seasonK.q : 1);   // (race.js carSpread: a rare great qualifying day, lap-model laps)
   }
   const qWear = (G, race) => (race.wearScale > 0 ? race.wearScale / (Math.max(race.laps || 0, Q_REF) * G.track.length) : 0);
   // lap-time factor of the tyre's wear over the coming lap (grip^-0.45 as Weather's lap factors; nominal usage)
@@ -75449,7 +75627,10 @@ const Quali = (() => {
     const q = car.q, race = G.race, diff = DIFFICULTY[race.difficulty] || DIFFICULTY.medium;
     const a = rnd(qs, q), b = rnd(qs, q), m = rnd(qs, q), mc = rnd(qs, q), tr = rnd(qs, q), tc = rnd(qs, q), dl = rnd(qs, q), da = rnd(qs, q);
     let T = expLap(G, qs, car, car.tyre.compound, wetNow(qs)) * wearF(G, car) * (1 + NOISE * Math.sqrt(-2 * Math.log(Math.max(1e-9, a))) * Math.cos(6.2831853 * b));
-    if (m < Math.min(0.4, (diff.mistake || 0.008) * 15)) T += 0.3 + 1.2 * mc;
+    // (a car in the pecking order, race.js carSpread: its own mistake rate car.drvK.mist, as live - Extreme's 0 read as 0.008, a 12 %
+    // chance a push lap, made Q1-Q3 at Extreme a lottery, 2026-11-05; otherwise the level's as before)
+    const mk = car.drvK && car.drvK.mist != null ? car.drvK.mist : diff.mistake || 0.008;
+    if (m < Math.min(0.4, mk * 15)) T += 0.3 + 1.2 * mc;
     if (tr < 0.1 * share(G)) T += 0.2 + 0.6 * tc;
     const R = rowOf(qs, qs.idx, car.id);   // (a car's lap is deleted only once it has a time in this session: never its only one)
     q.delAt = dl < (DEL[race.difficulty] != null ? DEL[race.difficulty] : 0.02) && R && R.best != null ? 0.15 + 0.7 * da : -1;
@@ -76923,7 +77104,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-01 13:13';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-06 00:38';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -81612,14 +81793,14 @@ const NetCore = (() => {
     ['ty', 'THANKS'], ['wd', 'WELL DRIVEN'], ['close', 'CLOSE ONE!'], ['oops', 'OOPS'], ['wow', 'WOW'], ['lol', 'HAHA'],
     ['again', 'REMATCH?'], ['ready', 'READY?'], ['brb', 'BE RIGHT BACK'], ['bye', 'GOTTA GO']];
   const OPT = {
-    mode: ['race', 'timetrial'], laps: [1, 2, 3, 5, 8, 10, 15, 20, 30], weather: ['dry', 'damp', 'wet', 'dynamic', 'custom'], timeOfDay: ['day', 'dusk', 'night'],
+    mode: ['race', 'timetrial'], laps: [1, 2, 3, 5, 8, 10, 15, 20, 30], weather: ['dry', 'damp', 'wet', 'dynamic', 'custom'], timeOfDay: ['day', 'dusk', 'night'], todTo: ['none', 'dusk', 'night', 'day'], todMins: [10, 20, 30, 60],   // (todTo: Weather.todPath; an invalid pair = no change)
     wxCond: ['dry', 'damp', 'wet'], wxWhen: ['early', 'mid', 'late'],   // (weather 'custom': weatherStart / weatherEnd, weatherWhen - as single player's)
     difficulty: ['easy', 'medium', 'hard', 'extreme'], tyreWear: ['off', 'normal', 'high'], contact: ['contact', 'ghost'],
     damage: ['none', 'off', 'visual', 'reduced', 'full'],   // contact damage (damage.js; 'none' = the feature off: old contacts)
     penaltyLevel: ['off', 'lenient', 'standard', 'strict'],
     grid: ['random', 'qfull'], qualiLen: ['f1', 'sprint', 'short', 'quick', 'mini', 'custom'], qualiDay: ['same', 'before'],   // (qualifying: Quali.PRESETS keys)
   };
-  const DEF = { mode: 'race', trackId: 'vortex', laps: 5, fieldSize: 10, weather: 'dry', timeOfDay: 'day', difficulty: 'medium', penalties: true,
+  const DEF = { mode: 'race', trackId: 'vortex', laps: 5, fieldSize: 10, weather: 'dry', timeOfDay: 'day', todTo: 'none', todMins: 20, difficulty: 'medium', penalties: true,
     penaltyLevel: 'standard', contact: 'contact', tyreWear: 'normal', twoCompound: false, humanSlots: 4, grid: 'random', qualiLen: 'quick', qualiDay: 'same', grassSlip: 0.8, damage: 'none',
     weatherStart: 'dry', weatherEnd: 'wet', weatherWhen: 'mid' };
   // The room's weather seed (wxSeed; user 2026-10-24: the lobby shows the forecast of the race that will run). The server
@@ -81647,7 +81828,7 @@ const NetCore = (() => {
     const pick = (k, list) => (list.includes(s[k]) ? s[k] : DEF[k]);
     if (s.difficulty === 'ultra') s = Object.assign({}, s, { difficulty: 'extreme' });   // (an older client: ULTRA is Extreme now)
     const o = {};
-    for (const k of ['mode', 'weather', 'timeOfDay', 'difficulty', 'tyreWear', 'contact', 'grid', 'qualiLen', 'qualiDay', 'damage']) o[k] = pick(k, OPT[k]);
+    for (const k of ['mode', 'weather', 'timeOfDay', 'todTo', 'todMins', 'difficulty', 'tyreWear', 'contact', 'grid', 'qualiLen', 'qualiDay', 'damage']) o[k] = pick(k, OPT[k]);
     const qc = s.qualiCustom && typeof s.qualiCustom === 'object' ? s.qualiCustom : {}, qa = Array.isArray(qc) ? { q1: qc[0], q2: qc[1], q3: qc[2] } : qc;
     o.qualiCustom = {}; for (const k in Q_CUSTOM) o.qualiCustom[k] = clamp(Math.round(+qa[k]) || Q_CUSTOM[k], 3, 30);   // (grid 'qfull': Q1 / Q2 / Q3)
     o.trackId = trackIds.includes(s.trackId) ? s.trackId : trackIds.includes(DEF.trackId) ? DEF.trackId : trackIds[0];
@@ -81692,7 +81873,7 @@ const NetCore = (() => {
     const S = setup.settings, me = setup.cars.find(c => c.id === setup.you) || setup.cars[0];
     return Object.assign({}, base || {}, {
       mode: setup.mode === 'timetrial' ? 'timetrial' : 'race', trackId: S.trackId, laps: S.laps, lapPct: 0, difficulty: S.difficulty, weather: S.weather,   // (lapPct 0: the server's laps as they are - not main's own % RACE from a single-player setting in base)
-      timeOfDay: S.timeOfDay, tyreWear: S.tyreWear, twoCompound: !!S.twoCompound, penalties: S.penalties !== false,
+      timeOfDay: S.timeOfDay, todTo: OPT.todTo.includes(S.todTo) ? S.todTo : 'none', todMins: OPT.todMins.includes(+S.todMins) ? +S.todMins : 20, tyreWear: S.tyreWear, twoCompound: !!S.twoCompound, penalties: S.penalties !== false,
       penaltyLevel: OPT.penaltyLevel.includes(S.penaltyLevel) ? S.penaltyLevel : S.penalties === false ? 'off' : DEF.penaltyLevel,
       grassSlip: grassOf(S.grassSlip),   // (the room's: main puts it in G.world for this car's physics)
       raceControl: rcOf(S.raceControl),   // (the room's race control: the server decides, this client only draws)
@@ -82362,6 +82543,247 @@ const NetCore = (() => {
     toGridClient,   // (qualifying: 'qgrid')
     fmtCode, cleanCode, cleanName,
   };
+})();
+
+
+// ===== src/sponsors.js =====
+// Apex GP \u2014 fictional sponsors: catalog, logo art (canvas shapes + system-font text, nothing loaded), AI teams' sponsor
+// sets. Declares only `Sponsors`. Loads in Node (no DOM at load); drawing needs a 2D canvas context.
+//   LIST[i] = { id, name, ind (industry), tag (strapline), a / b (brand colours), plate, font, mark } \u2014 40, append-only
+//     (livery data stores the index: livery.js SP_N). Every sponsor has its own mark (MARKS: 40 different shapes).
+//   DESIGNS = [WORDMARK, BADGE, STACKED, SINGLE COLOUR, LONG STRIP]; SIZES = [S, M, L] (car_model.js scales the spot box).
+//   draw(g, i, d, W, H, bg) draws sponsor i in design d centred on the origin, fitted into W x H (current units);
+//     bg = '#rrggbb' behind it (wordmark / single colour pick a readable colour against it).
+//   aspect(i, d) natural width / height.   teamSet(team) -> sponsor map for a fixed team (custom liveries: team.sponsors).
+//   randomSet(seed) -> a full random set (the editor's RANDOM ALL).
+const Sponsors = (() => {
+  const TAU = Math.PI * 2;
+  const FONTS = {
+    sans: ['700', 'Arial, Helvetica, sans-serif'], black: ['900', "'Arial Black', Arial, sans-serif"], cond: ['400', "Impact, 'Arial Narrow', sans-serif"],
+    serif: ['700', "Georgia, 'Times New Roman', serif"], mono: ['700', "'Courier New', Courier, monospace"], round: ['700', "'Trebuchet MS', Verdana, sans-serif"],
+    wide: ['700', 'Verdana, Geneva, sans-serif'],
+  };
+  // [name, industry, strapline, a, b, plate, font, italic, spacing (em), lowercase, mark, badge shape]
+  const RAW = [
+    ['HELIOSTRA', 'Solar energy', 'SOLAR POWER', '#ffb000', '#e8550c', '#141414', 'black', 0, 0.02, 0, 'sun', 'circle'],
+    ['ZEPTIC', 'Energy drink', 'ENERGY DRINK', '#c6ff00', '#111111', '#111111', 'cond', 1, 0.04, 0, 'bolt', 'shield'],
+    ['ORBYLON', 'Satellite internet', 'SATELLITE NET', '#1b2f8f', '#19c3ff', '#ffffff', 'wide', 0, 0.08, 0, 'orbit', 'circle'],
+    ['VALCREST', 'Private bank', 'PRIVATE BANK', '#0e4d3a', '#c9a24a', '#ffffff', 'serif', 0, 0.12, 0, 'shield', 'shield'],
+    ['TICKWELL', 'Watches', 'GENEVA 1891', '#111111', '#c9a24a', '#ffffff', 'serif', 0, 0.2, 0, 'clock', 'circle'],
+    ['AQUENTA', 'Mineral water', 'MINERAL WATER', '#1e88e5', '#7fd6ff', '#ffffff', 'round', 0, 0.02, 1, 'drop', 'round'],
+    ['IGNEXA', 'Lubricants', 'MOTOR OILS', '#d7261e', '#ffc20e', '#141414', 'black', 1, 0, 0, 'flame', 'hex'],
+    ['NIMBRA', 'Cloud computing', 'CLOUD', '#2f80ed', '#9ad0ff', '#ffffff', 'sans', 0, 0, 1, 'cloud', 'round'],
+    ['SKARVO', 'Sportswear', 'SPORT', '#111111', '#ff3d00', '#ffffff', 'black', 1, -0.02, 0, 'zigzag', 'square'],
+    ['MARIVO', 'Shipping', 'OCEAN FREIGHT', '#0b3c6f', '#00a0b0', '#ffffff', 'wide', 0, 0.1, 0, 'anchor', 'circle'],
+    ['CYPHERA', 'Cybersecurity', 'SECURE', '#5b2bd6', '#19e0a0', '#0e0b1e', 'mono', 0, 0.06, 0, 'keyhole', 'round'],
+    ['FERNHOLT', 'Coffee', 'COFFEE ROASTERS', '#4a2a17', '#d7a86e', '#f6efe4', 'serif', 1, 0.04, 0, 'bean', 'circle'],
+    ['SKYMERA', 'Airline', 'AIRWAYS', '#c8102e', '#1d2a5c', '#ffffff', 'sans', 1, 0.06, 0, 'wing', 'round'],
+    ['SWIFTRA', 'Express courier', 'EXPRESS', '#ffcc00', '#d40511', '#d40511', 'black', 1, -0.01, 0, 'chevrons', 'square'],
+    ['CIRQON', 'Semiconductors', 'SEMICONDUCTORS', '#00a86b', '#111111', '#ffffff', 'wide', 0, 0.06, 0, 'chip', 'square'],
+    ['AURALIS', 'Audio', 'SOUND', '#111111', '#ff2d55', '#ffffff', 'round', 0, 0.14, 0, 'soundwave', 'round'],
+    ['KAMERO', 'Cameras', 'IMAGING', '#111111', '#ffd400', '#ffd400', 'sans', 0, 0.02, 0, 'aperture', 'circle'],
+    ['SUITEON', 'Hotels', 'HOTELS & RESORTS', '#6d1a36', '#d4af37', '#ffffff', 'serif', 0, 0.16, 0, 'crown', 'shield'],
+    ['VOYENTA', 'Travel', 'TRAVEL', '#00897b', '#ff7043', '#ffffff', 'round', 0, 0, 1, 'pin', 'round'],
+    ['TELVAR', 'Telecom', 'MOBILE', '#d6007e', '#ffffff', '#d6007e', 'sans', 0, 0.04, 0, 'signal', 'square'],
+    ['ZENTIPAY', 'Payments', 'PAY ANYWHERE', '#3b2fc9', '#2ee6a8', '#ffffff', 'sans', 0, -0.01, 1, 'infinity', 'round'],
+    ['STEELMONT', 'Steel', 'STEEL WORKS', '#4b5563', '#e11d2a', '#ffffff', 'cond', 0, 0.06, 0, 'ibeam', 'square'],
+    ['RIVOTEC', 'Power tools', 'POWER TOOLS', '#ff6a00', '#1a1a1a', '#1a1a1a', 'black', 1, 0, 0, 'gear', 'hex'],
+    ['CHEMORA', 'Chemicals', 'CHEMICALS', '#00838f', '#ffd600', '#ffffff', 'wide', 0, 0.04, 0, 'molecule', 'hex'],
+    ['KARSTONE', 'Construction', 'BUILD', '#ffc400', '#222222', '#222222', 'cond', 0, 0.08, 0, 'cube', 'square'],
+    ['ASTREON', 'Aerospace', 'AEROSPACE', '#0a1f44', '#9ec9ff', '#ffffff', 'wide', 0, 0.22, 0, 'star4', 'circle'],
+    ['VITARO', 'Health', 'HEALTH', '#2e7d32', '#a5d6a7', '#ffffff', 'round', 0, 0.02, 1, 'cross', 'round'],
+    ['PLAYNOVA', 'Gaming', 'GAMES', '#7c3aed', '#22d3ee', '#120a26', 'black', 1, 0, 0, 'play', 'round'],
+    ['CINELOOP', 'Streaming', 'STREAMING', '#ff4f1f', '#1c1c1c', '#1c1c1c', 'round', 0, 0.02, 1, 'loop', 'circle'],
+    ['NOCTERA', 'Eyewear', 'EYEWEAR', '#111111', '#9aa4b1', '#ffffff', 'wide', 0, 0.3, 0, 'lens', 'square'],
+    ['FLORELLE', 'Fragrance', 'PARFUMS', '#d6336c', '#e8b4c8', '#ffffff', 'serif', 1, 0.08, 0, 'flower', 'circle'],
+    ['RENTIQO', 'Car rental', 'CAR RENTAL', '#00a651', '#ffd200', '#ffffff', 'sans', 1, 0, 0, 'key', 'round'],
+    ['CREDALIS', 'Insurance', 'INSURANCE', '#0057b8', '#ffd100', '#ffffff', 'sans', 0, 0.06, 0, 'umbrella', 'shield'],
+    ['VERDANTE', 'Tea', 'FINE TEAS', '#2f6b2f', '#c5e17a', '#fbf8ef', 'serif', 1, 0.02, 0, 'leaf', 'circle'],
+    ['LINQSTAR', 'Fibre broadband', 'FIBRE', '#00b4d8', '#03045e', '#03045e', 'sans', 0, 0.02, 0, 'link', 'round'],
+    ['CELLARC', 'Batteries', 'BATTERIES', '#20c997', '#111111', '#111111', 'cond', 1, 0.04, 0, 'battery', 'square'],
+    ['NEURAVO', 'AI software', 'AI', '#6a00f4', '#00e5ff', '#ffffff', 'mono', 0, 0.02, 1, 'neural', 'hex'],
+    ['OMNIVEX', 'Consulting', 'CONSULTING', '#111827', '#f59e0b', '#ffffff', 'wide', 0, 0.18, 0, 'pyramid', 'square'],
+    ['SUMMITA', 'Outdoor gear', 'OUTDOOR', '#1d4e89', '#ffffff', '#1d4e89', 'black', 0, 0.02, 0, 'mountain', 'shield'],
+    ['GRIDORA', 'Electric utility', 'POWER GRID', '#00c853', '#0d47a1', '#ffffff', 'round', 1, 0.02, 0, 'plug', 'hex'],
+  ];
+  const LIST = RAW.map((r, i) => ({ i, id: r[0].toLowerCase(), name: r[0], ind: r[1], tag: r[2], a: r[3], b: r[4], plate: r[5], font: r[6], it: !!r[7], ls: r[8], lc: !!r[9], mark: r[10], shape: r[11] }));
+  const DESIGNS = [['word', 'WORDMARK'], ['badge', 'BADGE'], ['stack', 'STACKED'], ['mono', 'SINGLE COLOUR'], ['strip', 'LONG STRIP']];
+  const SIZES = [['s', 'SMALL'], ['m', 'MEDIUM'], ['l', 'LARGE']];
+
+  // ---------- colour helpers ----------
+  const rgb = h => { const n = parseInt(String(h).slice(1, 7), 16) || 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const lum = h => { const c = rgb(h).map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const con = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const onCol = bg => (con('#ffffff', bg) >= con('#111111', bg) ? '#ffffff' : '#111111');
+  const shade = (h, k) => '#' + rgb(h).map(v => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k))).toString(16).padStart(2, '0')).join('');
+  // a readable colour against bg from the candidates (else white / black)
+  const readable = (bg, ...c) => c.find(x => con(x, bg) >= 2.3) || onCol(bg);
+
+  // ---------- marks: unit box [-50, 50]^2; A main, B second, K knockout (the colour behind the mark) ----------
+  function fillPoly(g, pts, col) { g.fillStyle = col; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill(); }
+  function circ(g, x, y, r, col) { g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); }
+  function line(g, pts, w, col, close) { g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); if (close) g.closePath(); g.stroke(); }
+  function arc(g, x, y, r, a0, a1, w, col) { g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.arc(x, y, r, a0, a1); g.stroke(); }
+  function rrect(g, x, y, w, h, r, col) { g.fillStyle = col; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); }
+  const star = (n, r1, r2, rot = -Math.PI / 2) => Array.from({ length: n * 2 }, (_, k) => { const a = rot + k * Math.PI / n, r = k % 2 ? r2 : r1; return [r * Math.cos(a), r * Math.sin(a)]; });
+  const ngon = (n, r, rot = 0) => Array.from({ length: n }, (_, k) => { const a = rot + k * TAU / n; return [r * Math.cos(a), r * Math.sin(a)]; });
+  const MARKS = {
+    sun(g, A, B) { for (let k = 0; k < 10; k++) { const a = k * TAU / 10, c = Math.cos(a), s = Math.sin(a), q = 0.16; fillPoly(g, [[30 * Math.cos(a - q), 30 * Math.sin(a - q)], [49 * c, 49 * s], [30 * Math.cos(a + q), 30 * Math.sin(a + q)]], B); } circ(g, 0, 0, 24, A); },
+    bolt(g, A, B) { const p = [[10, -50], [-30, 8], [-4, 8], [-14, 50], [30, -12], [4, -12], [18, -50]]; fillPoly(g, p, A); line(g, p, 4, B, true); },
+    orbit(g, A, B) { g.save(); g.rotate(-0.42); g.strokeStyle = B; g.lineWidth = 7; g.beginPath(); g.ellipse(0, 0, 49, 15, 0, Math.PI, TAU); g.stroke(); g.restore(); circ(g, 0, 0, 25, A); g.save(); g.rotate(-0.42); g.strokeStyle = B; g.lineWidth = 7; g.beginPath(); g.ellipse(0, 0, 49, 15, 0, 0, Math.PI); g.stroke(); g.restore(); },
+    shield(g, A, B, K) { fillPoly(g, [[-38, -46], [38, -46], [38, 2], [0, 48], [-38, 2]], A); line(g, [[-20, -18], [0, 6], [20, -18]], 9, K); circ(g, 0, -32, 5, B); },
+    clock(g, A, B) { arc(g, 0, 0, 41, 0, TAU, 9, A); for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; circ(g, 30 * Math.cos(a), 30 * Math.sin(a), 3.5, A); } line(g, [[0, -24], [0, 0], [17, 10]], 7, B); circ(g, 0, 0, 5, B); },
+    drop(g, A, B, K) { g.fillStyle = A; g.beginPath(); g.moveTo(0, -50); g.bezierCurveTo(14, -26, 34, -6, 34, 14); g.arc(0, 14, 34, 0, Math.PI); g.bezierCurveTo(-34, -6, -14, -26, 0, -50); g.fill(); g.strokeStyle = B === A ? K : B; g.lineWidth = 6; g.lineCap = 'round'; g.beginPath(); g.arc(0, 14, 22, 0.2, 1.2); g.stroke(); },
+    flame(g, A, B) { const f = (s, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(0, -50 * s); g.bezierCurveTo(30 * s, -20 * s, 38 * s, 10 * s, 26 * s, 34 * s); g.bezierCurveTo(16 * s, 50 * s, -16 * s, 50 * s, -26 * s, 34 * s); g.bezierCurveTo(-36 * s, 14 * s, -20 * s, -6 * s, -8 * s, -16 * s); g.bezierCurveTo(-4 * s, -30 * s, -2 * s, -40 * s, 0, -50 * s); g.fill(); }; f(1, A); g.save(); g.translate(0, 14); f(0.55, B); g.restore(); },
+    cloud(g, A, B) { circ(g, -22, 8, 19, A); circ(g, 4, -6, 26, A); circ(g, 27, 10, 17, A); rrect(g, -41, 8, 85, 19, 9, A); line(g, [[-36, 40], [36, 40]], 6, B); },
+    zigzag(g, A, B) { line(g, [[-46, 18], [-23, -18], [0, 18], [23, -18], [46, 18]], 14, A); circ(g, 0, -36, 7, B); },
+    anchor(g, A, B) { arc(g, 0, -36, 9, 0, TAU, 7, A); line(g, [[0, -27], [0, 40]], 8, A); line(g, [[-20, -12], [20, -12]], 7, B); arc(g, 0, 6, 36, 0.15, Math.PI - 0.15, 8, A); fillPoly(g, [[-42, 6], [-30, 4], [-36, 18]], A); fillPoly(g, [[42, 6], [30, 4], [36, 18]], A); },
+    keyhole(g, A, B, K) { rrect(g, -44, -44, 88, 88, 18, A); circ(g, 0, -10, 14, K); fillPoly(g, [[-8, -4], [8, -4], [13, 28], [-13, 28]], K); line(g, [[-30, 36], [30, 36]], 4, B); },
+    bean(g, A, B, K) { g.save(); g.rotate(-0.5); g.fillStyle = A; g.beginPath(); g.ellipse(0, 0, 30, 46, 0, 0, TAU); g.fill(); g.strokeStyle = K; g.lineWidth = 7; g.lineCap = 'round'; g.beginPath(); g.moveTo(0, -38); g.bezierCurveTo(-14, -12, 14, 12, 0, 38); g.stroke(); g.restore(); circ(g, 36, -36, 5, B); },
+    wing(g, A, B) { fillPoly(g, [[-48, 26], [44, -40], [20, -10], [-30, 26]], A); fillPoly(g, [[-30, 34], [40, -14], [24, 8], [-14, 34]], B); fillPoly(g, [[-12, 42], [34, 12], [24, 26], [2, 42]], A); },
+    chevrons(g, A, B) { fillPoly(g, [[-48, -38], [-20, -38], [10, 0], [-20, 38], [-48, 38], [-18, 0]], A); fillPoly(g, [[-6, -38], [22, -38], [50, 0], [22, 38], [-6, 38], [22, 0]], B); },
+    chip(g, A, B, K) { for (let k = 0; k < 4; k++) { const o = -24 + k * 16; rrect(g, o - 4, -48, 8, 14, 2, B); rrect(g, o - 4, 34, 8, 14, 2, B); rrect(g, -48, o - 4, 14, 8, 2, B); rrect(g, 34, o - 4, 14, 8, 2, B); } rrect(g, -32, -32, 64, 64, 8, A); rrect(g, -12, -12, 24, 24, 4, K); },
+    soundwave(g, A, B) { [16, 40, 66, 94, 66, 40, 16].forEach((h, k) => rrect(g, -45 + k * 13.3, -h / 2, 8, h, 4, k % 2 ? B : A)); },
+    aperture(g, A, B, K) { circ(g, 0, 0, 47, A); for (let k = 0; k < 6; k++) { const a = k * TAU / 6, x = 15 * Math.cos(a), y = 15 * Math.sin(a); line(g, [[x, y], [x + 40 * Math.cos(a + 1.75), y + 40 * Math.sin(a + 1.75)]], 4, K); } fillPoly(g, ngon(6, 15, 0.26), B === A ? K : B); },
+    crown(g, A, B, K) { fillPoly(g, [[-44, 30], [-46, -22], [-22, 2], [0, -36], [22, 2], [46, -22], [44, 30]], A); for (const [x, y] of [[-46, -26], [0, -40], [46, -26]]) circ(g, x, y, 6, B); line(g, [[-36, 18], [36, 18]], 5, K); },
+    pin(g, A, B, K) { g.fillStyle = A; g.beginPath(); g.arc(0, -12, 32, Math.PI * 0.82, Math.PI * 2.18); g.lineTo(0, 50); g.closePath(); g.fill(); circ(g, 0, -12, 13, K); circ(g, 0, -12, 6, B); },
+    signal(g, A, B) { circ(g, 0, 34, 9, A); [22, 40, 58].forEach((r, k) => arc(g, 0, 34, r, -Math.PI * 0.78, -Math.PI * 0.22, 9, k % 2 ? B : A)); },
+    infinity(g, A, B) { const loop = (sx, col) => { g.strokeStyle = col; g.lineWidth = 12; g.beginPath(); for (let k = 0; k <= 32; k++) { const t = k / 32 * TAU, x = sx * (22 + 22 * Math.cos(t)), y = 20 * Math.sin(t); if (k) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke(); }; loop(-1, A); loop(1, B); },
+    ibeam(g, A, B) { fillPoly(g, [[-40, -44], [40, -44], [40, -28], [10, -28], [10, 28], [40, 28], [40, 44], [-40, 44], [-40, 28], [-10, 28], [-10, -28], [-40, -28]], A); rrect(g, 18, -16, 26, 32, 3, B); },
+    gear(g, A, B, K) { for (let k = 0; k < 8; k++) { g.save(); g.rotate(k * TAU / 8); rrect(g, -8, -49, 16, 18, 3, A); g.restore(); } circ(g, 0, 0, 36, A); circ(g, 0, 0, 16, K); circ(g, 0, 0, 7, B); },
+    molecule(g, A, B) { const h = ngon(6, 33, Math.PI / 6); line(g, h, 7, A, true); h.forEach(([x, y], k) => circ(g, x, y, 9, k % 2 ? B : A)); },
+    cube(g, A, B) { fillPoly(g, [[0, -48], [42, -24], [0, 0], [-42, -24]], A); fillPoly(g, [[-42, -24], [0, 0], [0, 48], [-42, 24]], B); fillPoly(g, [[42, -24], [42, 24], [0, 48], [0, 0]], shade(A, -0.35)); },
+    star4(g, A, B) { fillPoly(g, star(4, 48, 12), A); g.save(); g.translate(30, -30); fillPoly(g, star(4, 15, 4), B); g.restore(); },
+    cross(g, A, B) { rrect(g, -15, -46, 30, 92, 9, A); rrect(g, -46, -15, 92, 30, 9, A); circ(g, 0, 0, 9, B); },
+    play(g, A, B, K) { rrect(g, -46, -40, 92, 80, 22, A); fillPoly(g, [[-12, -22], [24, 0], [-12, 22]], K); circ(g, 34, -28, 6, B); },
+    loop(g, A, B) { arc(g, 0, 0, 34, -Math.PI * 0.35, Math.PI * 1.5, 12, A); fillPoly(g, [[18, -46], [44, -26], [14, -14]], A); circ(g, 0, 0, 10, B); },
+    lens(g, A, B) { for (const x of [-24, 24]) { circ(g, x, 4, 19, B); arc(g, x, 4, 19, 0, TAU, 7, A); } arc(g, 0, 2, 9, Math.PI * 1.15, Math.PI * 1.85, 6, A); line(g, [[-43, -2], [-50, -14]], 6, A); line(g, [[43, -2], [50, -14]], 6, A); },
+    flower(g, A, B) { for (let k = 0; k < 5; k++) { g.save(); g.rotate(k * TAU / 5); g.fillStyle = A; g.beginPath(); g.ellipse(0, -26, 14, 24, 0, 0, TAU); g.fill(); g.restore(); } circ(g, 0, 0, 12, B); },
+    key(g, A, B) { arc(g, -26, 0, 17, 0, TAU, 10, A); rrect(g, -9, -6, 58, 12, 3, A); rrect(g, 28, 4, 8, 16, 2, B); rrect(g, 40, 4, 8, 12, 2, B); },
+    umbrella(g, A, B) { g.fillStyle = A; g.beginPath(); g.arc(0, 0, 48, Math.PI, TAU); for (let k = 0; k < 4; k++) { const x0 = 48 - k * 24; g.quadraticCurveTo(x0 - 12, -9, x0 - 24, 0); } g.fill(); line(g, [[0, 0], [0, 34]], 7, B); arc(g, -9, 34, 9, 0, Math.PI, 7, B); },
+    leaf(g, A, B, K) { g.save(); g.rotate(-0.7); g.fillStyle = A; g.beginPath(); g.moveTo(0, -48); g.quadraticCurveTo(40, 0, 0, 44); g.quadraticCurveTo(-40, 0, 0, -48); g.fill(); line(g, [[0, -34], [0, 36]], 4, K); g.restore(); line(g, [[-24, 26], [-40, 44]], 6, B); },
+    link(g, A, B) { g.save(); g.rotate(-0.6); g.lineWidth = 10; g.strokeStyle = A; g.beginPath(); if (g.roundRect) g.roundRect(-46, -15, 54, 30, 15); else g.rect(-46, -15, 54, 30); g.stroke(); g.strokeStyle = B; g.beginPath(); if (g.roundRect) g.roundRect(-8, -15, 54, 30, 15); else g.rect(-8, -15, 54, 30); g.stroke(); g.restore(); },
+    battery(g, A, B) { g.strokeStyle = A; g.lineWidth = 8; g.beginPath(); if (g.roundRect) g.roundRect(-44, -26, 80, 52, 8); else g.rect(-44, -26, 80, 52); g.stroke(); rrect(g, 38, -11, 9, 22, 3, A); for (let k = 0; k < 3; k++) rrect(g, -34 + k * 22, -16, 16, 32, 3, B); },
+    neural(g, A, B) { const n = [[-36, -26], [-36, 26], [0, -40], [0, 0], [0, 40], [36, -14], [36, 14]]; for (const [a, b] of [[0, 2], [0, 3], [1, 3], [1, 4], [2, 5], [3, 5], [3, 6], [4, 6], [0, 1]]) line(g, [n[a], n[b]], 4, B); n.forEach(([x, y]) => circ(g, x, y, 9, A)); },
+    pyramid(g, A, B) { fillPoly(g, [[0, -48], [17, -18], [-17, -18]], A); fillPoly(g, [[-21, -11], [21, -11], [33, 11], [-33, 11]], B); fillPoly(g, [[-37, 18], [37, 18], [48, 40], [-48, 40]], A); },
+    mountain(g, A, B) { fillPoly(g, [[-50, 40], [-14, -34], [6, 4], [22, -16], [50, 40]], A); fillPoly(g, [[-14, -34], [-3, -12], [-10, -6], [-16, -14], [-24, -14]], B); fillPoly(g, [[22, -16], [30, -2], [24, 2], [16, -6]], B); },
+    plug(g, A, B) { rrect(g, -18, -26, 9, 22, 3, B); rrect(g, 9, -26, 9, 22, 3, B); rrect(g, -30, -8, 60, 38, 10, A); line(g, [[0, 30], [0, 48]], 8, A); },
+  };
+
+  // ---------- designs (nominal height 100, centred on the origin) ----------
+  let MC = null;   // measuring context (lazy)
+  const mctx = () => {
+    if (MC) return MC;
+    try { MC = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(8, 8).getContext('2d') : document.createElement('canvas').getContext('2d'); } catch (e) { MC = null; }
+    return MC;
+  };
+  const fontOf = (s, px) => `${s.it ? 'italic ' : ''}${FONTS[s.font][0]} ${px}px ${FONTS[s.font][1]}`;
+  const label = s => (s.lc ? s.name.toLowerCase() : s.name);
+  const lsOK = g => g && 'letterSpacing' in g;
+  function setText(g, s, px, ls) { g.font = fontOf(s, px); if (lsOK(g)) g.letterSpacing = ((ls == null ? s.ls : ls) * px).toFixed(2) + 'px'; }
+  function textW(s, str, px, ls) {
+    const g = mctx();
+    if (!g) return str.length * px * 0.62;
+    setText(g, s, px, ls);
+    const w = g.measureText(str).width;
+    if (lsOK(g)) g.letterSpacing = '0px';
+    return w;
+  }
+  // [w, h] at nominal height 100, cached
+  const NAT = new Map();
+  function nat(i, d) {
+    const k = i * 8 + d;
+    if (NAT.has(k)) return NAT.get(k);
+    const s = LIST[i], tw = textW(s, label(s), 74);
+    let r;
+    if (d === 1) r = [100, 100];
+    else if (d === 2) r = [Math.max(textW(s, label(s), 34), textW(s, s.tag, 14, 0.12), 50) + 30, 100];
+    else if (d === 4) r = [20 + 70 + 18 + textW(s, label(s), 60) + 30 + textW(s, s.tag, 34, 0.1) + 26, 100];
+    else r = [100 + 20 + tw, 100];
+    NAT.set(k, r);
+    return r;
+  }
+  const aspect = (i, d) => { const n = nat(i | 0, d | 0); return n[0] / n[1]; };
+  function mark(g, s, x, y, size, A, B, K) { g.save(); g.translate(x, y); g.scale(size / 100, size / 100); MARKS[s.mark](g, A, B, K); g.restore(); }
+  function text(g, s, str, x, y, px, col, align, ls) { setText(g, s, px, ls); g.fillStyle = col; g.textAlign = align || 'left'; g.textBaseline = 'middle'; g.fillText(str, x, y); if (lsOK(g)) g.letterSpacing = '0px'; }
+  function plateShape(g, sh, r, col) {
+    if (sh === 'circle') circ(g, 0, 0, r, col);
+    else if (sh === 'hex') fillPoly(g, ngon(6, r, Math.PI / 6), col);
+    else if (sh === 'shield') fillPoly(g, [[-r * 0.86, -r * 0.92], [r * 0.86, -r * 0.92], [r * 0.86, r * 0.1], [0, r], [-r * 0.86, r * 0.1]], col);
+    else rrect(g, -r * 0.92, -r * 0.92, r * 1.84, r * 1.84, sh === 'round' ? r * 0.36 : r * 0.1, col);
+  }
+  function draw(g, i, d, W, H, bg) {
+    const s = LIST[i | 0];
+    if (!s || !g) return;
+    d = Math.max(0, Math.min(4, d | 0));
+    bg = bg || '#808080';
+    const [nw, nh] = nat(s.i, d), k = Math.min(W / nw, H / nh);
+    if (!(k > 0)) return;
+    g.save();
+    g.scale(k, k);
+    const x0 = -nw / 2, nm = label(s);
+    if (d === 0 || d === 3) {   // wordmark / single colour: mark + name straight on the livery
+      const mono = d === 3 ? onCol(bg) : null;
+      const A = mono || (con(s.a, bg) >= 1.6 ? s.a : readable(bg, s.b)), B = mono || (con(s.b, bg) >= 1.4 ? s.b : A);
+      mark(g, s, x0 + 50, 0, 96, A, B, bg);
+      text(g, s, nm, x0 + 120, 3, 74, mono || readable(bg, s.a, s.b));
+    } else if (d === 1) {   // badge: the mark on its own plate shape
+      const on = con(s.b, s.a) >= 1.8 ? s.b : onCol(s.a);
+      plateShape(g, s.shape, 50, on === '#ffffff' || on === '#111111' ? shade(on, on === '#ffffff' ? -0.04 : 0.1) : on);
+      plateShape(g, s.shape, 44, s.a);
+      mark(g, s, 0, s.shape === 'shield' ? -6 : 0, 58, on, on === s.b ? onCol(s.a) : s.b, s.a);
+    } else if (d === 2) {   // stacked: mark over the name over the strapline, on the brand plate
+      const P = s.plate, nc = readable(P, s.a, s.b), tc = readable(P, s.b, s.a);
+      rrect(g, x0, -50, nw, 100, 10, P);
+      mark(g, s, 0, -21, 46, con(s.a, P) >= 1.6 ? s.a : nc, con(s.b, P) >= 1.4 ? s.b : nc, P);
+      text(g, s, nm, 0, 22, 34, nc, 'center');
+      text(g, s, s.tag, 0, 40, 14, tc, 'center', 0.12);
+    } else {   // long strip: brand bar, mark, name | strapline, a keyline in the second colour
+      const tc = con(s.b, s.a) >= 3 ? s.b : onCol(s.a), ac = con(s.b, s.a) >= 1.3 ? s.b : onCol(s.a);
+      rrect(g, x0, -50, nw, 100, 8, s.a);
+      rrect(g, x0, 34, nw, 9, 0, ac);
+      mark(g, s, x0 + 55, -6, 66, tc, tc, s.a);
+      const tx = x0 + 108;
+      text(g, s, nm, tx, -2, 60, tc);
+      const t2 = tx + textW(s, nm, 60) + 15;
+      g.fillStyle = tc; g.globalAlpha = 0.6; g.fillRect(t2, -26, 3, 46); g.globalAlpha = 1;
+      text(g, s, s.tag, t2 + 15, -2, 34, tc, 'left', 0.1);
+    }
+    g.restore();
+  }
+
+  // ---------- sponsor sets ----------
+  function fnv(str) { let h = 0x811c9dc5; for (let k = 0; k < str.length; k++) { h ^= str.charCodeAt(k); h = Math.imul(h, 16777619) >>> 0; } return h; }
+  function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  // a realistic set: a title sponsor (sidepods, rear wing, endplates, nose), partners on the rest; some spots left bare
+  function makeSet(title, r) {
+    const N = LIST.length, used = new Set([title]), other = () => { let x; do x = Math.floor(r() * N); while (used.has(x)); used.add(x); return x; };
+    const p1 = other(), p2 = other(), p3 = other(), p4 = other();
+    const pick = a => a[Math.floor(r() * a.length)], S = {};
+    const put = (k, s, ds, z, skip = 0) => { if (r() >= skip) S[k] = [s, pick(ds), z]; };
+    const tw = pick([0, 3, 3]);
+    put('pod', title, [tw], 2); put('rwtop', title, [tw, 3, 4], 2); put('rwend', title, [3, 0], 1, 0.15); put('nose', r() < 0.6 ? title : p3, [3, 0], 1, 0.15);
+    put('ecrear', title, [3, 0], 1, 0.5);
+    put('chassis', p1, [0, 3], 1 + (r() < 0.5), 0.1); const fd = pick([3, 0]), fz = pick([1, 2]); if (r() > 0.2) { S.finl = [p1, fd, fz]; S.finr = [p1, fd, fz]; }
+    put('fwing', p2, [4, 3, 0], 2, 0.15); put('airbox', p3, [1, 3], 1, 0.3);
+    const hd = pick([3, 0]); if (r() > 0.3) { S.halol = [p2, hd, 2]; S.halor = [p2, hd, 2]; }
+    put('ecfront', p4, [2, 3], 1, 0.4); put('fwend', p4, [3, 0, 2], 1, 0.3);
+    return S;
+  }
+  const SETS = new Map();
+  function teamSet(team) {
+    if (!team || team.custom) return team && team.sponsors || null;
+    const id = String(team.id || team.name || '');
+    if (SETS.has(id)) return SETS.get(id);
+    const T = typeof TEAMS !== 'undefined' ? TEAMS : [], ti = T.findIndex(t => t.id === team.id), h = fnv('sp' + id);
+    const title = ti >= 0 && ti < LIST.length ? (ti * 7 + 3) % LIST.length : h % LIST.length;   // (7 coprime with 40: the teams' title sponsors differ)
+    const S = makeSet(title, rng(h));
+    SETS.set(id, S);
+    return S;
+  }
+  const randomSet = seed => { const r = rng(seed >>> 0); return makeSet(Math.floor(r() * LIST.length), r); };
+
+  return { LIST, DESIGNS, SIZES, MARKS, draw, aspect, teamSet, randomSet, contrast: con, onColour: onCol };
 })();
 
 
@@ -83357,17 +83779,57 @@ const buildCarModel = (() => {
   const helmetOf = (team, L, D) => (team && team.helmet && team.helmet.base) || pick(L, D.helmet);     // custom: its own helmet colours
   const hStripeOf = (team, L) => (team && team.helmet && team.helmet.stripe) || L.A;
 
-  const SPONSOR = { aurelia: 'LUMEN', vulcan: 'FERRUM', stratos: 'ORBITEX', kestrel: 'KINETIQ', meridian: 'SILVERLINE',
-    onyx: 'NOCTIS', solstice: 'SOLARA', nova: 'NEBULA', ironbridge: 'HAWTHORN', helix: 'VORTEQ',
-    ember: 'CALDORA', polaris: 'GLACIO', tempest: 'ZEPHRA', sirocco: 'DUNARA', bastion: 'RAMPART',
-    riviera: 'AZURELLE', monarch: 'REGALIS', volta: 'AMPERIA', sequoia: 'SYLVANT', cobalt: 'KOBALIX',
-    lunaris: 'SELENOR', northwind: 'BORELLO', gemina: 'DUOVEX', saltire: 'CROSSMERE', riptide: 'TIDARA',
-    prisma: 'CHROMAE', velocita: 'STRADIQ', seraph: 'AUREOLA', quartz: 'CRYSTALIS', tessera: 'MOSAIQ' };
+  // ---- sponsors (sponsors.js art, livery.js SPOTS): where each spot sits on the livery canvas. s = side bands (0 right,
+  // 1 left), t = top-band copies [x, z, rot]; x / y centre (car metres), r = tilt (+ = rising towards the nose), w x h = the
+  // LARGE box (m). m = a remap into a side-band area no body surface uses: the halo (part 11) and the front wing endplates
+  // (part 13) read the livery texture there (FRAG_COLOR), painted in their palette colour (an empty spot looks as before)
+  const HALO_MAP = { x0: -0.15, y0: 0.90, ox: 0.8, oy: 0.74, kx: 2.8, ky: 3.83 }, END_MAP = { x0: 0, y0: 0, ox: 0, oy: 0.8, kx: 1, ky: 1 };
+  const SPOT_GEO = {
+    nose: { s: [0, 1], x: 1.86, y: 0.30, r: -0.15, w: 0.62, h: 0.075 },
+    fwing: { t: [[2.45, 0.5, Math.PI / 2], [2.45, -0.5, Math.PI / 2]], w: 0.62, h: 0.14 },
+    fwend: { s: [0, 1], x: 2.6, y: 0.17, r: 0, w: 0.44, h: 0.12, m: END_MAP },
+    chassis: { s: [0, 1], x: 0.95, y: 0.40, r: -0.08, w: 0.62, h: 0.12 },
+    halol: { s: [1], x: 0.08, y: 0.97, r: 0.066, w: 0.34, h: 0.03, m: HALO_MAP },
+    halor: { s: [0], x: 0.08, y: 0.97, r: 0.066, w: 0.34, h: 0.03, m: HALO_MAP },
+    pod: { s: [0, 1], x: -0.30, y: 0.395, r: 0.09, w: 0.86, h: 0.11 },
+    airbox: { s: [0, 1], x: -0.38, y: 0.93, r: 0.1, w: 0.30, h: 0.075 },
+    ecfront: { t: [[-0.74, 0.1, 0], [-0.74, -0.1, Math.PI]], w: 0.42, h: 0.11 },
+    ecrear: { t: [[-1.62, 0.075, 0], [-1.62, -0.075, Math.PI]], w: 0.40, h: 0.08 },
+    finl: { s: [1], x: -1.5, y: 0.765, r: 0.245, w: 0.62, h: 0.10 },
+    finr: { s: [0], x: -1.5, y: 0.765, r: 0.245, w: 0.62, h: 0.10 },
+    rwtop: { t: [[-2.69, 0, -Math.PI / 2]], w: 0.92, h: 0.14 },   // (reads from the front on the steep upper face, from behind on the back: FRAG_COLOR)
+    rwend: { s: [0, 1], x: -2.60, y: 1.0, r: 0, w: 0.40, h: 0.10 },
+  };
+  const SIZE_K = [0.62, 0.8, 1];
+  // 3D anchor of each spot (car frame: the livery editor's hotspots)
+  const SPOT_PTS = { nose: [1.86, 0.33, 0.1], fwing: [2.45, 0.2, 0.5], fwend: [2.6, 0.18, 0.9], chassis: [0.95, 0.42, 0.26], halol: [0.08, 0.97, -0.25],
+    halor: [0.08, 0.97, 0.25], pod: [-0.30, 0.42, 0.6], airbox: [-0.38, 0.95, 0.13], ecfront: [-0.74, 0.97, 0.1], ecrear: [-1.62, 0.7, 0.08],
+    finl: [-1.5, 0.8, -0.01], finr: [-1.5, 0.8, 0.01], rwtop: [-2.70, 0.98, 0], rwend: [-2.6, 1.0, 0.5] };
+  const SPN = () => (typeof Sponsors !== 'undefined' ? Sponsors : null);
+  const SPOT_ORDER = () => (typeof Livery !== 'undefined' && Livery.SPOT_IDS) || Object.keys(SPOT_GEO);
+  // background estimate behind each spot: the paint layer drawn at 1/4 size on a small read-back canvas (no read-back of
+  // the livery canvas itself, which stays GPU-friendly)
+  let BGC = null;
+  function bgSampler(team, D) {
+    try {
+      if (!BGC) { BGC = document.createElement('canvas'); BGC.width = BGC.height = LIV_SZ / 4; BGC.ctx = BGC.getContext('2d', { willReadFrequently: true }); }
+      const g = BGC.ctx;
+      g.setTransform(0.25, 0, 0, 0.25, 0, 0);
+      paintBase(g, team, D);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      const px = g.getImageData(0, 0, BGC.width, BGC.height).data, N = BGC.width;
+      return (cx, cy) => {   // canvas coordinates (1024 space)
+        const x = Math.max(0, Math.min(N - 1, Math.round(cx / 4))), y = Math.max(0, Math.min(N - 1, Math.round(cy / 4))), o = (y * N + x) * 4;
+        return '#' + [px[o], px[o + 1], px[o + 2]].map(v => v.toString(16).padStart(2, '0')).join('');
+      };
+    } catch (e) { return () => team.primary; }
+  }
   const onColour = bg => ['#ffffff', '#111111'].sort((a, b) => contrast(b, bg) - contrast(a, bg))[0];
 
   // draws the whole livery (1024 x 1024 layout: right side band, left side band, top band) onto a 2D context;
   // num = race number text ('' = none). Used by the texture (paintLivery) and by liveryPreview (scaled context).
-  function drawLivery(g, team, D, num) {
+  function paintBase(g, team, D) { drawLivery(g, team, D, '', true); }
+  function drawLivery(g, team, D, num, base) {
     const SZ = LIV_SZ, BH = SZ / 4;
     const KX = SZ / 5.8, KY = BH / 1.2, KZ = BH;
     const px = x => (x + 2.9) * KX;
@@ -83462,35 +83924,59 @@ const buildCarModel = (() => {
         return o;
       },
     };
-    g.fillStyle = team.primary; g.fillRect(0, 0, SZ, SZ);
-    D.paint(L);
+    if (base) {   // the paint layer only (bgSampler)
+      g.fillStyle = team.primary; g.fillRect(0, 0, SZ, SZ);
+      D.paint(L);
+      // reserved areas read by the halo / the front wing endplates (HALO_MAP / END_MAP; nothing else lies there)
+      L.side([[0.78, 0.72], [2.24, 0.72], [2.24, 1.21], [0.78, 1.21]], pick(L, D.halo));
+      L.side([[2.24, 0.80], [2.95, 0.80], [2.95, 1.21], [2.24, 1.21]], pick(L, D.end));
+      return;
+    }
+    drawLivery(g, team, D, num, true);
+    const SP = SPN(), set = SP ? SP.teamSet(team) : null, bgAt = set ? bgSampler(team, D) : null;
     const cands = [team.accent, team.secondary, '#ffffff', '#111111'];
     const txt = cands.find(c => contrast(c, team.primary) > 3.2) || '#ffffff';
     const outl = hexLum(txt) > 0.4 ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)';
-    const sp = SPONSOR[team.id] || 'APEX';
     const name = (team.name || team.id || '').split(' ')[0].toUpperCase();
     // engine cover louvres
     for (let k = 0; k < 7; k++) L.topLine([[-1.0 - k * 0.055, 0.13], [-1.0 - k * 0.055, 0.2]], 0.014, 'rgba(0,0,0,0.6)');
     // race number (engine cover sides + nose top), sponsor band on the sidepods, sponsor on the nose sides
     L.sideText(num, -1.06, 0.62, 0.16, txt, outl);
     L.topText(num, 2.05, 0, 0.12, txt, outl);
-    L.sideRect(-0.02, 0.362, -0.9, 0.448, txt, 0.03);
-    L.sideText(name, -0.46, 0.405, 0.06, onColour(txt), null, 'bold', 0.8);
-    L.sideText(sp, 1.8, 0.3, 0.05, txt, null, 'bold italic', 0.55);
+    if (!set || !set.pod) {   // (no sidepod sponsor: the team name band)
+      L.sideRect(-0.02, 0.362, -0.9, 0.448, txt, 0.03);
+      L.sideText(name, -0.46, 0.405, 0.06, onColour(txt), null, 'bold', 0.8);
+    }
     // rear wing endplates: team colour block, sponsor + number
     const end = pick(L, D.end), endTxt = onColour(end);
     L.side([[-2.35, 0.60], [-2.35, 1.19], [-2.92, 1.19], [-2.92, 0.60]], end);
-    L.sideText(sp, -2.605, 1.025, 0.075, endTxt, null, 'bold italic', 0.4);
     L.sideText(num, -2.62, 0.82, 0.15, endTxt, null, 'bold italic');
     L.sideLine([[-2.36, 0.71], [-2.84, 0.71]], 0.012, team.accent === end ? team.secondary : team.accent);
     // rear wing flap (top band): sponsor readable from behind
     const rfl = pick(L, D.rflap);
     L.top([[-2.555, -0.52], [-2.555, 0.52], [-2.83, 0.52], [-2.83, -0.52]], rfl, false);
-    L.topText(sp, -2.685, 0, 0.1, onColour(rfl), null, Math.PI / 2, 0.8);
     // front wing flaps (top band)
     const ffl = pick(L, D.flap);
     L.top([[2.29, 0.1], [2.63, 0.1], [2.63, 0.93], [2.29, 0.93]], ffl);
-    for (const z of [0.5, -0.5]) L.topText('APEX GP', 2.45, z, 0.06, onColour(ffl), null, Math.PI / 2, 0.55);
+    // sponsors (team set / the custom livery's own): drawn in mm units, fitted into the spot box
+    if (set) for (const id of SPOT_ORDER()) {
+      const v = set[id], P = SPOT_GEO[id];
+      if (!v || !P) continue;
+      const f = SIZE_K[v[2]] || 0.8, W = P.w * f * 1000, H = P.h * f * 1000;
+      if (P.t) {
+        for (const [x, z, r] of P.t) {
+          const bg = bgAt(px(x), rowT(z));
+          g.save(); clip(2 * BH, SZ); g.translate(px(x), rowT(z)); g.scale(KX / 1000, KZ / 1000); g.rotate(r); SP.draw(g, v[0], v[1], W, H, bg); g.restore();
+        }
+      } else {
+        const m = P.m, x = m ? m.ox + (P.x - m.x0) * m.kx : P.x, y = m ? m.oy + (P.y - m.y0) * m.ky : P.y;
+        for (const b of P.s) {
+          const bg = bgAt(px(x), rowS[b](y));
+          g.save(); clip(b * BH, b * BH + BH); g.translate(px(x), rowS[b](y)); g.scale((b ? -KX : KX) / 1000 * (m ? m.kx : 1), KY / 1000 * (m ? m.ky : 1)); g.rotate(b ? P.r : -P.r);
+          SP.draw(g, v[0], v[1], W, H, bg); g.restore();
+        }
+      }
+    }
   }
   function paintLivery(team, D) {
     const cv = document.createElement('canvas');
@@ -83522,7 +84008,10 @@ vec2 agpT = vec2(agpU, 0.25 - 0.25 * clamp(vOP.z, -1.0, 1.0));
 vec2 agpSx = dFdx(agpS), agpSy = dFdy(agpS), agpTx = dFdx(agpT), agpTy = dFdy(agpT);
 vec3 agpC = uPal[agpP];
 if (agpP == 0) {
-  if (agpN.y > abs(agpN.z) * 0.85) agpC = textureGrad(uLiv, agpT, agpTx, agpTy).rgb;
+  // rear wing flap (between the endplates): the top band on both faces, the back face mirrored across the car, so its
+  // sponsor (drawn to read from the front on the steep upper face) also reads from behind
+  if (vOP.x < -2.55 && vOP.y > 0.88 && abs(vOP.z) < 0.488) agpC = textureGrad(uLiv, agpN.x < 0.0 ? vec2(agpT.x, 0.25 + 0.25 * clamp(vOP.z, -1.0, 1.0)) : agpT, agpTx, agpTy).rgb;
+  else if (agpN.y > abs(agpN.z) * 0.85) agpC = textureGrad(uLiv, agpT, agpTx, agpTy).rgb;
   else agpC = textureGrad(uLiv, agpS + vec2(0.0, agpN.z >= 0.0 ? 0.75 : 0.5), agpSx, agpSy).rgb;
 } else if (agpP == 5) {
   vec3 h = (vOP - vec3(${f4(HEL.x)}, ${f4(HEL.y)}, ${f4(HEL.z)})) / vec3(${f4(HEL.rx)}, ${f4(HEL.ry)}, ${f4(HEL.rz)});
@@ -83552,6 +84041,14 @@ if (agpP == 0) {
     agpC += vec3(1.0, 0.82, 0.2) * step(abs(q.z), 0.011) * step(abs(q.y + 0.004), 0.016);
     agpC += vec3(0.2, 0.75, 1.0) * step(0.018, abs(q.z)) * step(abs(q.z), 0.04) * step(0.55, fract(q.y * 85.0)) * step(abs(q.y + 0.004), 0.02);
   }
+}
+if (agpP == 11 || agpP == 13) {   // halo / front wing endplates: their reserved livery areas (HALO_MAP / END_MAP: sponsors)
+  bool agpH = agpP == 11;
+  vec2 agpK = agpH ? vec2(${f4(HALO_MAP.kx)}, ${f4(HALO_MAP.ky)}) : vec2(1.0);
+  vec2 agpQ = agpH ? clamp(vec2(${f4(HALO_MAP.ox)} + (vOP.x - (${f4(HALO_MAP.x0)})) * agpK.x, ${f4(HALO_MAP.oy)} + (vOP.y - ${f4(HALO_MAP.y0)}) * agpK.y), vec2(${f4(HALO_MAP.ox)}, ${f4(HALO_MAP.oy)}), vec2(${f4(HALO_MAP.ox + 1.4)}, 1.19))
+    : vec2(vOP.x, vOP.y + ${f4(END_MAP.oy)});
+  vec2 agpR = vec2((agpQ.x + 2.9) / 5.8, clamp(agpQ.y / 1.2, 0.0, 1.0) * 0.25 + ((agpH ? vOP.z : agpN.z) >= 0.0 ? 0.75 : 0.5));
+  agpC = textureGrad(uLiv, agpR, agpSx * agpK, agpSy * agpK).rgb;
 }
 if (agpP == 11) {   // halo: inner surface (facing the driver) in dark carbon
   vec3 toD = normalize(vec3(0.05, 0.86, 0.0) - vOP);
@@ -83753,7 +84250,7 @@ material.clearcoatRoughness = mix(mix(material.clearcoatRoughness, 0.07, agpRain
         .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n' + FRAG_CC + RAIN_CC)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FRAG_EMIT);
     };
-    m.customProgramCacheKey = () => 'agp-livery-v6';
+    m.customProgramCacheKey = () => 'agp-livery-v7';
     m.userData.tex = tex; m.userData.pal = pal;
     m._agpRain = RU;
     keepShaderOnClone(m);
@@ -84595,6 +85092,7 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
     const D = designOf(team), L = { P: team.primary, S: team.secondary, A: team.accent };
     return { flap: pick(L, D.flap), end: pick(L, D.end), rflap: pick(L, D.rflap), halo: pick(L, D.halo), helmet: helmetOf(team, L, D), helmetStripe: hStripeOf(team, L) };
   };
+  buildCarModel.SPOT_PTS = SPOT_PTS;   // (sponsor spots' 3D anchors, car frame: the livery editor's hotspots)
   buildCarModel.EYE = EYE;
   buildCarModel.TCAM = TCAM;
   buildCarModel.LOD_DIST = LOD_DIST;
@@ -87956,7 +88454,7 @@ const Render3D = (() => {
   // environment (time of day + weather) from G.weather, falling back to the track theme
   // dynamic weather (G.weather.dynamic): wet / rain / overcast change every frame without a rebuild; the build uses the
   // session's peak (capWet / lampsCap) to choose wet-capable road materials and lit structures
-  const ENV = { tod: 'day', wet: 0, rain: 0, oc: 0, lamps: false, dyn: false, capWet: 0, capOc: 0, lampsCap: false, cov: 0.2, dk: 0.05, rainVis: 0 };
+  const ENV = { tod: 'day', ph: 0, trans: false, rise: false, phMin: 0, wet: 0, rain: 0, oc: 0, lamps: false, dyn: false, capWet: 0, capOc: 0, lampsCap: false, cov: 0.2, dk: 0.05, rainVis: 0 };
   const wetU = { value: 0 };               // shader uniform: current wetness (dynamic wet road materials)
   let wetMats = [], atm = null;
   let mirrorOn = true, mirror = null, frameNo = 0, playerView = null, crowdMat = null;
@@ -88743,7 +89241,7 @@ const Render3D = (() => {
       zenith: { value: new THREE.Vector3() }, skyMid: { value: new THREE.Vector3() }, horizon: { value: new THREE.Vector3() },
       sunCol: { value: new THREE.Vector3() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, cloudCol: { value: new THREE.Vector3(1, 1, 1) },
       time: { value: 0 }, cloudAmt: { value: 0.5 }, toLinear: { value: 0 }, useGround: { value: 0 }, groundCol: { value: new THREE.Vector3(0.1, 0.12, 0.08) },
-      dark: { value: 0 }, sunVis: { value: 1 },   // cloudAmt = cover 0..1 (clear .. overcast deck), dark = rain-cloud greyness
+      dark: { value: 0 }, sunVis: { value: 1 }, stars: { value: 0 },   // stars: night sky 0..1 (applyOvercast); cloudAmt = cover 0..1 (clear .. overcast deck), dark = rain-cloud greyness
     };
     const hashed = skyHashInit();   // (PERF: lattice hash tables, WebGL2)
     if (hashed) { skyU.hashTex = { value: SKYH.rt.texture }; skyU.hT = { value: SKYH.tabs.map(t => t.u) }; skyU.hS = { value: SKYH.tabs.map(t => t.S) }; }
@@ -88751,7 +89249,7 @@ const Render3D = (() => {
       uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false, toneMapped: false, defines: hashed ? { AGP_SKYHASH: 1 } : {},
       vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
       fragmentShader: `
-        uniform vec3 zenith, skyMid, horizon, sunCol, sunDir, cloudCol, groundCol; uniform float time, cloudAmt, toLinear, useGround, dark, sunVis; varying vec3 vDir;
+        uniform vec3 zenith, skyMid, horizon, sunCol, sunDir, cloudCol, groundCol; uniform float time, cloudAmt, toLinear, useGround, dark, sunVis, stars; varying vec3 vDir;
         float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
           return mix(mix(h2(i), h2(i+vec2(1.0,0.0)), f.x), mix(h2(i+vec2(0.0,1.0)), h2(i+vec2(1.0,1.0)), f.x), f.y); }
@@ -88797,6 +89295,11 @@ const Render3D = (() => {
               vec3 cc = cloudCol * shade + sunCol * pow(s, 4.0) * 0.35 * sunVis * (1.0 - 0.6 * cloudAmt);
               c = mix(c, cc, cl * mix(0.72, 0.97, cloudAmt));
             }
+          }
+          if (stars > 0.0 && h > 0.04) {   // faint stars after dark: one hash per sky pixel, a sparse random cell lights up
+            vec2 sp = d.xz / (h + 1.0) * 220.0, ci = floor(sp); float r = h2(ci);
+            if (r > 0.986) { vec2 o = vec2(h2(ci + 17.3), h2(ci + 41.9)) * 0.6 + 0.2;
+              c += vec3(0.75, 0.8, 0.95) * (smoothstep(0.32, 0.0, length(fract(sp) - o)) * (r - 0.986) / 0.014 * stars * (1.0 - cl) * smoothstep(0.04, 0.25, h) * 0.55); }
           }
           float disc = smoothstep(0.9993, 0.99965, s) * sunVis * (1.0 - cl);   // sun / moon disc: behind the clouds
           c += sunCol * disc * 1.5;
@@ -88953,10 +89456,18 @@ const Render3D = (() => {
     const w = g && g.weather, st = g && g.settings;
     const tod = (w && w.timeOfDay) || (st && st.timeOfDay) || (T && T.theme && T.theme.timeOfDay) || 'day';
     ENV.tod = tod === 'night' || tod === 'dusk' ? tod : 'day';
+    // time of day changing over the session (w.todTo, Weather.todPath / todPhase): ENV.ph 0 day .. 1 dusk .. 2 night (now);
+    // the world is built lit for the darkest time it reaches (ENV.tod), the lights fade with ENV.ph (todLights), the
+    // far haze is baked at the lightest (ENV.phMin) and tinted at run time
+    const Wx = typeof Weather !== 'undefined' && Weather.todPath ? Weather : null, TP = w && Wx ? Wx.todPath(ENV.tod, w.todTo) : null;
+    ENV.trans = !!TP; ENV.rise = !!(TP && TP.rise);
+    ENV.ph = TP ? Wx.todPhase(w, g) : ENV.tod === 'night' ? 2 : ENV.tod === 'dusk' ? 1 : 0;
+    ENV.phMin = TP ? Math.min(TP.a, TP.b) : ENV.ph;
+    if (TP) ENV.tod = Math.max(TP.a, TP.b) >= 2 ? 'night' : 'dusk';
     ENV.wet = w ? clamp(+w.wet || 0, 0, 1) : 0;
     ENV.rain = w ? clamp(+w.rain || 0, 0, 1) : 0;
     ENV.oc = clamp(Math.max(ENV.wet * 0.75, ENV.rain), 0, 1);
-    ENV.lamps = ENV.tod === 'night' || ENV.oc > 0.2;
+    ENV.lamps = ENV.ph >= 1.5 || ENV.oc > 0.2;
     ENV.dyn = !!(w && w.dynamic);
     ENV.capWet = ENV.dyn ? clamp(Math.max(+w.peakWet || 0, ENV.wet), 0, 1) : ENV.wet;
     ENV.capOc = ENV.dyn ? clamp(Math.max((+w.peakWet || 0) * 0.75, +w.peakRain || 0, ENV.oc), 0, 1) : ENV.oc;
@@ -88993,7 +89504,7 @@ const Render3D = (() => {
     ENV.cov = SKY.cov; ENV.dk = SKY.dk;
     ENV.oc = clamp(SKY.cov * (0.2 + 0.8 * SKY.dk), 0, 1);
     ENV.rainVis = ENV.rain * sm01((SKY.cov - 0.5) / 0.3);   // never rain from a clear sky
-    ENV.lamps = ENV.tod === 'night' || ENV.oc > 0.2;
+    ENV.lamps = ENV.ph >= 1.5 || ENV.oc > 0.2;
   }
   function updateSky(g, dt) {
     const w = g && g.weather;
@@ -89141,71 +89652,171 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     return m;
   }
 
-  function setupAtmosphere() {
-    const tod = ENV.tod, dusk = tod === 'dusk', night = tod === 'night';
+  // one time of day's look: the theme's sky / fog / sun / sun height were authored for theme.palette (default: its default
+  // timeOfDay); another time of day uses presets (a new default never mislights a track). rise: the dawn of a sunrise (the
+  // low sun on the other side of the sky, cooler pinks)
+  const PAL = { night: { sky: '#0c1528', top: '#03060f', fog: '#151d2d', sun: '#9fb4ff' }, dusk: { sky: '#f2a36b', top: '#3b3f7a', fog: '#c98f78', sun: '#ffb070' },
+    dawn: { sky: '#eab08f', top: '#46558f', fog: '#c7a196', sun: '#ffc690' }, day: { sky: '#9fcbf0', top: '#3f86d6', fog: '#c4dcee', sun: '#fff3d1' } };
+  function atmVariant(tod, rise) {
+    const dusk = tod === 'dusk', night = tod === 'night', dawn = dusk && !!rise;
     const h0 = Math.atan2(T.tz[0], T.tx[0]);
-    const az = TH.sunAzimuth != null ? TH.sunAzimuth : h0 + (dusk ? -2.3 : 2.45);
-    // the theme's sky / fog / sun / sun height were authored for theme.palette (default: its default timeOfDay); the race's
-    // chosen time of day (ENV.tod) uses them only when it matches, presets otherwise (a new default never mislights a track)
-    const ownTod = tod === ((T.theme || {}).palette || (T.theme || {}).timeOfDay || 'day');
+    const az = (TH.sunAzimuth != null ? TH.sunAzimuth : h0 + (dusk ? -2.3 : 2.45)) + (dawn ? Math.PI : 0);
+    const ownTod = !dawn && tod === ((T.theme || {}).palette || (T.theme || {}).timeOfDay || 'day');
     const el = night ? 0.75 : TH.sunElevation != null && ownTod ? TH.sunElevation : (dusk ? 0.2 : 0.9);
-    sunDir.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
-    lightRotInv.lookAt(sunDir, _v1.set(0, 0, 0), Y_UP);
-    lightRot.copy(lightRotInv).transpose();
-
-    // palette: the track theme at its own (palette) time of day; other times use presets
-    const P = ownTod ? { sky: TH.sky, top: TH.skyTop || TH.sky, fog: TH.fog, sun: TH.sun || '#fff3e2' }
-      : night ? { sky: '#0c1528', top: '#03060f', fog: '#151d2d', sun: '#9fb4ff' }
-      : dusk ? { sky: '#f2a36b', top: '#3b3f7a', fog: '#c98f78', sun: '#ffb070' }
-      : { sky: '#9fcbf0', top: '#3f86d6', fog: '#c4dcee', sun: '#fff3d1' };
-    const grey = col(night ? '#10141c' : dusk ? '#6a625c' : '#9aa1a8');
+    const P = ownTod ? { sky: TH.sky, top: TH.skyTop || TH.sky, fog: TH.fog, sun: TH.sun || '#fff3e2' } : PAL[dawn ? 'dawn' : tod];
     const span = Math.max(T.bounds.maxX - T.bounds.minX, T.bounds.maxZ - T.bounds.minZ);
     const fn = ownTod && TH.fogNear != null ? TH.fogNear : (night ? 90 : dusk ? 120 : 250);
     const ff = ownTod && TH.fogFar != null ? TH.fogFar : night ? 1400 : Math.max(2400, span * 1.9);
-    atm = { night, dusk, grey, sky: col(P.sky), fog: col(P.fog), top: col(P.top), sun: col(P.sun), grass: col(TH.grass),
-      gTint: col(dusk ? 0x3a2a28 : 0x6b6048), white: col(0xffffff), fn, ff, oc: -1, cov: -1, dk: -1, envOc: ENV.oc, dGrey: col(0xffffff) };
-    sun.color.set(P.sun);
-    renderer.toneMappingExposure = night ? 1.05 : dusk ? 1.12 : 0.95;
-    skyU.sunDir.value.copy(sunDir);
-    applyOvercast(ENV.oc);
+    return { az, el, fn, ff, sky: col(P.sky), fog: col(P.fog), top: col(P.top), sun: col(P.sun), grey: col(night ? '#10141c' : dusk ? '#6a625c' : '#9aa1a8'),
+      gTint: col(dusk ? 0x3a2a28 : 0x6b6048), exp: night ? 1.05 : dusk ? 1.12 : 0.95, sunI: night ? 0.45 : dusk ? 2.2 : 2.55, hk: dusk ? 0.25 : 0.4, hi: dusk ? 1.45 : 1.05 };
+  }
+  // atm.V = the day / dusk (dawn) / night looks, blended by the phase (atm.w weights; a fixed time of day = one look exactly)
+  function setupAtmosphere() {
+    const tod = ENV.tod;
+    atm = { night: tod === 'night', dusk: tod === 'dusk', V: [atmVariant('day'), atmVariant('dusk', ENV.rise), atmVariant('night')], w: [1, 0, 0], ph: -1, envPh: ENV.ph,
+      grey: col(0), sky: col(0), fog: col(0), top: col(0), sun: col(0), grass: col(TH.grass), white: col(0xffffff), fn: 0, ff: 0, sunI: 0, disc: 1, stars: 0,
+      oc: -1, cov: -1, dk: -1, envOc: ENV.oc, dGrey: col(0xffffff) };
+    applyTod(ENV.trans ? ENV.phMin : ENV.ph);   // (a time-of-day change: the far haze is baked at its lightest, loadTrack then sets the start)
     makeEnvMap();
+  }
+  // the time of day (phase 0 day .. 1 dusk .. 2 night): blends the looks, moves the sun (down towards the dusk azimuth, below
+  // the horizon by phase 1.4; a sunrise runs it backwards), the moon lights the scene after it (fading in to phase 2), stars.
+  // Called per frame only while the phase moves (colours / light / uniform values: no rebuilds)
+  const _cA = new THREE.Color(), _cB = new THREE.Color();
+  const blendC = (out, k) => { const V = atm.V, w = atm.w; out.copy(V[0][k]).multiplyScalar(w[0]); for (let i = 1; i < 3; i++) if (w[i]) out.add(_cA.copy(V[i][k]).multiplyScalar(w[i])); return out; };
+  const todV = (a, b, c) => (ENV.ph <= 1 ? a + (b - a) * ENV.ph : b + (c - b) * Math.min(1, ENV.ph - 1));   // (per-time-of-day values)
+  function applyTod(ph) {
+    const A = atm, V = A.V, w = A.w, tr = ENV.trans;
+    A.ph = ph; w[0] = Math.max(0, 1 - ph); w[2] = Math.max(0, ph - 1); w[1] = 1 - w[0] - w[2];
+    // (the hemisphere fill: the night's lit-track fill takes over as the sun goes, by phase 1.45 - no dark dip after sunset)
+    const wh = A.wh || (A.wh = [1, 0, 0]); wh[0] = w[0]; wh[2] = ph <= 1 ? 0 : ph >= 2 ? 1 : sm01((ph - 1) / 0.45); wh[1] = 1 - wh[0] - wh[2];
+    for (const k of ['sky', 'top', 'fog', 'grey']) blendC(A[k], k);
+    const bn = k => V[0][k] * w[0] + V[1][k] * w[1] + V[2][k] * w[2];
+    A.fn = bn('fn'); A.ff = bn('ff');
+    renderer.toneMappingExposure = bn('exp');
+    const t1 = Math.min(1, ph), el = ph <= 1 ? lerp(V[0].el, V[1].el, t1) : lerp(V[1].el, -0.08, Math.min(1, (ph - 1) / 0.4));
+    const da = Math.atan2(Math.sin(V[1].az - V[0].az), Math.cos(V[1].az - V[0].az)), az = V[0].az + da * t1;
+    if (ph < 2 && el > -0.03) {   // the sun (its light and disc fade as it nears the horizon)
+      sunDir.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)).normalize();
+      A.sun.copy(V[0].sun).lerp(V[1].sun, t1);
+      A.sunI = lerp(V[0].sunI, V[1].sunI, t1) * (tr ? sm01((el + 0.03) / 0.23) : 1);
+      A.disc = tr ? sm01((el + 0.03) / 0.06) : 1;
+    } else {   // the moon (a dim cool light; its disc 0.35 of the sun's)
+      const m = V[2], mk = ph >= 2 || !tr ? 1 : sm01((ph - 1.4) / 0.6);
+      sunDir.set(Math.cos(m.az) * Math.cos(m.el), Math.sin(m.el), Math.sin(m.az) * Math.cos(m.el)).normalize();
+      A.sun.copy(m.sun); A.sunI = m.sunI * mk; A.disc = 0.35 * mk;
+    }
+    lightRotInv.lookAt(sunDir, _v1.set(0, 0, 0), Y_UP);
+    lightRot.copy(lightRotInv).transpose();
+    skyU.sunDir.value.copy(sunDir);
+    sun.color.copy(A.sun);
+    A.stars = sm01((ph - 1.3) / 0.6);
+    applyOvercast(ENV.oc);
   }
   // overcast 0..1 (rain / wet track): sky, fog, sun / hemisphere light and clouds blend towards the rain greys
   const _cSky = new THREE.Color(), _cFog = new THREE.Color(), _cTop = new THREE.Color();
   function applyOvercast(oc) {
-    const A = atm, night = A.night, dusk = A.dusk, oc2 = oc * 0.85;
+    const A = atm, w = A.w, wh = A.wh, oc2 = oc * 0.85;
     const cov = ENV.cov != null ? ENV.cov : oc, dk = ENV.dk != null ? ENV.dk : oc, deck = sm01((cov - 0.5) / 0.5);
     A.oc = oc; A.cov = cov; A.dk = dk;
     const grey = A.dGrey.copy(A.grey).multiplyScalar(1 - 0.4 * dk);   // heavy rain: darker greys
     const skyC = _cSky.copy(A.sky).lerp(grey, oc2), fogC = _cFog.copy(A.fog).lerp(grey, oc2);
-    sun.intensity = (night ? 0.45 : dusk ? 2.2 : 2.55) * (1 - 0.72 * oc) * (1 - 0.4 * deck);   // weaker, fainter shadows under a deck
-    if (night) { hemi.color.set('#cfd8ee'); hemi.groundColor.set('#34343c'); hemi.intensity = 1.55 * (1 - 0.15 * oc); }
-    else {
-      hemi.color.copy(skyC).lerp(A.white, dusk ? 0.25 : 0.4);
-      hemi.groundColor.copy(A.grass).lerp(A.gTint, 0.55);
-      hemi.intensity = (dusk ? 1.45 : 1.05) * (1 + 0.3 * oc);
+    sun.intensity = A.sunI * (1 - 0.72 * oc) * (1 - 0.4 * deck);   // weaker, fainter shadows under a deck
+    // hemisphere: day / dusk from the sky colour, night a fixed cool fill (the night look's lit track); weighted by the time of day
+    let hi = 0; hemi.color.setRGB(0, 0, 0); hemi.groundColor.setRGB(0, 0, 0);
+    for (let k = 0; k < 3; k++) {
+      if (!wh[k]) continue;
+      let ik;
+      if (k === 2) { _cA.set('#cfd8ee'); _cB.set('#34343c'); ik = 1.55 * (1 - 0.15 * oc); }
+      else { _cA.copy(skyC).lerp(A.white, V_(k).hk); _cB.copy(A.grass).lerp(V_(k).gTint, 0.55); ik = V_(k).hi * (1 + 0.3 * oc); }
+      hemi.color.add(_cA.multiplyScalar(wh[k])); hemi.groundColor.add(_cB.multiplyScalar(wh[k])); hi += ik * wh[k];
     }
+    hemi.intensity = hi;
     if (blobs) blobs.material.opacity = 0.45 + 0.18 * deck;   // soft contact shadows carry the cars under cloud
     scene.fog.color.copy(fogC);
     renderer.setClearColor(fogC, 1);
     scene.fog.near = A.fn * (1 - 0.6 * oc); scene.fog.far = A.ff * (1 - 0.5 * oc);
     srgbVec(fogC, skyU.horizon.value); srgbVec(skyC, skyU.skyMid.value); srgbVec(_cTop.copy(A.top).lerp(grey, oc2), skyU.zenith.value);
     srgbVec(A.sun, skyU.sunCol.value);
-    if (night) skyU.sunCol.value.multiplyScalar(0.35);
-    skyU.sunCol.value.multiplyScalar(1 - 0.8 * oc);
+    skyU.sunCol.value.multiplyScalar(A.disc * (1 - 0.8 * oc));   // (night: the moon, 0.35)
     // clouds: white -> light grey -> mid grey -> dark grey with darkness (dusk keeps a warm cast, night stays dark)
-    const g = lerp(0.9, 0.34, dk), mixK = sm01(dk * 2.2);
-    if (night) skyU.cloudCol.value.set(0.12, 0.14, 0.2).lerp(_v1.set(0.075, 0.08, 0.095), sm01(dk * 1.6));
-    else if (dusk) skyU.cloudCol.value.set(0.96, 0.7, 0.6).lerp(_v1.set(g * 0.88, g * 0.8, g * 0.78), mixK);
-    else skyU.cloudCol.value.set(1.0, 1.0, 1.0).lerp(_v1.set(g, g * 1.01, g * 1.04), mixK);
+    const g = lerp(0.9, 0.34, dk), mixK = sm01(dk * 2.2), cc = skyU.cloudCol.value.set(0, 0, 0);
+    if (w[0]) cc.addScaledVector(_v2.set(1.0, 1.0, 1.0).lerp(_v3.set(g, g * 1.01, g * 1.04), mixK), w[0]);
+    if (w[1]) cc.addScaledVector(_v2.set(0.96, 0.7, 0.6).lerp(_v3.set(g * 0.88, g * 0.8, g * 0.78), mixK), w[1]);
+    if (w[2]) cc.addScaledVector(_v2.set(0.12, 0.14, 0.2).lerp(_v3.set(0.075, 0.08, 0.095), sm01(dk * 1.6)), w[2]);
     skyU.cloudAmt.value = cov; skyU.dark.value = dk;
     skyU.sunVis.value = 1 - sm01((cov - 0.5) / 0.4);   // sun / moon disc gone under heavy cover
+    skyU.stars.value = A.stars * (1 - sm01((cov - 0.3) / 0.5));   // faint stars at night, gone under cloud
+  }
+  const V_ = k => atm.V[k];
+  // ---- time of day changing over the session (ENV.trans): the world is built lit for the darkest time it reaches; the lit
+  // structures fade with the light level (todLights: once after the build, then only when the level moves ~0.4 %): points
+  // (lamp glows) by opacity, toneMapped:false emitters (floodlight heads, lit windows) by colour towards userData.todDay (0 =
+  // gone by day), emissive materials towards userData.todEm (default black), the facade shaders' day / floodlight uniforms
+  // (userData.todU); fog-less far scenery (haze baked at the session's lightest time) is tinted by the fog colour now / then.
+  // userData.todSkip: left alone (start lights, the Las Vegas spectacle)
+  const TODL = { list: [], far: [], k: -1, bake: new THREE.Color(1, 1, 1) };
+  const litLevel = ph => (ph <= 1 ? 0.8 * sm01((ph - 0.35) / 0.65) : 0.8 + 0.2 * Math.min(1, ph - 1));
+  function todLightsInit() {
+    TODL.list = []; TODL.far = []; TODL.k = -1;
+    if (!ENV.trans || !world) return;
+    TODL.bake.copy(atm.fog);
+    const seen = new Set();
+    world.traverse(o => {
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!m || seen.has(m) || m.userData.todSkip) continue;
+        seen.add(m);
+        const ud = m.userData;
+        if (m.isPointsMaterial) TODL.list.push({ m, t: 'a', v: m.opacity });
+        else if (m.isMeshBasicMaterial && m.toneMapped === false && m.color) TODL.list.push({ m, t: 'b', c: m.color.clone(), d: +ud.todDay || 0 });
+        else if (m.emissive && m.emissiveIntensity > 0 && m.emissive.r + m.emissive.g + m.emissive.b > 0) TODL.list.push({ m, t: 'e', c: m.emissive.clone(), d: col(ud.todEm || 0) });
+        if (ud.todU) TODL.list.push({ m, t: 'u' });
+        if (m.fog === false && m.isMeshLambertMaterial && m.color) TODL.far.push({ m, c: m.color.clone() });
+      }
+    });
+  }
+  function todFacade(U, m) { if (U && U.uDay) { U.uDay.value = todV(1, 0.35, 0.06); U.uFlood.value = m.userData.todU.flood ? todV(0, 0.2, 0.34) : 0; } }
+  function todLightsReset() {   // (back to the built values: materials can outlive the world)
+    for (const e of TODL.list) { const m = e.m; if (e.t === 'a') { m.opacity = e.v; m.visible = true; } else if (e.t === 'b') { m.color.copy(e.c); m.visible = true; } else if (e.t === 'e') m.emissive.copy(e.c); }
+    for (const e of TODL.far) e.m.color.copy(e.c);
+    TODL.list = []; TODL.far = []; TODL.k = -1;
+  }
+  function todLights() {
+    if (!TODL.list.length && !TODL.far.length) return;
+    const k = clamp(litLevel(ENV.ph) / litLevel(ENV.tod === 'night' ? 2 : 1), 0, 1);
+    if (Math.abs(k - TODL.k) > 0.004 || (k === 0) !== (TODL.k === 0) || (k === 1) !== (TODL.k === 1)) {
+      TODL.k = k;
+      for (const e of TODL.list) {
+        const m = e.m;
+        if (e.t === 'a') { m.opacity = e.v * k; m.visible = k > 0.01; }
+        else if (e.t === 'b') { m.color.copy(e.c).multiplyScalar(lerp(e.d, 1, k)); m.visible = e.d > 0 || k > 0.01; }
+        else if (e.t === 'e') m.emissive.copy(e.d).lerp(e.c, k);
+      }
+    }
+    for (const e of TODL.list) if (e.t === 'u') todFacade(e.m.userData.todSh, e.m);
+    if (TODL.far.length) {   // (per channel: fog now / fog baked, 0..1.3)
+      const f = atm.fog, b = TODL.bake, r = clamp(f.r / Math.max(1e-3, b.r), 0, 1.3), g = clamp(f.g / Math.max(1e-3, b.g), 0, 1.3), bl = clamp(f.b / Math.max(1e-3, b.b), 0, 1.3);
+      for (const e of TODL.far) e.m.color.setRGB(e.c.r * r, e.c.g * g, e.c.b * bl);
+    }
+  }
+  // per frame: the phase eases towards Weather.todPhase (race distance / time trial time); the env map (reflections) is
+  // rebuilt only every 0.12 of a phase (~17 times over a day -> night race)
+  function updateTod(g, dt) {
+    const w = g && g.weather;
+    if (!ENV.trans || !atm || !T || !w || typeof Weather === 'undefined') return;
+    const tgt = Weather.todPhase(w, g);
+    ENV.ph += (tgt - ENV.ph) * (1 - Math.exp(-dt / 1.5));
+    if (Math.abs(tgt - ENV.ph) < 1e-4) ENV.ph = tgt;
+    if (Math.abs(ENV.ph - atm.ph) < 2e-4) return;
+    applyTod(ENV.ph);
+    todLights();
+    if (Math.abs(ENV.ph - atm.envPh) > 0.12) { atm.envPh = ENV.ph; makeEnvMap(); for (const m of wetMats) m.envMap = shared.env || null; }
   }
   // tiny sky gradient environment (PMREM) for the wet-asphalt sheen
   // image-based lighting: PMREM of the sky dome (+ dark ground below the horizon)
   function makeEnvMap(skyC, fogC) {
     if (envRT) { envRT.dispose(); envRT = null; }
-    const g = mixc(col(TH.ground || TH.grass), col('#202020'), ENV.tod === 'night' ? 0.8 : 0.35);
+    const g = mixc(col(TH.ground || TH.grass), col('#202020'), lerp(0.35, 0.8, atm ? atm.w[2] : ENV.tod === 'night' ? 1 : 0));
     skyU.groundCol.value.set(g.r, g.g, g.b);
     const es = new THREE.Scene(), m = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), skyMesh.material);
     es.add(m);
@@ -89501,6 +90112,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
   // ------------------------------------------------------------------------------------------ loadTrack
   function disposeWorld() {
     if (world) { scene.remove(world); world = null; }
+    todLightsReset();
     for (const r of trackRes) { try { r.dispose(); } catch (e) { /* ignore */ } }
     trackRes = []; farList = []; lodList = []; skyFar = []; skyRect = null; BOATS = null; LVX = null;
     bulbs = glows = null; lightsKey = -99; crowdMat = null; waterMat = null; waterField = null; wetMats = [];
@@ -89515,6 +90127,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     TH = Object.assign({}, DEF_THEME, T.theme || {});
     readEnv(lastG || globalG());
     TH.timeOfDay = ENV.tod;
+    if (ENV.trans) TH.nightFalloff = 0;   // (a time-of-day change: no ground darkened for good beyond the lights)
     world = new THREE.Group(); world.name = 'track'; world.matrixAutoUpdate = false;   // (PERF: static, see init)
     FL.on = true; FL.list = []; FL.bytes = 0;
     scene.add(world);
@@ -89535,6 +90148,10 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     for (const f of steps) { try { f(); } catch (e) { console.error('[Render3D] ' + f.name + ' failed:', e); } }
     // (land-use worlds bring several materials of their own: compile them now rather than as they first come into view)
     if (AREA) { try { renderer.compile(scene, camera); } catch (e) { /* ignore */ } }
+    if (ENV.trans) {   // (time of day changing: the lights' registry, then the look at the session's time now)
+      todLightsInit(); applyTod(ENV.ph); todLights();
+      atm.envPh = ENV.ph; makeEnvMap(); for (const m of wetMats) m.envMap = shared.env || null;
+    }
     releaseAtlases();
     FL.on = false; flushUploads();
     dropCpuCopies();
@@ -90288,7 +90905,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
         const sl = clamp(Math.hypot(gx, gz) * 6, 0, 1), up = clamp((Y[q] - base) / 90, 0, 1), n2 = 0.92 + 0.16 * vnoise(x / 260, z / 260);
         const lcC = LP && LC[j] ? LP[LC[j][i]] : cOne;
         const c = DM.h[q] <= -50 ? natural(TH.water || '#2f5a68', 0.8) : lcC ? scaled(lcC, (1 - 0.25 * sl) * (0.9 + 0.2 * vnoise(x / 90, z / 90))) : mixc(mixc(cSand, cRock, Math.max(sl, up * 0.6)), cDark, sl * sl * 0.6).multiplyScalar(n2);
-        const dd = Math.hypot(x - cx, z - cz), hz = ENV.tod === 'night' ? clamp((dd - 500) / 2600, 0.3, 0.93) : clamp((dd - HZ[0]) / HZ[1], 0.05, HZ[2]);   // (after dark the desert beyond the lights fades out fast)
+        const dd = Math.hypot(x - cx, z - cz), hz = ENV.tod === 'night' && !ENV.trans ? clamp((dd - 500) / 2600, 0.3, 0.93) : clamp((dd - HZ[0]) / HZ[1], 0.05, HZ[2]);   // (after dark the desert beyond the lights fades out fast)
         if (ENV.tod === 'night' && TH.nightFalloff) c.multiplyScalar(0.3);   // (unlit, as the near ground's far skirt)
         vi[q] = g.vert(x, Y[q], z, -gx / l, 1 / l, -gz / l, mixc(c, haze, hz));
       }
@@ -91197,7 +91814,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
         emissive: col(night ? '#ffcf8f' : '#000000'), emissiveIntensity: ENV.tod === 'night' ? 0.32 : night ? 0.16 : 0 })), { cast: true, receive: true, chunk: CHUNK });
     }
     addMesh(F, lambert({ map: shared.fence, transparent: true, side: THREE.DoubleSide, depthWrite: false, alphaTest: 0.02 }), { receive: false, order: 2, chunk: CHUNK, noRefl: true });
-    { const em = own(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })); em.color.setScalar(lightBoost * (ENV.tod === 'day' ? 1 : 1.3)); addMesh(E, em, { receive: false, chunk: CHUNK }); }
+    { const em = own(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })); em.color.setScalar(lightBoost * (ENV.tod === 'day' ? 1 : 1.3)); em.userData.todDay = 1 / 1.3; addMesh(E, em, { receive: false, chunk: CHUNK }); }
     if (BL.i.length || (glassFacade && glassFacade.i.length)) {
       const dusk = TH.timeOfDay !== 'day';
       const bm = facadeMaterial(dusk);
@@ -92164,8 +92781,8 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     S.box(c.x, H - 0.75, c.z, 0.12, 0.35, 0.12, yaw, cG2);
     const fwd = _v1.set(-T.tx[i], 0, -T.tz[i]);
     _q1.setFromUnitVectors(_v2.set(0, 0, 1), fwd);
-    bulbs = new THREE.InstancedMesh(own(new THREE.CircleGeometry(0.16, 16)), own(new THREE.MeshBasicMaterial({ toneMapped: false })), 10);
-    glows = new THREE.InstancedMesh(own(new THREE.PlaneGeometry(1.25, 1.25)), own(new THREE.MeshBasicMaterial({ map: shared.puff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })), 10);
+    bulbs = new THREE.InstancedMesh(own(new THREE.CircleGeometry(0.16, 16)), own(new THREE.MeshBasicMaterial({ toneMapped: false, userData: { todSkip: 1 } })), 10);
+    glows = new THREE.InstancedMesh(own(new THREE.PlaneGeometry(1.25, 1.25)), own(new THREE.MeshBasicMaterial({ map: shared.puff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, userData: { todSkip: 1 } })), 10);
     const colSp = panelW / 5.4;
     for (let k = 0; k < 10; k++) {
       const cI = k % 5, row = Math.floor(k / 5), d = (cI - 2) * colSp;
@@ -95084,8 +95701,11 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const m = lambert({ vertexColors: true, map: shared.facadeAtlasM, emissive: dusk ? col('#ffc47e') : col('#000000'), emissiveIntensity: dusk ? (ENV.tod === 'night' ? 1.1 : 0.85) : 0 });
     const intD = +o.intD || 0, flood = dusk && o.flood ? (ENV.tod === 'night' ? 0.34 : 0.2) : 0, day = ENV.tod === 'night' ? 0.06 : ENV.tod === 'dusk' ? 0.35 : 1;
     const skyA = col(TH.sky || '#8fc3ee'), skyB = col(TH.skyTop || TH.sky || '#3d7fd0');
+    m.userData.todU = { flood: !!(dusk && o.flood) };   // (time of day changing: todLights drives uDay / uFlood)
     m.onBeforeCompile = sh => {
+      m.userData.todSh = sh.uniforms;
       Object.assign(sh.uniforms, { uIntD: { value: intD }, uDay: { value: day }, uFlood: { value: flood }, uSkyA: { value: skyA }, uSkyB: { value: skyB }, uNoInt: { value: new THREE.Vector2(lvS ? 5 : -9, lvS ? 14 : -9) } });
+      if (ENV.trans) todFacade(sh.uniforms, m);   // (compiled after a time-of-day change began: today's values)
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float fstyle;\nvarying float vStyle;')
         .replace('#include <uv_vertex>', '#include <uv_vertex>\nvStyle = fstyle;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
@@ -95530,7 +96150,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const S = O.far; if (typeof S !== 'string' || S.length < 20) return;
     const DIG = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', V = new Int8Array(128); for (let k = 0; k < 64; k++) V[DIG.charCodeAt(k)] = k;
     let p = 0; const rd = n => { let v = 0; for (let k = 0; k < n; k++) v = v * 64 + V[S.charCodeAt(p++)]; return v; };
-    const skyY = sk.skyY, dusk = ENV.tod !== 'day', night = ENV.tod === 'night', intD = quality === 'low' || isTouch() ? 0 : quality === 'medium' ? 70 : 140, fm = facadeMaterialM(dusk, { intD }), mS = lambert({ vertexColors: true });
+    const skyY = sk.skyY, dusk = ENV.tod !== 'day', night = ENV.tod === 'night' && !ENV.trans, intD = quality === 'low' || isTouch() ? 0 : quality === 'medium' ? 70 : 140, fm = facadeMaterialM(dusk, { intD }), mS = lambert({ vertexColors: true });
     const fmH = facadeMaterialM(dusk, { intD: 0 }), mSH = lambert({ vertexColors: true, fog: false }); fmH.fog = false;
     const HZ = sk.hz, inHF = (x, z) => !!HF && x > HF.x0 && z > HF.z0 && x < HF.x0 + (HF.nx - 1) * HF.cs && z < HF.z0 + (HF.nz - 1) * HF.cs;
     const ROOF = ['#b8674b', '#a35c45', '#8a7f74', '#7d8287', '#5d636a', '#d9d6cf'].map(h => natural(h, 0.9)), TILE = ['#c47a5a', '#b86d4f', '#cf8a66', '#b5674b', '#a9634a'].map(h => natural(h, 0.92));
@@ -95627,7 +96247,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const pos = [], nrm = [], idx = []; for (const [x, y, z] of V) { const l = Math.hypot(x, (y - ring) * 1.6, z) || 1; pos.push(x, y, z); nrm.push(x / l, y === 0 ? -0.6 : y === 1 ? 1 : (y - ring) * 1.6 / l, z / l); }
     for (let k = 0; k < 5; k++) { const a = 1 + k, b = 1 + (k + 1) % 5; idx.push(0, b, a, a, b, 6); }
     cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); cg.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); cg.setIndex(idx); own(cg);
-    const night = ENV.tod === 'night', HZ = sk.hz, TC = ['#3f5a2c', '#4a6631', '#365026', '#556b35', '#5d6b3c', '#2f4a26'].map(h => natural(h, 0.9));
+    const night = ENV.tod === 'night' && !ENV.trans, HZ = sk.hz, TC = ['#3f5a2c', '#4a6631', '#365026', '#556b35', '#5d6b3c', '#2f4a26'].map(h => natural(h, 0.9));
     const mats = [lambert({}), lambert({ fog: false })], SEC = 12, groups = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3();
     for (let k = 0; k < n; k++) {
       const x = pts[k * 6], y = pts[k * 6 + 1], z = pts[k * 6 + 2], v = pts[k * 6 + 3], w = pts[k * 6 + 4], near = pts[k * 6 + 5];
@@ -96009,7 +96629,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     gP.geom(new THREE.CylinderGeometry(0.11, 0.17, 0.6, 8), M4(0, 0.3, 0), cB); gP.geom(new THREE.CylinderGeometry(0.07, 0.09, 3.9, 8), M4(0, 2.55, 0), cP);
     gP.geom(new THREE.CylinderGeometry(0.15, 0.1, 0.25, 8), M4(0, 4.55, 0), cP); gP.geom(new THREE.CylinderGeometry(0.05, 0.05, 0.2, 6), M4(0, 5.0, 0), cP);
     const mP = new THREE.InstancedMesh(own(gP.build()), lambert({ vertexColors: true }), n), mG = new THREE.InstancedMesh(own(new THREE.SphereGeometry(0.3, 12, 8)),
-      night ? own(new THREE.MeshBasicMaterial({ color: col('#fff1d6'), toneMapped: false })) : lambert({ color: col('#f6f3e6'), emissive: col('#2a2824') }), n);
+      night ? own(new THREE.MeshBasicMaterial({ color: col('#fff1d6'), toneMapped: false, userData: { todDay: 0.75 } })) : lambert({ color: col('#f6f3e6'), emissive: col('#2a2824') }), n);
     const LP = [], m4 = new THREE.Matrix4();
     let nk = 0;   // (FIX3 S: none in a run-off / escape road / on the pit exit road, nor within 0.8 m of the barriers: propClear)
     for (let k = 0; k < n; k++) { const x = LA[k * 2], z = LA[k * 2 + 1], y = GH(x, z); if (!propClear(x, z, 0.8)) continue; mP.setMatrixAt(nk, m4.makeTranslation(x, y, z)); mG.setMatrixAt(nk, m4.makeTranslation(x, y + 4.98, z)); nk++; LP.push(x, y + 5, z); }
@@ -96083,9 +96703,12 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
   function buildLV() {
     const O = ((T.scenery || {}).osm || {}).lv; if (!O || typeof LVFX === 'undefined') return;
     const g = lastG || globalG(), seed = g && g.race && g.race.seed != null ? g.race.seed : 0;
+    const mats = o => { const r = new Set(); o.traverse(x => { for (const m of Array.isArray(x.material) ? x.material : [x.material]) if (m) r.add(m); }); return r; };
+    const pre = ENV.trans ? mats(world) : null;   // (a time-of-day change: the spectacle keeps its own lights, todLights leaves them)
     LVX = LVFX.build({ renderer, world, T, O, q: quality, tod: ENV.tod, GH: (x, z) => (HF ? GH(x, z) : 0), gap: trackGap, res: trackRes, rib: LVRIB, roof: LVROOF,
       sun: { d: sunDir.clone().normalize(), c: sun.color.clone().multiplyScalar(sun.intensity) }, seed });
     LVRIB = LVROOF = null;
+    if (pre) for (const m of mats(world)) if (!pre.has(m)) m.userData.todSkip = 1;
   }
 
   function buildOSM() {
@@ -96800,7 +97423,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     addMesh(Rb, lambert({ vertexColors: true, side: THREE.DoubleSide, emissive: col('#4a4a46') }), { cast: false, receive: true, chunk: CHUNK });   // (roof undersides: lifted out of the green ground bounce)
     if (Ln.i.length) addMesh(Ln, lambert({ vertexColors: true, emissive: col(ENV.tod === 'night' ? '#5e3a9a' : ENV.tod === 'dusk' ? '#3a2a55' : '#000000') }), { cast: true, receive: true, chunk: CHUNK });
     if (Tn.i.length) { const tg = Tn.build(); tg.computeVertexNormals();   // (tensile fabric: smooth, self-lit warm at night as if floodlit from below)
-      addMesh(tg, lambert({ vertexColors: true, side: THREE.DoubleSide, emissive: col(ENV.tod === 'night' ? '#cdb489' : ENV.tod === 'dusk' ? '#8c7f68' : '#6c6a62') }), { cast: true, receive: true }); }
+      addMesh(tg, lambert({ vertexColors: true, side: THREE.DoubleSide, emissive: col(ENV.tod === 'night' ? '#cdb489' : ENV.tod === 'dusk' ? '#8c7f68' : '#6c6a62'), userData: { todEm: '#6c6a62' } }), { cast: true, receive: true }); }
     if (L.i.length) { const lg = L.build(); lg.computeVertexNormals();   // (leaf roofs: smooth shading over the arched membranes)
       // (osm.leafCol: the membranes glow in their own colour underneath, as translucent fabric in daylight)
       addMesh(lg, lambert({ vertexColors: true, side: THREE.DoubleSide, emissive: O.leafCol ? scaled(natural(O.leafCol, 0.9), 0.42) : col('#78786f'), flatShading: true }), { cast: true, receive: true }); }
@@ -97434,7 +98057,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     if (n) { P.off.needsUpdate = true; P.prm.needsUpdate = true; P.clr.needsUpdate = true; }
     const u = P.mesh.material.uniforms;
     u.fogColor.value.copy(scene.fog.color); u.fogNear.value = scene.fog.near; u.fogFar.value = scene.fog.far;
-    u.tint.value = spark ? lightBoost : (ENV.tod === 'night' ? 0.32 : ENV.tod === 'dusk' ? 0.55 : 0.95) * (1 - 0.3 * ENV.oc);
+    u.tint.value = spark ? lightBoost : todV(0.95, 0.55, 0.32) * (1 - 0.3 * ENV.oc);
   }
 
   function makeBlobs() {
@@ -97496,7 +98119,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     if (!on) return;
     const sR = Math.min(1, rv / 0.15);   // fades in from a few drops (dynamic weather); 1 for fixed damp / wet
     rain.mat.opacity = (0.18 + 0.3 * rv) * (0.4 + 0.6 * sR);
-    rain.mat.color.set(ENV.tod === 'night' ? 0x8f9ab0 : 0xc8d2e0);
+    rain.mat.color.set(0xc8d2e0).lerp(_cA.set(0x8f9ab0), atm ? atm.w[2] : 0);
     const n = Math.round(N_RAIN * Math.min(1, 0.35 * sR + 0.65 * rv)), d = rain.d, len = 0.45 + speed * 0.012;
     rain.im.count = n;
     _q1.setFromAxisAngle(_v3.set(1, 0, 0), -Math.min(0.9, speed * 0.012));
@@ -97554,7 +98177,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const lw = envW && envW.field && typeof Weather !== 'undefined' && Weather.lookAt ? Math.min(1.15, Weather.lookAt(envW, car.s || 0, car.d || 0)) : ENV.wet;
     if (lw > 0.02 && spd > 12 && !inTunnel(car.s || 0)) {
       v.spray = (v.spray || 0) + dt * Math.min(1, lw) * spd * 0.8;
-      const gl = ENV.tod === 'night' ? 0.55 : 0.82;
+      const gl = lerp(0.82, 0.55, atm ? atm.w[2] : 0);
       while (v.spray >= 1) {
         v.spray -= 1;
         const sd = (Math.random() - 0.5) * 1.9, x = car.x - ch * 2.3 - sh * sd, z = car.z - sh * 2.3 + ch * sd;
@@ -98231,7 +98854,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     }
     RL.geo.attributes.position.needsUpdate = true; RL.geo.attributes.color.needsUpdate = true;
     // light: painted-on at night / dusk / under rain clouds rather than glowing
-    const lum = (ENV.tod === 'night' ? 0.4 : ENV.tod === 'dusk' ? 0.66 : 1) * (1 - 0.3 * (ENV.oc || 0));
+    const lum = todV(1, 0.66, 0.4) * (1 - 0.3 * (ENV.oc || 0));
     RL.mesh.material.color.setScalar(lum);
     RL.mesh.material.opacity = 0.85 - 0.15 * (ENV.wet || 0);
     if (RL.front) { RL.front.material.color.setScalar(lum); RL.front.material.opacity = RL.mesh.material.opacity; }
@@ -98245,6 +98868,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     if (!!(G && G.attract) !== bgMode) { bgMode = !bgMode; resize(); }   // (PERF: menu showcase pixel ratio)
     dt = Math.min(Math.max(dt || 0.016, 0), 0.1);
     updateSky(G, dt);
+    updateTod(G, dt);
     updateWeatherFx(G, dt);
     const cx = camera.position.x, cz = camera.position.z;
     for (let k = 0; k < views.length; k++) {
@@ -98724,7 +99348,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     renderer.setRenderTarget(P.rt); renderer.render(scene, camera);
     if (P.bloom) {
       P.bright.uniforms.tSrc.value = P.rt.texture; P.bright.uniforms.texel.value.set(1 / P.rt.width, 1 / P.rt.height);
-      P.bright.uniforms.th.value = ENV.tod === 'day' ? 1.05 : 0.8;
+      P.bright.uniforms.th.value = todV(1.05, 0.8, 0.8);
       pass(P.bright, S[0]);
       P.blurM.uniforms.tSrc.value = S[0].texture; P.blurM.uniforms.dir.value.set(1 / S[0].width, 0); pass(P.blurM, S[1]);
       P.blurM.uniforms.tSrc.value = S[1].texture; P.blurM.uniforms.dir.value.set(0, 1 / S[0].height); pass(P.blurM, S[0]);
@@ -98736,7 +99360,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const u = P.final.uniforms;
     u.tScene.value = P.rt.texture; u.tB1.value = S[0].texture; u.tB2.value = S[2].texture;
     u.exposure.value = renderer.toneMappingExposure;
-    u.bloomK.value = ENV.tod === 'day' ? 0.28 : 0.5;
+    u.bloomK.value = todV(0.28, 0.5, 0.5);
     u.mblur.value = P.blur && cam.mode !== 'cockpit' ? clamp((P.speed * 3.6 - 250) / 90, 0, 1) * 0.9 : 0;
     pass(P.final, null);
   }
@@ -102564,7 +103188,7 @@ const Menu = (() => {
   const DEFAULTS = {
     mode: 'race', trackId: 'vortex', laps: 5, lapPct: 0, difficulty: 'medium', teamIndex: 0, compound: 'A', view: 'chase',   // compound 'A' = AUTO (the conditions)
     assists: { tc: true, abs: true, brakeGuide: true, kb: 'normal', steer: 'off', brake: 'off', line: 'off' }, tyreWear: 'normal', twoCompound: false, volume: 0.8,
-    grid: 'random', gridPos: 5, playerName: 'Player', timeOfDay: 'day', weather: 'dry', penalties: true, penaltyLevel: 'standard', pitExitPen: false, investigations: true,   // (penalties = level !== 'off'; pitExitPen: the pit exit line rule, race.js pitExitLine; investigations: race.js penalise)
+    grid: 'random', gridPos: 5, playerName: 'Player', timeOfDay: 'day', todTo: 'none', todMins: 20, weather: 'dry', penalties: true, penaltyLevel: 'standard', pitExitPen: false, investigations: true,   // (penalties = level !== 'off'; pitExitPen: the pit exit line rule, race.js pitExitLine; investigations: race.js penalise)
     grassSlip: 0.8,   // grass slipperiness 0..1 (Settings > Rules slider; CFG.grass: 0 = grips like the track, 0.8 = standard, 1 = 15 % less grip)
     weatherStart: 'dry', weatherEnd: 'wet', weatherWhen: 'mid',   // weather 'custom'
     fieldSize: 10,   // drivers on the grid (quick race / a new championship)
@@ -102604,6 +103228,9 @@ const Menu = (() => {
     fieldSize: Array.from({ length: 19 }, (_, i) => [i + 2, (i + 2) + ' CARS']),   // drivers on the grid, 2..20
     playerNumber: Array.from({ length: 99 }, (_, i) => [i + 1, '#' + (i + 1)]),
     timeOfDay: [['day', 'DAY'], ['dusk', 'DUSK'], ['night', 'NIGHT']],
+    // time of day changing over the session (Weather.todPath): only forward, at most day -> dusk -> night; night -> day = sunrise
+    todTo: [['none', 'NO CHANGE'], ['dusk', 'TO DUSK'], ['night', 'TO NIGHT'], ['day', 'TO DAY (SUNRISE)']],
+    todMins: [[10, '10 MIN'], [20, '20 MIN'], [30, '30 MIN'], [60, '60 MIN']],
     weather: [['dry', 'DRY'], ['damp', 'DAMP'], ['wet', 'WET'], ['dynamic', 'DYNAMIC (FORECAST)'], ['custom', 'CUSTOM']],
     wxCond: [['dry', 'DRY'], ['damp', 'DAMP'], ['wet', 'WET']],
     wxWhen: [['early', 'EARLY'], ['mid', 'MID-RACE'], ['late', 'LATE']],
@@ -102731,6 +103358,7 @@ const Menu = (() => {
     const ids = trackIds();
     if (ids.length && !ids.includes(s.trackId)) s.trackId = ids[0];
     s.laps = isNum(+s.laps) && +s.laps > 0 ? +s.laps : 5;
+    s.trackRandom = !!s.trackRandom;   // (RANDOM circuit: resolved to a real one when the session starts, start())
     s.lapPct = [25, 50, 100].includes(+s.lapPct) ? +s.lapPct : 0;   // (0: a fixed lap count; 25 / 50 / 100: that share of the F1 distance, S.laps = its laps here)
     s.difficulty = pick(s.difficulty === 'ultra' ? 'extreme' : s.difficulty, OPT.difficulty, 'medium');   // (ULTRA removed 2026-10-16: Extreme is all out)
     s.reflections = pick(s.reflections, OPT.reflections, 'auto');
@@ -102768,6 +103396,7 @@ const Menu = (() => {
     s.playerNumber = Math.max(1, Math.min(99, (s.playerNumber | 0) || 7));
     s.playerName = cleanName(s.playerName);
     s.timeOfDay = pick(s.timeOfDay, OPT.timeOfDay, 'day');
+    s.todTo = pick(s.todTo, OPT.todTo, 'none'); s.todMins = pick(+s.todMins, OPT.todMins, 20);
     s.weather = pick(s.weather, OPT.weather, 'dry');
     s.weatherStart = pick(s.weatherStart, OPT.wxCond, 'dry');
     s.weatherEnd = pick(s.weatherEnd, OPT.wxCond, 'wet');
@@ -102802,6 +103431,8 @@ const Menu = (() => {
   // a circuit's default time of day (TRACK_DATA theme.timeOfDay); picking a circuit for a quick race / time trial puts
   // the TIME OF DAY row on it (still changeable), championship rounds start on it
   function trackTod(id) { const th = typeof TRACK_DATA !== 'undefined' && TRACK_DATA[id] && TRACK_DATA[id].theme, t = th && th.timeOfDay; return TODS.includes(t) ? t : 'day'; }
+  const todOk = (a, b) => typeof Weather !== 'undefined' && Weather.todPath ? !!Weather.todPath(a, b) : false;
+  const todTxt = (a, b) => (a === 'day' && b === 'night' ? 'DAY \u2192 DUSK \u2192 NIGHT' : a === 'night' ? 'NIGHT \u2192 DAY (SUNRISE)' : a.toUpperCase() + ' \u2192 ' + b.toUpperCase());
   function pickCircuit(id) { S.trackId = id; S.timeOfDay = trackTod(id); if (S.lapPct) S.laps = pctLaps(S.lapPct) || S.laps; }
   // a 25 / 50 / 100 % race's laps on the circuit picked (a championship: its next round's)
   function pctLaps(p) { const L = trackInfo(setupTrackId()).length; return L > 0 ? U.raceLaps(p, L, setupTrackId()) : 0; }   // (main.js startSession sets each round's own)
@@ -102951,6 +103582,10 @@ const Menu = (() => {
     // quick race / time trial: one race's conditions (time of day starts on the circuit's default). Championship: every
     // round has its own (CIRCUITS tab calendar); a season in progress shows the next round's here
     { k: 'timeOfDay', label: 'Time of day', type: 'cycle', opts: OPT.timeOfDay, tab: 'race', showIf: () => S.mode !== 'championship' },
+    { k: 'todTo', label: 'Time of day change', type: 'cycle', tab: 'race', showIf: () => S.mode !== 'championship',
+      opts: () => OPT.todTo.filter(o => o[0] === 'none' || todOk(S.timeOfDay, o[0])).map(o => [o[0], o[0] === 'none' ? o[1] : todTxt(S.timeOfDay, o[0])]),
+      get: () => (todOk(S.timeOfDay, S.todTo) ? S.todTo : 'none'), set: v => { S.todTo = v; } },
+    { k: 'todMins', label: 'Time of day change over', type: 'cycle', opts: OPT.todMins, tab: 'race', showIf: () => S.mode === 'timetrial' && todOk(S.timeOfDay, S.todTo) },
     { k: 'weather', label: 'Weather', type: 'cycle', opts: OPT.weather, tab: 'race', showIf: () => S.mode !== 'championship' },
     { k: 'weatherStart', label: 'Weather at the start', type: 'cycle', opts: OPT.wxCond, tab: 'race', showIf: () => S.mode !== 'championship' && S.weather === 'custom' },
     { k: 'weatherEnd', label: 'Weather at the end', type: 'cycle', opts: OPT.wxCond, tab: 'race', showIf: () => S.mode !== 'championship' && S.weather === 'custom' },
@@ -103291,7 +103926,7 @@ const Menu = (() => {
   ];
   const FOOT_MAIN = '<span><kbd>\u2191</kbd><kbd>\u2193</kbd>SELECT</span><span><kbd>\u2190</kbd><kbd>\u2192</kbd>CHANGE</span><span><kbd>ESC</kbd>BACK</span>';
   const FOOT_PICK = '<span><kbd>\u2190</kbd><kbd>\u2191</kbd><kbd>\u2193</kbd><kbd>\u2192</kbd>MOVE</span><span><kbd>ENTER</kbd>ADD / REMOVE</span><span><kbd>ESC</kbd>BACK</span>';
-  const FOOT_CARDS = '<span><kbd>\u2190</kbd><kbd>\u2191</kbd><kbd>\u2193</kbd><kbd>\u2192</kbd>PICK</span><span><kbd>ENTER</kbd>NEXT STEP</span><span><kbd>ESC</kbd>BACK</span>';   // (CIRCUIT / TEAM & DRIVER cards)
+  const FOOT_CARDS = '<span><kbd>\u2190</kbd><kbd>\u2191</kbd><kbd>\u2193</kbd><kbd>\u2192</kbd>PICK</span><span><kbd>R</kbd>RANDOM</span><span><kbd>ENTER</kbd>NEXT STEP</span><span><kbd>ESC</kbd>BACK</span>';   // (CIRCUIT / TEAM & DRIVER cards)
   const FOOT_SET = '<span><kbd>Q</kbd><kbd>E</kbd>SECTION</span><span><kbd>\u2191</kbd><kbd>\u2193</kbd>SELECT</span><span><kbd>\u2190</kbd><kbd>\u2192</kbd>CHANGE</span><span><kbd>ESC</kbd>BACK</span>';
   const FOOT_KEYS = '<span><kbd>Q</kbd><kbd>E</kbd>SECTION</span><span><kbd>\u2190</kbd><kbd>\u2192</kbd>KEY 1 / 2</span><span><kbd>ENTER</kbd>CHANGE</span><span><kbd>DEL</kbd>CLEAR</span><span><kbd>ESC</kbd>BACK</span>';
 
@@ -103324,7 +103959,7 @@ const Menu = (() => {
       <div class="agp-mn-side">
         <div class="agp-mn-panel" data-r="tracksPanel">
           <div class="agp-pk-bar"><div class="agp-mn-ptitle" data-r="cardsTitle">CIRCUIT</div>
-            <div class="agp-pk-btns"><div class="agp-pk-btn" data-r="pickAll" role="button">SELECT ALL</div><div class="agp-pk-btn" data-r="pickClear" role="button">CLEAR</div></div></div>
+            <div class="agp-pk-btns"><div class="agp-pk-btn" data-r="pickAll" role="button">SELECT ALL</div><div class="agp-pk-btn" data-r="pickClear" role="button">CLEAR</div><div class="agp-pk-btn" data-r="pickShuffle" role="button" title="Random order of the whole calendar">SHUFFLE</div><div class="agp-pk-btn agp-pk-rand" data-r="pickRand" role="button" title="A random circuit, picked when the session starts (key R)">RANDOM</div></div></div>
           <div class="agp-mn-cards" data-r="cards"></div>
           <div class="agp-mn-tdesc" data-r="tdesc"></div>
           <div class="agp-pk-sum" data-r="pickSum"></div>
@@ -103402,6 +104037,8 @@ const Menu = (() => {
     buildList('main', E.mainList, MAIN_ROWS);
     buildList('pause', E.pauseList, PAUSE_ROWS);
     buildCards();
+    E.pickRand.addEventListener('pointerdown', e => e.preventDefault());
+    E.pickRand.addEventListener('click', () => { if (screen === 'main' && !helpOpen && curTab() === 'circuit') toggleRandom(); });
     lvInit();   // custom livery editor screen (before the swatches: their cards open it)
     stInit();   // STATS page (home > STATS)
     hkInit();   // HONK page (home > HONK; honk.js)
@@ -103414,6 +104051,7 @@ const Menu = (() => {
       { k: 'champGrid', type: 'grid', tab: 'rounds', el: E.cards, shared: true, act: () => { const c = (E.cardEls || [])[pickCur]; if (c) toggleRound(c.dataset.id); } },
       { k: 'champAll', type: 'pick', tab: 'rounds', el: E.pickAll, act: pickAll },
       { k: 'champClear', type: 'pick', tab: 'rounds', el: E.pickClear, act: pickClear },
+      { k: 'champShuffle', type: 'pick', tab: 'rounds', el: E.pickShuffle, act: pickShuffle },
       { k: 'start', type: 'start', el: E.start, act: advance },
     ];
     for (const it of extra) { lists.main.items.push(it); if (it.type !== 'grid' && it.type !== 'cards') wire('main', it, lists.main.items.length - 1); }
@@ -103540,7 +104178,8 @@ const Menu = (() => {
         if (screen !== 'main' || helpOpen) return;
         if (curTab() === 'rounds') { setCur(i, false); setFocus('main', idxOf('champGrid'), false); toggleRound(c.dataset.id); return; }   // championship calendar
         setFocus('main', idxOf('trackId'), false);
-        if (S.trackId !== c.dataset.id) { pickCircuit(c.dataset.id); commit(); }   // (+ its default time of day)
+        if (S.trackRandom) { S.trackRandom = false; pickCircuit(c.dataset.id); commit(); }
+        else if (S.trackId !== c.dataset.id) { pickCircuit(c.dataset.id); commit(); }   // (+ its default time of day)
       });
     });
   }
@@ -103603,6 +104242,14 @@ const Menu = (() => {
     S.champOrder = S.champOrder.concat(add);
     sfx('select'); commit(false);
   }
+  function pickShuffle() {   // a random calendar: the picked rounds (every circuit if none) in a new random order
+    const a = (S.champOrder.length > 1 ? S.champOrder : trackIds()).slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    S.champOrder = a;
+    sfx('select'); commit(false);
+  }
+  // RANDOM circuit (quick race / time trial / qualifying weekend): a flag that start() turns into a real circuit
+  function toggleRandom() { S.trackRandom = !S.trackRandom; sfx(S.trackRandom ? 'select' : 'back'); commit(false); }
   function pickClear() {
     if (!S.champOrder.length) return sfx('move');
     S.champOrder = [];
@@ -104170,7 +104817,7 @@ const Menu = (() => {
     if (name !== 'main') return;
     const pk = curTab() === 'rounds', order = S.champOrder;
     (E.cardEls || []).forEach((c, i) => {
-      const id = c.dataset.id, n = order.indexOf(id), on = pk ? n >= 0 : id === S.trackId;
+      const id = c.dataset.id, n = order.indexOf(id), on = pk ? n >= 0 : id === S.trackId && !S.trackRandom;
       c.classList.toggle('is-sel', on);
       c.classList.toggle('is-cur', pk && i === pickCur);
       c.querySelector('.agp-card-ord').textContent = pk && n >= 0 ? n + 1 : '';   // championship: round number
@@ -104206,7 +104853,9 @@ const Menu = (() => {
       requestAnimationFrame(() => { keepInView(E.swatches, selEl, 8); if (E.swatches._more) E.swatches._more(); });
     }
     const ti = trackInfo(S.trackId);
-    E.tdesc.innerHTML = `<strong>${esc(ti.name.toUpperCase())}</strong><b>${esc(ti.character.toUpperCase())}</b>${esc(ti.description)}${ti.lapRecordHint ? ` <em>LAP RECORD \u2248 ${esc(ti.lapRecordHint)}</em>` : ''}`;
+    E.pickRand.classList.toggle('is-on', !!S.trackRandom);
+    E.pickRand.textContent = S.trackRandom ? 'RANDOM  \u2713' : 'RANDOM';
+    E.tdesc.innerHTML = S.trackRandom && S.mode !== 'championship' ? '<strong>RANDOM CIRCUIT</strong><b>PICKED WHEN THE SESSION STARTS</b>Any circuit, chosen at random each time you start. Pick a circuit card to go back to a fixed one.' : `<strong>${esc(ti.name.toUpperCase())}</strong><b>${esc(ti.character.toUpperCase())}</b>${esc(ti.description)}${ti.lapRecordHint ? ` <em>LAP RECORD \u2248 ${esc(ti.lapRecordHint)}</em>` : ''}`;
     const team = teamObjNow();
     E.teamDrv.textContent = team ? '· ' + drvName().toUpperCase() + '  #' + drvNumber(team) + (seasonTeam() != null ? '  ·  ' + team.name.toUpperCase() + ' · THIS SEASON' : '') : '';   // (a season in progress: its own driver + team, fixed)
     const tabs = tabsOf(), last = tabI >= tabs.length - 1;
@@ -104238,7 +104887,7 @@ const Menu = (() => {
     const seen = t => { const i = tabsOf().indexOf(t); return i < 0 || i <= tabI; };
     return `<div class="agp-mn-ptitle">SUMMARY</div>` + row('MODE', MODE_NAME[S.mode]) + (seen(S.mode === 'championship' ? 'rounds' : 'circuit') ? trk : '') +
       (seen('team') ? (team ? row('TEAM', team.name) : '') + row('DRIVER', drvName() + (team ? '  #' + drvNumber(team) : '')) : '') +
-      (seen('race') ? (S.mode !== 'timetrial' ? row('RACE', S.laps + ' LAPS · ' + fieldNow() + ' CARS · ' + S.difficulty + ' AI') + (S.grid === 'qfull' ? row('QUALIFYING', qSumTxt()) : '') : '') + row('CONDITIONS', S.mode !== 'championship' ? wxText(S) + ' · ' + S.timeOfDay : champInProgress() ? 'next round: ' + condTxt(nextCond()) : 'dynamic · each circuit\'s race time') : '') +
+      (seen('race') ? (S.mode !== 'timetrial' ? row('RACE', S.laps + ' LAPS · ' + fieldNow() + ' CARS · ' + S.difficulty + ' AI') + (S.grid === 'qfull' ? row('QUALIFYING', qSumTxt()) : '') : '') + row('CONDITIONS', S.mode !== 'championship' ? wxText(S) + ' · ' + (todOk(S.timeOfDay, S.todTo) ? todTxt(S.timeOfDay, S.todTo).toLowerCase() : S.timeOfDay) : champInProgress() ? 'next round: ' + condTxt(nextCond()) : 'dynamic · each circuit\'s race time') : '') +
       (seen('setup') ? row('CAR SETUP', S.mode === 'championship' ? 'saved per circuit' : (st => `front wing ${st.fw} · rear wing ${st.rw}`)(getSetup(S.trackId))) : '');
   }
   function wxText(s) {
@@ -104387,7 +105036,7 @@ const Menu = (() => {
     if (typeof Net !== 'undefined' && Net.menuItem) items.push(Net.menuItem());   // multiplayer lobby (net.js)
     if (LV() && lists.livery) {   // custom liveries: made here, picked in the TEAM step
       const nL = LV().list().length;
-      items.push({ k: 'livery', label: 'LIVERY CREATOR', sub: nL ? `${nL} / ${LV().MAX} SAVED · EDIT OR MAKE A NEW ONE` : 'YOUR OWN TEAM COLOURS · PICK IT IN THE TEAM STEP', act: () => lvOpen(nL ? null : 'new', 'home') });
+      items.push({ k: 'livery', label: 'LIVERY CREATOR', sub: nL ? `${nL} / ${LV().MAX} SAVED · EDIT OR MAKE A NEW ONE` : 'YOUR OWN TEAM COLOURS · PICK IT IN THE TEAM STEP', act: () => (LV().list().length ? lsOpen() : lvOpen('new', 'lvsel')) });
     }
     // STATS: career + circuit records of the driver profile (stats.js)
     if (STS()) {
@@ -104409,6 +105058,10 @@ const Menu = (() => {
       if (!S.champOrder.length) { setTab(tabsOf().indexOf('rounds')); return pickNeed(); }
       newChampionship();   // (drops a finished / replaced / never-raced season, so main builds the rounds from champOrder)
       champFresh = false;
+    }
+    if (S.trackRandom && S.mode !== 'championship') {   // RANDOM: resolved once here; the loading screen and the session show the chosen circuit
+      const ids = trackIds();
+      if (ids.length) pickCircuit(ids[Math.floor(Math.random() * ids.length)]);
     }
     sfx('start');
     store();
@@ -104434,6 +105087,8 @@ const Menu = (() => {
     }
     if (scr === 'stats') { if (stKey(e)) { e.preventDefault(); e.stopPropagation(); } return; }
     if (scr === 'honk') { if (hkKey(e)) { e.preventDefault(); e.stopPropagation(); } return; }
+    if (scr === 'lvsel') { if (lsKey(e)) { e.preventDefault(); e.stopPropagation(); } return; }
+    if (scr === 'livery' && lvKey(e)) { e.preventDefault(); e.stopPropagation(); return; }
     const L = lists[scr];
     if (!L) return;
     const it = L.items[L.focus];
@@ -104472,6 +105127,7 @@ const Menu = (() => {
   // button (and back); Enter = next step (activate). A season in progress keeps its team (no move).
   function cardsKey(e, it) {
     const code = e.code;
+    if (code === 'KeyR' && it.k === 'trackId' && !e.repeat) { toggleRandom(); return true; }
     if (code !== 'ArrowLeft' && code !== 'ArrowRight' && code !== 'ArrowUp' && code !== 'ArrowDown' && !(it.k === 'teamIndex' && code === 'Delete')) return false;
     const team = it.k === 'teamIndex', els = (team ? E.swEls : E.cardEls) || [];
     const i = els.findIndex(el => el.classList.contains('is-sel'));
@@ -104481,7 +105137,7 @@ const Menu = (() => {
     if (j < 0) { if (code === 'ArrowUp' || code === 'ArrowDown') move(code === 'ArrowUp' ? -1 : 1); else sfx('move'); return true; }
     const el = els[j];
     if (team) lvSetKey(el.dataset.lv ? 'lv:' + el.dataset.lv : +el.dataset.i);
-    else pickCircuit(el.dataset.id);   // (+ its default time of day)
+    else { S.trackRandom = false; pickCircuit(el.dataset.id); }   // (+ its default time of day)
     commit();
     keepCard(el, 8);
     return true;
@@ -104499,14 +105155,14 @@ const Menu = (() => {
       if (ok) { if (!e.repeat) toggleRound(E.cardEls[i].dataset.id); return true; }
       if (!arrow) return false;
       const j = cardStep(E.cardEls, i, code);
-      if (j < 0 && code === 'ArrowUp') return go(cardStep(E.cardEls, i, 'ArrowRight') < 0 ? 'champClear' : 'champAll');   // (CLEAR above the right-hand cards)
+      if (j < 0 && code === 'ArrowUp') return go(cardStep(E.cardEls, i, 'ArrowRight') < 0 ? 'champShuffle' : 'champAll');   // (SHUFFLE above the right-hand cards)
       if (j < 0 && code === 'ArrowDown') return go('start');
       if (j < 0) { sfx('move'); return true; }
       setCur(j, true); sfx('move');
       return true;
     }
     if (it.type === 'pick') {   // SELECT ALL / CLEAR sit side by side above the grid
-      if (code === 'ArrowLeft' || code === 'ArrowRight') return go(it.k === 'champAll' ? 'champClear' : 'champAll');
+      if (code === 'ArrowLeft' || code === 'ArrowRight') return go(it.k === 'champAll' ? (code === 'ArrowRight' ? 'champClear' : 'champShuffle') : it.k === 'champClear' ? (code === 'ArrowRight' ? 'champShuffle' : 'champAll') : (code === 'ArrowRight' ? 'champAll' : 'champClear'));
       if (code === 'ArrowDown') return go('champGrid');
       if (code === 'ArrowUp') return go('start');
       return false;
@@ -105710,13 +106366,13 @@ const Menu = (() => {
     E.rsBtns.classList.remove('has-tp');
     E.rsBtns.innerHTML = `<div class="agp-qg-bar"><div class="agp-qg-spec"><b>RETIRED</b><span>WATCHING THE RACE</span></div>` +
       `<div class="agp-qg-spd" role="group"><div class="agp-qg-lbl">RACE SPEED</div><div class="agp-qg-sb">${[1, 2, 5, 10].map(k => `<b data-k="${k}">×${k}</b>`).join('')}</div></div>` +
-      '<div class="agp-qg-btns"><div class="agp-btn is-primary" role="button" data-k="skipAll"><b>SKIP TO THE RESULTS \u203a</b><span>THE REST OF THE RACE AT ONCE</span></div></div></div>';
+      '<div class="agp-qg-btns">' + (ctl.watch ? '<div class="agp-btn" role="button" data-k="watch"><b>\u2039 BACK TO WATCHING</b><span>YOUR CAR\u2019S VIEW</span></div>' : '') + '<div class="agp-btn is-primary" role="button" data-k="skipAll"><b>SKIP TO THE RESULTS \u203a</b><span>THE REST OF THE RACE AT ONCE</span></div></div></div>';
     const items = [], sp = E.rsBtns.querySelector('.agp-qg-spd'), ks = [1, 2, 5, 10];
     const it = { k: 'speed', type: 'tyre', el: sp, act: () => {}, step: d => { const i = ks.indexOf(ctl.speed()), j = Math.max(0, Math.min(ks.length - 1, i + d)); if (j !== i) { ctl.speed(ks[j]); rcPaint(); sfx('change'); } } };
     it.act = () => it.step(1);
     items.push(it);
     sp.querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', ev => { ev.stopPropagation(); if (screen !== 'garage') return; ctl.speed(+b.dataset.k); setFocus('garage', items.indexOf(it), false); rcPaint(); sfx('change'); }));
-    E.rsBtns.querySelectorAll('.agp-qg-btns .agp-btn').forEach(b => items.push({ k: b.dataset.k, type: 'button', el: b, act: () => { sfx('start'); ctl.skip(); } }));
+    E.rsBtns.querySelectorAll('.agp-qg-btns .agp-btn').forEach(b => items.push({ k: b.dataset.k, type: 'button', el: b, act: () => { sfx('start'); if (b.dataset.k === 'watch') ctl.watch(); else ctl.skip(); } }));
     lists.garage = { items, focus: 0 };
     items.forEach((x, i) => { if (x.type === 'tyre') x.el.addEventListener('pointerenter', () => { if (screen === 'garage') setFocus('garage', i, false); }); else wire('garage', x, i); });
     setFocus('garage', 1, false);
@@ -106445,17 +107101,24 @@ const Menu = (() => {
   let lvCur = null, lvField = 'primary', lvHSV = null, lvNote = '', lvNoteT = 0, lvFrom = 'home';
   const LV_COL = [['lvP', 'primary', 'Main colour', 'MAIN'], ['lvS', 'secondary', 'Second colour', 'SECOND'], ['lvA', 'accent', 'Accent', 'ACCENT'],
     ['lvH', 'helmet', 'Helmet', 'HELMET'], ['lvH2', 'helmet2', 'Helmet stripe', 'STRIPE']];
-  const LV_TPL = `<section class="agp-scr agp-mn-main agp-lv" data-scr="livery">
+  const LV_FOOT = {
+    paint: '<span><kbd>\u2191</kbd><kbd>\u2193</kbd>SELECT</span><span><kbd>\u2190</kbd><kbd>\u2192</kbd>CHANGE</span><span><kbd>ENTER</kbd>TYPE</span><span><kbd>Q</kbd><kbd>E</kbd>PAINT / SPONSORS</span><span><kbd>ESC</kbd>BACK</span>',
+    spon: '<span>CLICK A SPOT ON THE CAR, THEN A SPONSOR DESIGN</span><span><kbd>\u2191</kbd><kbd>\u2193</kbd><kbd>\u2190</kbd><kbd>\u2192</kbd><kbd>ENTER</kbd>PICK</span><span><kbd>PG\u2191</kbd><kbd>PG\u2193</kbd>SPOT</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>SIZE</span><span><kbd>DEL</kbd>CLEAR</span><span><kbd>Q</kbd><kbd>E</kbd>TABS</span>' };
+  const LV_TPL = `<section class="agp-scr agp-mn-main agp-lv" data-scr="livery" data-tab="paint">
     <header class="agp-pg-head">
       <div class="agp-pg-back" data-lv="back" role="button"><i class="agp-chev l"></i>BACK</div>
       <div class="agp-pg-title"><span class="agp-logo-mini2">APEX<b>GP</b></span><b>LIVERY EDITOR</b></div>
       <div class="agp-lv-count" data-lv="count"></div>
     </header>
-    <div class="agp-mn-cols">
-      <div class="agp-mn-left"><div class="agp-mn-ptitle">CUSTOM LIVERY <span data-lv="sub"></span></div><div class="agp-mn-list" data-lv="list"></div></div>
+    <div class="agp-mn-cols agp-lv-cols">
+      <div class="agp-mn-left agp-lv-left"><div class="agp-mn-ptitle">CUSTOM LIVERY <span data-lv="sub"></span></div>
+        <div class="agp-lv-tabs" data-lv="tabs"><b data-t="paint" role="button">PAINT</b><b data-t="spon" role="button">SPONSORS <small data-lv="spn"></small></b></div>
+        <div class="agp-mn-list agp-lv-paint" data-lv="list"></div>
+        <div class="agp-lv-spl" data-lv="spl"><div class="agp-lv-sph"><b data-lv="sptitle"></b><small>PICK A SPONSOR DESIGN FOR THIS SPOT</small></div><div class="agp-lv-spg" data-lv="spg"></div></div>
+      </div>
       <div class="agp-lv-side">
         <div class="agp-mn-panel agp-lv-stage"><div class="agp-lv-view" data-lv="view"><canvas class="agp-lv-3d" data-lv="cv"></canvas>
-          <canvas class="agp-lv-flat" data-lv="flat" width="560" height="190"></canvas><div class="agp-lv-tag" data-lv="tag"></div><span class="agp-lv-hint" data-lv="hint"></span></div></div>
+          <canvas class="agp-lv-flat" data-lv="flat" width="560" height="190"></canvas><div class="agp-lv-hot" data-lv="hot"></div><div class="agp-lv-tag" data-lv="tag"></div><span class="agp-lv-hint" data-lv="hint"></span></div></div>
         <div class="agp-mn-panel agp-lv-pick">
           <div class="agp-lv-fields" data-lv="fields">${LV_COL.map(c => `<b data-f="${c[1]}" role="button"><i></i>${c[3]}</b>`).join('')}</div>
           <div class="agp-lv-pk">
@@ -106467,10 +107130,15 @@ const Menu = (() => {
             </div>
           </div>
         </div>
+        <div class="agp-mn-panel agp-lv-spk">
+          <div class="agp-lv-spots" data-lv="spots"></div>
+          <div class="agp-lv-sprow" data-lv="sprow"><span class="agp-lv-sz">SIZE <b data-z="0" role="button">S</b><b data-z="1" role="button">M</b><b data-z="2" role="button">L</b></span>
+            <b data-act="clear" role="button">CLEAR SPOT</b><i></i><b data-act="rand" role="button">RANDOM ALL</b><b data-act="none" role="button">CLEAR ALL</b></div>
+        </div>
       </div>
     </div>
     <div class="agp-mn-startrow">
-      <footer class="agp-mn-foot"><span><kbd>\u2191</kbd><kbd>\u2193</kbd>SELECT</span><span><kbd>\u2190</kbd><kbd>\u2192</kbd>CHANGE</span><span><kbd>ENTER</kbd>TYPE</span><span><kbd>ESC</kbd>BACK</span></footer>
+      <footer class="agp-mn-foot" data-lv="foot">${LV_FOOT.paint}</footer>
       <div class="agp-mn-note" data-lv="note"></div>
       <div class="agp-mn-start" data-lv="go" role="button"><span>USE THIS LIVERY</span><i></i></div>
     </div>
@@ -106478,13 +107146,9 @@ const Menu = (() => {
   function lvRows() {
     const L = LV(), col = ([k, f, label]) => ({ k, label, col: f, type: 'cycle', opts: () => lvColOpts(f), get: () => lvCur && lvCur[f], set: v => lvSet({ [f]: v }), enter: () => lvHexFocus(f) });
     return [
-      { k: 'lvWhich', label: 'Livery', type: 'cycle', opts: () => L.list().map(d => [d.id, d.name.toUpperCase()]), get: () => lvCur && lvCur.id, set: id => lvEdit(id) },
       { k: 'lvName', label: 'Team name', type: 'lvtext', f: 'name', max: L.NAME_MAX },
       { k: 'lvDesign', label: 'Pattern', type: 'cycle', opts: () => L.PATTERNS, get: () => lvCur && lvCur.design, set: v => lvSet({ design: v }) },
       ...LV_COL.map(col),
-      { k: 'lvNew', label: 'New livery', type: 'button', text: 'CREATE', act: () => lvAdd(L.create()) },
-      { k: 'lvDup', label: 'Copy this livery', type: 'button', text: 'DUPLICATE', act: () => lvAdd(lvCur && L.duplicate(lvCur.id)) },
-      { k: 'lvDel', label: 'Delete this livery', type: 'button', text: 'DELETE', act: () => lvCur && lvAskDelete(lvCur.id) },
     ];
   }
   function lvRowHTML(r) {
@@ -106542,9 +107206,11 @@ const Menu = (() => {
     // turntable: drag to turn (the page still scrolls up / down on phones)
     let dr = null;
     LE.view.addEventListener('pointerdown', e => { if (screen !== 'livery') return; dr = { x: e.clientX, yaw: LS3.yaw, id: e.pointerId }; try { LE.view.setPointerCapture(e.pointerId); } catch (x) { /* */ } LS3.hold = 1; });
-    LE.view.addEventListener('pointermove', e => { if (dr && e.pointerId === dr.id) LS3.yaw = dr.yaw + (e.clientX - dr.x) * 0.012; });
+    LE.view.addEventListener('pointermove', e => { if (dr && e.pointerId === dr.id) { LS3.yaw = dr.yaw + (e.clientX - dr.x) * 0.012; if (Math.abs(e.clientX - dr.x) > 4) LS3.yawT = null; } });
     const up = e => { if (dr && e.pointerId === dr.id) { dr = null; LS3.hold = 0; LS3.idleT = performance.now(); } };
     LE.view.addEventListener('pointerup', up); LE.view.addEventListener('pointercancel', up);
+    spInit();
+    lsInit();
   }
   // opens the editor on a livery ('new' / none saved: a new one; null: the chosen or the first one); from: the screen
   // BACK returns to ('home': the home screen's LIVERY CREATOR)
@@ -106557,10 +107223,11 @@ const Menu = (() => {
     if (!d) d = L.get(lvValid(S.livery)) || L.list()[0];
     if (!d) return sfx('move');
     lvCur = d; lvHSV = null; lvField = 'primary'; lvNote = id === 'new' ? 'NEW LIVERY · SAVED AS YOU GO' : ''; lvNoteT = performance.now();
+    lvTabSet('paint', true); LS3.foc = null;
     LS3.yaw = -0.62; LS3.idleT = performance.now();   // (opens on a three-quarter front view)
     show('livery');
     lvDirty();
-    setFocus('livery', id === 'new' ? 1 : 0, false);
+    setFocus('livery', 0, false);
     lvPickField('primary');
     lvStageOn();
     sfx('select');
@@ -106569,7 +107236,7 @@ const Menu = (() => {
     if (screen !== 'livery') return;
     lvBlur();
     buildSwatches();   // (the TEAM step's cards: names / colours as edited)
-    if (lvFrom === 'home') { showHome(); const i = lists.home.items.findIndex(x => x.k === 'livery'); if (i >= 0) setFocus('home', i, false); }
+    if (lvFrom === 'home' || lvFrom === 'lvsel') { lsOpen(lvCur && lvCur.id); }
     else { show('main'); refreshList('main'); setFocus('main', idxOf('teamIndex'), false); }
     if (!used) sfx('back');
   }
@@ -106588,7 +107255,7 @@ const Menu = (() => {
     if (!d) { lvNote = 'ALL ' + LV().MAX + ' PLACES USED · DELETE ONE FIRST'; lvNoteT = performance.now(); lvPaint(); return sfx('move'); }
     lvBlur();
     lvCur = d; lvHSV = null; lvNote = 'NEW LIVERY: ' + d.name.toUpperCase(); lvNoteT = performance.now(); lvDirty(); sfx('select');
-    setFocus('livery', 1, true);
+    setFocus('livery', 0, true);
   }
   // ---------- delete (with a confirm): the editor's DELETE row, the × on a saved livery's card (TEAM step), DEL on it ----------
   // Racing it now (settings.livery): your car goes back to its team's livery. A season started with it keeps its own copy
@@ -106636,7 +107303,8 @@ const Menu = (() => {
       }
       lvNote = 'DELETED ' + name.toUpperCase(); lvNoteT = performance.now(); lvDirty();
       setFocus('livery', 0, false);
-    } else if (screen === 'main') { refreshList('main'); setFocus('main', idxOf('teamIndex'), false); }
+    } else if (screen === 'lvsel') { lsNote = 'DELETED ' + name.toUpperCase(); lsBuild(); }
+    else if (screen === 'main') { refreshList('main'); setFocus('main', idxOf('teamIndex'), false); }
   }
   function cfInit() {
     root.insertAdjacentHTML('beforeend', `<div class="agp-lvcf" data-r="lvConfirm" role="dialog" aria-modal="true" aria-label="Delete livery">
@@ -106706,10 +107374,12 @@ const Menu = (() => {
     if (document.activeElement !== LE.hex) LE.hex.value = c.toUpperCase();
     for (const b of LE.pre.children) b.classList.toggle('is-on', b.dataset.c === c);
     for (const b of LE.fields.children) { b.classList.toggle('is-on', b.dataset.f === lvField); b.firstElementChild.style.background = d[b.dataset.f]; }
+    spPaint();
   }
 
   // ---------- 3D turntable (own renderer, created once on first open; drawn only while the editor shows) ----------
-  const LS3 = { r: null, fail: false, scene: null, cam: null, pivot: null, model: null, want: null, paintT: 0, yaw: -0.62, hold: 0, idleT: 0, t: 0, raf: 0, w: 0, h: 0 };
+  const LS3 = { r: null, fail: false, scene: null, cam: null, pivot: null, model: null, want: null, paintT: 0, yaw: -0.62, hold: 0, idleT: 0, t: 0, raf: 0, w: 0, h: 0,
+    foc: null, yawT: null, zoom: 0, el: 0.21, zd: 0.6, look: [0, 0.38, 0] };   // (foc: the sponsor spot the camera shows)
   function lvStage() {
     if (LS3.r || LS3.fail) return LS3.r;
     try {
@@ -106751,6 +107421,11 @@ const Menu = (() => {
       return;
     }
     if (!LS3.model) {
+      if (!lvModel(t)) { LS3.fail = true; return lvShow(); }
+    } else LS3.want = t;
+  }
+  function lvModel(t) {
+    if (!LS3.model) {
       try {
         LS3.model = buildCarModel(t, { live: true, compound: 'S' });
         LS3.model.update({ x: 0, z: 0, h: 0, steerAngle: 0.12, wheelRot: 0.4, aeroT: 0, speed: 0, aLat: 0, aLong: 0, throttle: 0, brake: 0, tyre: { compound: 'S' } }, 0);
@@ -106759,8 +107434,9 @@ const Menu = (() => {
         if (LS3.model.setLOD) LS3.model.setLOD(0);
         LS3.model.group.position.x = 0.12;
         LS3.pivot.add(LS3.model.group);
-      } catch (e) { LS3.fail = true; LS3.model = null; return lvShow(); }
-    } else LS3.want = t;
+      } catch (e) { LS3.model = null; }
+    }
+    return LS3.model;
   }
   function lvStageOn() {
     lvShow();
@@ -106777,9 +107453,263 @@ const Menu = (() => {
     if (!w || !h) return;
     if (w !== LS3.w || h !== LS3.h) { LS3.w = w; LS3.h = h; LS3.r.setSize(w, h, false); LS3.cam.aspect = w / h; LS3.cam.fov = Math.max(15, 2 * Math.atan(0.4 / LS3.cam.aspect) * 57.3); LS3.cam.updateProjectionMatrix(); }   // (the car fills a wide or a tall stage)
     if (LS3.want && LS3.model && now - LS3.paintT > 90) { LS3.model.setLivery(LS3.want); LS3.want = null; LS3.paintT = now; }
-    if (!LS3.hold && now - LS3.idleT > 1800) LS3.yaw += dt * 0.38;   // (turns by itself, not right after a drag)
+    const F = lvTab === 'spon' ? LS3.foc : null, k = Math.min(1, dt * 4);
+    if (F && LS3.yawT != null && !LS3.hold) { let dy = (F.yaw - LS3.yaw) % TAU_M; if (dy > Math.PI) dy -= TAU_M; if (dy < -Math.PI) dy += TAU_M; LS3.yaw += dy * k; }
+    else if (!F && !LS3.hold && now - LS3.idleT > 1800) LS3.yaw += dt * 0.38;   // (turns by itself, not right after a drag; not while placing sponsors)
     LS3.pivot.rotation.y = LS3.yaw;
+    lvCam(F, k);
     LS3.r.render(LS3.scene, LS3.cam);
+    if (lvTab === 'spon') spHot();
+  }
+  // camera: the whole car (12 deg up), or zoomed on the chosen sponsor spot (its own height)
+  const TAU_M = Math.PI * 2;
+  function lvCam(F, k) {
+    LS3.zoom += ((F ? 1 : 0) - LS3.zoom) * k;
+    LS3.el += ((F ? F.el : 0.21) - LS3.el) * k;
+    if (F) LS3.zd += (F.zd - LS3.zd) * k;
+    const z = LS3.zoom, c = Math.cos(LS3.yaw), sn = Math.sin(LS3.yaw), p = F ? F.p : [0, 0.38, 0];
+    const wx = (p[0] + 0.12) * c + p[2] * sn, wz = -(p[0] + 0.12) * sn + p[2] * c;   // (the spot in the world: the pivot turned by yaw)
+    LS3.look[0] += (wx * 0.92 - LS3.look[0]) * k; LS3.look[1] += ((F ? p[1] : 0.38) - LS3.look[1]) * k; LS3.look[2] += (wz * 0.92 - LS3.look[2]) * k;
+    const d = 9.8 * (1 - (1 - LS3.zd) * z), L = LS3.look;
+    LS3.cam.position.set(L[0] * z, L[1] + Math.sin(LS3.el) * d, L[2] * z + Math.cos(LS3.el) * d);
+    LS3.cam.lookAt(L[0] * z, L[1], L[2] * z);
+  }
+  // ---------- SPONSORS tab (livery.js SPOTS + data.sp, sponsors.js art, car_model.js SPOT_GEO): click a spot (a marker on
+  // the car or the spot list), then a sponsor design in the grid (40 sponsors x 5 designs); size S / M / L; clear. The camera
+  // turns and zooms to the chosen spot. Keys: arrows over the grid + Enter, PgUp / PgDn the spot, 1 2 3 size, Del clear ----------
+  let lvTab = 'paint', lvSpot = 'pod', spCur = [0, 0], spDrawn = false, hotV = null;
+  const SPS = () => (typeof Sponsors !== 'undefined' ? Sponsors : null);
+  // per spot: turntable yaw, camera elevation (rad), distance (x the whole-car distance)
+  const SPOT_VIEW = { nose: [-0.75, 0.2, 0.5], fwing: [-1.0, 0.55, 0.6], fwend: [-0.5, 0.15, 0.45], chassis: [-0.35, 0.18, 0.55], halol: [Math.PI + 0.45, 0.3, 0.38], halor: [-0.45, 0.3, 0.38],
+    pod: [-0.15, 0.2, 0.62], airbox: [-0.25, 0.3, 0.45], ecfront: [0.5, 0.6, 0.55], ecrear: [0.55, 0.6, 0.55], finl: [Math.PI - 0.35, 0.25, 0.55], finr: [0.35, 0.25, 0.55],
+    rwtop: [Math.PI / 2 - 0.3, 0.32, 0.55], rwend: [0.6, 0.2, 0.5] };
+  const HOT_DIR = { halol: -1, finl: -1, halor: 1, finr: 1, fwing: 0, ecfront: 0, ecrear: 0, rwtop: 0 };   // (-1 left, 1 right, 0 top; others: the side facing you)
+  function lvTabSet(t, quiet) {
+    if (t === 'spon' && !SPS()) t = 'paint';
+    lvTab = t;
+    const sec = LE.list && LE.list.closest('.agp-lv');
+    if (sec) sec.dataset.tab = t;
+    if (LE.foot) LE.foot.innerHTML = LV_FOOT[t];
+    if (t === 'spon') { lvBlur(); spThumbs(); spFocus(lvSpot, true); } else { LS3.foc = null; LS3.idleT = performance.now(); }
+    if (!quiet) { sfx('move'); lvPaint(); }
+  }
+  function spInit() {
+    const S2 = SPS(), L = LV();
+    if (!S2 || !LE.spg) return;
+    LE.spg.innerHTML = S2.LIST.map(s => `<div class="agp-lv-spr" data-s="${s.i}"><span><b>${esc(s.name)}</b><small>${esc(s.ind.toUpperCase())}</small></span><div>${S2.DESIGNS.map((d, j) => `<canvas data-d="${j}" width="140" height="50" title="${esc(s.name + ' · ' + d[1])}" role="button"></canvas>`).join('')}</div></div>`).join('');
+    LE.spots.innerHTML = L.SPOTS.map(([id, lab]) => `<b data-spot="${id}" role="button"><em>${lab}</em><small></small></b>`).join('');
+    LE.hot.innerHTML = L.SPOTS.map(([id, lab]) => `<b data-spot="${id}" role="button" title="${lab}"><i></i><span>${lab}</span></b>`).join('');
+    LE.tabs.addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b && screen === 'livery' && b.dataset.t !== lvTab) lvTabSet(b.dataset.t); });
+    LE.spg.addEventListener('click', e => { const c = e.target.closest('canvas[data-d]'); if (c && screen === 'livery') spPick(+c.closest('[data-s]').dataset.s, +c.dataset.d); });
+    const spotClick = e => { const b = e.target.closest('[data-spot]'); if (b && screen === 'livery') spFocus(b.dataset.spot); };
+    LE.spots.addEventListener('click', spotClick);
+    LE.hot.addEventListener('pointerdown', e => { if (e.target.closest('[data-spot]')) e.stopPropagation(); });   // (not a turntable drag)
+    LE.hot.addEventListener('click', spotClick);
+    LE.sprow.addEventListener('click', e => { if (screen !== 'livery') return; const z = e.target.closest('[data-z]'), a = e.target.closest('[data-act]'); if (z) spSize(+z.dataset.z); else if (a) spAct(a.dataset.act); });
+  }
+  // the 200 thumbnails, drawn once on the first visit (140 x 50 each, ~5.6 MB of canvases)
+  function spThumbs() {
+    const S2 = SPS();
+    if (spDrawn || !S2 || !LE.spg) return;
+    spDrawn = true;
+    LE.spg.querySelectorAll('canvas').forEach(c => {
+      const g = c.getContext('2d'), i = +c.parentNode.parentNode.dataset.s, d = +c.dataset.d;
+      g.fillStyle = '#262a35'; g.fillRect(0, 0, c.width, c.height);
+      g.save(); g.translate(c.width / 2, c.height / 2); S2.draw(g, i, d, c.width - 16, c.height - 14, '#262a35'); g.restore();
+    });
+  }
+  function spFocus(id, quiet) {
+    const v = SPOT_VIEW[id] || [-0.6, 0.2], P = ((typeof buildCarModel === 'function' && buildCarModel.SPOT_PTS) || {})[id] || [0, 0.4, 0];
+    lvSpot = id; LS3.foc = { yaw: v[0], el: v[1], zd: v[2], p: P }; LS3.yawT = 1;
+    const cur = lvCur && lvCur.sp && lvCur.sp[id];
+    if (cur) spCur = [cur[0], cur[1]];
+    if (!quiet) sfx('move');
+    spPaint(true);
+  }
+  function spSet(id, v) { if (!lvCur) return; const sp = Object.assign({}, lvCur.sp || {}); if (v) sp[id] = v; else delete sp[id]; lvSet({ sp }); }
+  function spPick(s, d) {
+    const cur = lvCur && lvCur.sp && lvCur.sp[lvSpot], def = LV().SPOTS.find(x => x[0] === lvSpot);
+    spCur = [s, d];
+    spSet(lvSpot, [s, d, cur ? cur[2] : def ? def[3] : 1]); sfx('change');
+  }
+  function spSize(z) { const cur = lvCur && lvCur.sp && lvCur.sp[lvSpot]; if (!cur) return sfx('move'); if (cur[2] !== z) { spSet(lvSpot, [cur[0], cur[1], z]); sfx('change'); } }
+  function spAct(a) {
+    if (a === 'clear') { if (lvCur && lvCur.sp && lvCur.sp[lvSpot]) { spSet(lvSpot, null); sfx('change'); } else sfx('move'); }
+    else if (a === 'rand') { lvSet({ sp: SPS().randomSet((Math.random() * 4294967296) >>> 0) }); sfx('change'); }
+    else if (a === 'none') { lvSet({ sp: null }); sfx('change'); }
+  }
+  function spPaint(scroll) {
+    const S2 = SPS(), L = LV(), d = lvCur;
+    if (!S2 || !d || !LE.spg) return;
+    const sp = d.sp || {}, cur = sp[lvSpot], lab = (L.SPOTS.find(x => x[0] === lvSpot) || ['', ''])[1], n = Object.keys(sp).length;
+    LE.spn.textContent = n ? String(n) : '';
+    LE.sptitle.textContent = lab + (cur ? ' · ' + S2.LIST[cur[0]].name + ' · ' + S2.DESIGNS[cur[1]][1] : ' · EMPTY');
+    for (const b of LE.spots.children) { const v = sp[b.dataset.spot]; b.classList.toggle('is-on', b.dataset.spot === lvSpot); b.classList.toggle('is-set', !!v); b.lastElementChild.textContent = v ? S2.LIST[v[0]].name : '\u2014'; }
+    for (const b of LE.hot.children) { b.classList.toggle('is-on', b.dataset.spot === lvSpot); b.classList.toggle('is-set', !!sp[b.dataset.spot]); }
+    LE.sprow.querySelectorAll('[data-z]').forEach(b => { b.classList.toggle('is-on', !!cur && +b.dataset.z === cur[2]); b.classList.toggle('is-dim', !cur); });
+    LE.sprow.querySelector('[data-act="clear"]').classList.toggle('is-dim', !cur);
+    const rows = LE.spg.children;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i], c = r.lastElementChild.children;
+      r.classList.toggle('is-on', !!cur && cur[0] === i);
+      for (let j = 0; j < c.length; j++) { c[j].classList.toggle('is-on', !!cur && cur[0] === i && cur[1] === j); c[j].classList.toggle('is-cur', spCur[0] === i && spCur[1] === j); }
+    }
+    if (scroll && lvTab === 'spon' && rows[spCur[0]] && rows[spCur[0]].scrollIntoView) rows[spCur[0]].scrollIntoView({ block: 'nearest' });
+  }
+  // markers over the 3D car (projected each frame while the SPONSORS tab shows); a pair spot shows on the side facing you,
+  // a one-side spot dims when its side faces away
+  function spHot() {
+    const P = typeof buildCarModel === 'function' && buildCarModel.SPOT_PTS;
+    if (!P || !LE.hot || !LS3.w) return;
+    if (!hotV) hotV = new THREE.Vector3();
+    const c = Math.cos(LS3.yaw), sn = Math.sin(LS3.yaw), sd = c >= 0 ? 1 : -1;
+    for (const b of LE.hot.children) {
+      const id = b.dataset.spot, p = P[id], dir = HOT_DIR[id];
+      if (!p) continue;
+      const z = dir === undefined ? Math.abs(p[2]) * sd : p[2], x = p[0] + 0.12;
+      hotV.set(x * c + z * sn, p[1], -x * sn + z * c).project(LS3.cam);
+      b.style.transform = `translate(${((hotV.x + 1) / 2 * LS3.w).toFixed(1)}px, ${((1 - hotV.y) / 2 * LS3.h).toFixed(1)}px)`;
+      b.classList.toggle('is-far', dir === -1 || dir === 1 ? dir * c < -0.1 : false);
+    }
+  }
+  function lvKey(e) {
+    const c = e.code;
+    if (CF.on) return false;
+    if (c === 'KeyQ' || c === 'KeyE') { if (!e.repeat) lvTabSet(lvTab === 'paint' ? 'spon' : 'paint'); return true; }
+    if (lvTab !== 'spon') return false;
+    const n = SPS().LIST.length, nd = SPS().DESIGNS.length;
+    if (c === 'ArrowUp' || c === 'ArrowDown') { spCur = [(spCur[0] + (c === 'ArrowUp' ? -1 : 1) + n) % n, spCur[1]]; spPaint(true); sfx('move'); return true; }
+    if (c === 'ArrowLeft' || c === 'ArrowRight') { spCur = [spCur[0], (spCur[1] + (c === 'ArrowLeft' ? -1 : 1) + nd) % nd]; spPaint(true); sfx('move'); return true; }
+    if (c === 'Enter' || c === 'NumpadEnter' || c === 'Space') { if (!e.repeat) spPick(spCur[0], spCur[1]); return true; }
+    if (c === 'Digit1' || c === 'Digit2' || c === 'Digit3') { spSize(+c.slice(5) - 1); return true; }
+    if (c === 'Delete') { spAct('clear'); return true; }
+    if (c === 'PageUp' || c === 'PageDown' || c === 'Tab') {
+      const ids = LV().SPOT_IDS, i = ids.indexOf(lvSpot), d = c === 'PageUp' || (c === 'Tab' && e.shiftKey) ? -1 : 1;
+      spFocus(ids[(i + d + ids.length) % ids.length]); return true;
+    }
+    return false;   // (Esc / Backspace: back)
+  }
+
+  // ---------- livery select page ('lvsel', home > LIVERY CREATOR): a card per saved livery (a 3D snapshot of the car,
+  // the editor's turntable renderer; 2D side view without WebGL) + NEW; EDIT (or click the car), DUPLICATE, DELETE (the
+  // confirm), USE THIS LIVERY. Keys: arrows, Enter edit, D duplicate, Del delete, U use, N new, Esc home ----------
+  const LSE = {}, SNAP = new Map();   // (SNAP: team id -> snapshot canvas, newest 12)
+  let lsSel = '', lsNote = '', lsQ = [], lsRaf = 0;
+  const LS_TPL = `<section class="agp-scr agp-mn-main agp-lvs" data-scr="lvsel">
+    <header class="agp-pg-head">
+      <div class="agp-pg-back" data-ls="back" role="button"><i class="agp-chev l"></i>BACK</div>
+      <div class="agp-pg-title"><span class="agp-logo-mini2">APEX<b>GP</b></span><b>YOUR LIVERIES</b></div>
+      <div class="agp-lv-count" data-ls="count"></div>
+    </header>
+    <div class="agp-lvs-grid" data-ls="grid"></div>
+    <div class="agp-mn-startrow">
+      <footer class="agp-mn-foot"><span><kbd>\u2190</kbd><kbd>\u2192</kbd><kbd>\u2191</kbd><kbd>\u2193</kbd>SELECT</span><span><kbd>ENTER</kbd>EDIT</span><span><kbd>D</kbd>DUPLICATE</span><span><kbd>DEL</kbd>DELETE</span><span><kbd>ESC</kbd>BACK</span></footer>
+      <div class="agp-mn-note" data-ls="note"></div>
+      <div class="agp-lvs-acts" data-ls="acts"><b data-a="edit" role="button">EDIT</b><b data-a="dup" role="button">DUPLICATE</b><b data-a="del" role="button" class="is-del">DELETE</b></div>
+      <div class="agp-mn-start" data-ls="go" role="button"><span>USE THIS LIVERY</span><i></i></div>
+    </div>
+  </section>`;
+  function lsInit() {
+    E.menu.insertAdjacentHTML('beforeend', LS_TPL);
+    E.menu.lastElementChild.querySelectorAll('[data-ls]').forEach(el => { LSE[el.dataset.ls] = el; });
+    for (const el of [LSE.back, LSE.go, LSE.acts]) el.addEventListener('pointerdown', e => e.preventDefault());
+    LSE.back.addEventListener('click', () => { if (screen === 'lvsel') lsBack(); });
+    LSE.go.addEventListener('click', () => { if (screen === 'lvsel') lsAct('use'); });
+    LSE.acts.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (b && screen === 'lvsel') lsAct(b.dataset.a); });
+    LSE.grid.addEventListener('click', e => {
+      const c = e.target.closest('.agp-lvs-card');
+      if (!c || screen !== 'lvsel') return;
+      if (c.dataset.new) return lsAct('new');
+      lsSel = c.dataset.id; lsMark(false);
+      if (e.target.closest('.agp-lvs-pic')) lsAct('edit'); else sfx('move');   // (the car opens the editor; the name line selects)
+    });
+  }
+  function lsOpen(id) {
+    const L = LV();
+    if (!L || !LSE.grid) return;
+    if (id) lsSel = id;
+    if (!L.get(lsSel)) lsSel = lvValid(S.livery) || ((L.list()[0] || {}).id || '');
+    show('lvsel');
+    lsBuild();
+  }
+  function lsBack() { sfx('back'); showHome(); const i = lists.home.items.findIndex(x => x.k === 'livery'); if (i >= 0) setFocus('home', i, false); }
+  function lsBuild() {
+    const L = LV(), list = L.list(), n = list.length;
+    LSE.count.textContent = n + ' / ' + L.MAX + ' SAVED';
+    if (lsSel && !L.get(lsSel)) lsSel = (list[0] || {}).id || '';
+    LSE.grid.innerHTML = list.map(d => {
+      const nS = d.sp ? Object.keys(d.sp).length : 0, pat = (L.PATTERNS.find(p => p[0] === d.design) || ['', ''])[1], race = S.livery === d.id;
+      return `<div class="agp-lvs-card${race ? ' is-race' : ''}" data-id="${esc(d.id)}"><div class="agp-lvs-pic" title="Edit"><canvas width="400" height="216"></canvas>${race ? '<em>RACING</em>' : ''}<u>EDIT</u></div>` +
+        `<div class="agp-lvs-info"><span class="agp-lvs-sw"><i style="background:${d.primary}"></i><i style="background:${d.secondary}"></i><i style="background:${d.accent}"></i></span>` +
+        `<b>${esc(d.name.toUpperCase())}</b><small>${esc(pat)} · ${nS ? nS + (nS > 1 ? ' SPONSORS' : ' SPONSOR') : 'NO SPONSORS'}</small></div></div>`;
+    }).join('') + (n < L.MAX ? '<div class="agp-lvs-card is-new" data-new="1"><div class="agp-lvs-pic"><span>+</span></div><div class="agp-lvs-info"><b>NEW LIVERY</b><small>START FROM FRESH COLOURS</small></div></div>' : '');
+    lsMark(true);
+    lsQ = Array.from(LSE.grid.querySelectorAll('.agp-lvs-card[data-id]')).map(el => [el.querySelector('canvas'), L.get(el.dataset.id)]);
+    if (!lsRaf) lsRaf = requestAnimationFrame(lsSnapStep);
+  }
+  function lsMark(scroll) {
+    let on = null;
+    LSE.grid.querySelectorAll('.agp-lvs-card').forEach(c => { const y = lsSel ? c.dataset.id === lsSel : !!c.dataset.new; c.classList.toggle('is-sel', y); if (y) on = c; });
+    const d = LV().get(lsSel);
+    LSE.acts.classList.toggle('is-dim', !d); LSE.go.classList.toggle('is-dim', !d);
+    LSE.note.innerHTML = lsNote ? esc(lsNote) : d ? (S.livery === d.id ? '<b>RACING THIS LIVERY</b> · ' : '') + esc(d.name.toUpperCase()) : 'MAKE YOUR FIRST LIVERY';
+    lsNote = '';
+    if (scroll !== false && on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+  function lsAct(a) {
+    const L = LV(), d = L.get(lsSel), full = () => { lsNote = 'ALL ' + L.MAX + ' PLACES USED · DELETE ONE FIRST'; lsMark(); sfx('move'); };
+    if (a === 'new') { const c = L.create(); if (!c) return full(); buildSwatches(); return lvOpen(c.id, 'lvsel'); }
+    if (!d) return a === 'edit' ? lsAct('new') : sfx('move');
+    if (a === 'edit') lvOpen(d.id, 'lvsel');
+    else if (a === 'dup') { const c = L.duplicate(d.id); if (!c) return full(); lsSel = c.id; lsNote = 'COPIED AS ' + c.name.toUpperCase(); sfx('select'); buildSwatches(); lsBuild(); }
+    else if (a === 'del') lvAskDelete(d.id);
+    else if (a === 'use') { S.livery = d.id; commit(false); sfx('select'); lsNote = 'YOUR CAR NOW RACES ' + d.name.toUpperCase(); lsBuild(); }
+  }
+  function lsKey(e) {
+    const c = e.code;
+    if (CF.on) return false;
+    const els = Array.from(LSE.grid.querySelectorAll('.agp-lvs-card')), i = Math.max(0, els.findIndex(el => el.classList.contains('is-sel')));
+    if (/^Arrow/.test(c)) { const j = cardStep(els, i, c); if (j >= 0) { lsSel = els[j].dataset.id || ''; lsMark(); } sfx('move'); return true; }
+    if (e.repeat) return true;
+    if (c === 'Enter' || c === 'NumpadEnter' || c === 'Space') lsAct(lsSel ? 'edit' : 'new');
+    else if (c === 'KeyD') lsAct('dup');
+    else if (c === 'Delete') lsAct('del');
+    else if (c === 'KeyU') lsAct('use');
+    else if (c === 'KeyN') lsAct('new');
+    else if (c === 'Escape' || c === 'Backspace') lsBack();
+    else return false;
+    return true;
+  }
+  function lsSnapStep() {
+    lsRaf = 0;
+    if (screen !== 'lvsel') { lsQ = []; return; }
+    const q = lsQ.shift();
+    if (q) lsSnap(q[0], q[1]);
+    if (lsQ.length) lsRaf = requestAnimationFrame(lsSnapStep);
+  }
+  function lsSnap(cv, d) {
+    if (!cv || !d || !cv.isConnected) return;
+    const t = lvTeam(d), g = cv.getContext('2d'), hit = SNAP.get(t.id);
+    g.clearRect(0, 0, cv.width, cv.height);
+    if (hit) { g.drawImage(hit, 0, 0); return; }
+    let ok = false;
+    if (lvStage() && lvModel(t)) {
+      try {
+        LS3.model.setLivery(t);
+        const r = LS3.r, pr = r.getPixelRatio(), cam = LS3.cam;
+        r.setSize(cv.width / pr, cv.height / pr, false);
+        cam.aspect = cv.width / cv.height; cam.fov = Math.max(15, 2 * Math.atan(0.4 / cam.aspect) * 57.3) * 0.9; cam.updateProjectionMatrix();
+        cam.position.set(0, 2.4, 9.5); cam.lookAt(0, 0.38, 0);
+        LS3.pivot.rotation.y = -0.62;
+        r.render(LS3.scene, cam);
+        g.drawImage(r.domElement, 0, 0, cv.width, cv.height);
+        LS3.w = LS3.h = 0; LS3.want = lvCur ? lvTeam(lvCur) : null; ok = true;
+      } catch (e) { ok = false; }
+    }
+    if (!ok) { try { buildCarModel.liveryPreview(t, S.playerNumber || 7, { silhouette: true, into: cv }); } catch (e) { /* none */ } }
+    const k = document.createElement('canvas'); k.width = cv.width; k.height = cv.height; k.getContext('2d').drawImage(cv, 0, 0);
+    SNAP.set(t.id, k);
+    while (SNAP.size > 12) SNAP.delete(SNAP.keys().next().value);
   }
   // ==================== end custom livery ====================
 
@@ -108849,7 +109779,7 @@ const Net = (() => {
     delete h.fieldSize; delete h.penalties;
     const base = Object.assign({ mode: 'race', trackId: s.trackId, laps: s.laps, weather: ['dry', 'damp', 'wet', 'dynamic', 'custom'].includes(s.weather) ? s.weather : 'dry',
       weatherStart: s.weatherStart, weatherEnd: s.weatherEnd, weatherWhen: s.weatherWhen,   // (custom weather: the host's own, as in single player)
-      timeOfDay: s.timeOfDay, difficulty: s.difficulty === 'adaptive' ? 'medium' : s.difficulty, penaltyLevel: penLevel(s), pitExitPen: s.pitExitPen === true, investigations: s.investigations !== false, tyreWear: s.tyreWear, twoCompound: !!s.twoCompound, contact: 'contact', grassSlip: s.grassSlip,
+      timeOfDay: s.timeOfDay, todTo: s.todTo || 'none', todMins: +s.todMins || 20, difficulty: s.difficulty === 'adaptive' ? 'medium' : s.difficulty, penaltyLevel: penLevel(s), pitExitPen: s.pitExitPen === true, investigations: s.investigations !== false, tyreWear: s.tyreWear, twoCompound: !!s.twoCompound, contact: 'contact', grassSlip: s.grassSlip,
       damage: typeof Damage !== 'undefined' && Damage.enabled ? s.damage || 'reduced' : 'none', raceControl: s.raceControl }, h,
       { humanSlots: hs }, legacy ? { aiCount: null } : { aiCount: ai }, roomSettings || {});
     base.penalties = base.penaltyLevel !== 'off';
@@ -109409,6 +110339,11 @@ const Net = (() => {
     { k: 'weatherEnd', label: 'WEATHER AT THE END', show: st => st.weather === 'custom', opts: () => WXC },
     { k: 'weatherWhen', label: 'CONDITIONS CHANGE', show: st => st.weather === 'custom' && st.weatherStart !== st.weatherEnd, opts: () => [['early', 'EARLY'], ['mid', 'MID-RACE'], ['late', 'LATE']] },
     { k: 'timeOfDay', label: 'TIME OF DAY', opts: () => [['day', 'DAY'], ['dusk', 'DUSK'], ['night', 'NIGHT']] },
+    // the time of day changing over the session (Weather.todPath: forward only; an invalid pair reads as no change)
+    { k: 'todTo', label: 'TIME OF DAY CHANGE', opts: () => { const a = (C.room && C.room.settings && C.room.settings.timeOfDay) || 'day', T2 = { dusk: 'TO DUSK', night: a === 'day' ? 'TO DUSK \u2192 NIGHT' : 'TO NIGHT', day: 'TO DAY (SUNRISE)' };
+      return [['none', 'NO CHANGE']].concat(((typeof Weather !== 'undefined' && Weather.TOD_TO && Weather.TOD_TO[a]) || []).map(b => [b, T2[b]])); },
+      get: st => (typeof Weather !== 'undefined' && Weather.todPath && Weather.todPath(st.timeOfDay, st.todTo) ? st.todTo : 'none') },
+    { k: 'todMins', label: 'CHANGE OVER', show: st => st.mode === 'timetrial' && typeof Weather !== 'undefined' && Weather.todPath && !!Weather.todPath(st.timeOfDay, st.todTo), opts: () => [[10, '10 MIN'], [20, '20 MIN'], [30, '30 MIN'], [60, '60 MIN']] },
     // qualifying (Quali): the grid from Q1 / Q2 / Q3 (presets or custom minutes per session, the weather's day), or random
     { k: 'grid', label: 'GRID', race: true, opts: () => [['random', 'RANDOM'], ['qfull', 'QUALIFYING · Q1 Q2 Q3']] },
     { k: 'qualiLen', label: 'QUALIFYING', race: true, show: st => st.grid === 'qfull', opts: () => Q_LENS },
@@ -109442,7 +110377,7 @@ const Net = (() => {
   const regC = {};
   const TABS = [['ov', 'RACE OVERVIEW'], ['lv', 'LIVERY']], HTABS = [['track', 'TRACK'], ['field', 'FIELD'], ['rules', 'RULES'], ['wx', 'WEATHER']];
   const ROW_TAB = { mode: 'track', trackId: 'track', laps: 'track', humanSlots: 'field', aiCount: 'field', difficulty: 'field', grid: 'field', qualiLen: 'field', qualiQ1: 'field', qualiQ2: 'field', qualiQ3: 'field',
-    contact: 'rules', penaltyLevel: 'rules', pitExitPen: 'rules', investigations: 'rules', tyreWear: 'rules', twoCompound: 'rules', grassSlip: 'rules', damage: 'rules', weather: 'wx', weatherStart: 'wx', weatherEnd: 'wx', weatherWhen: 'wx', timeOfDay: 'wx', qualiDay: 'wx' };
+    contact: 'rules', penaltyLevel: 'rules', pitExitPen: 'rules', investigations: 'rules', tyreWear: 'rules', twoCompound: 'rules', grassSlip: 'rules', damage: 'rules', weather: 'wx', weatherStart: 'wx', weatherEnd: 'wx', weatherWhen: 'wx', timeOfDay: 'wx', todTo: 'wx', todMins: 'wx', qualiDay: 'wx' };
   for (const k of RC_KEYS) ROW_TAB['rc.' + k] = 'rules';
   const RULE_KEYS = ['laps', 'humanSlots', 'aiCount', 'difficulty', 'grid', 'qualiLen', 'contact', 'penaltyLevel', 'pitExitPen', 'investigations', 'tyreWear', 'twoCompound', 'grassSlip', 'damage'].concat(RC_KEYS.map(k => 'rc.' + k));
   const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-label="locked"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.2c.7 0 1.3.6 1.3 1.3v9.4c0 .7-.6 1.3-1.3 1.3H5.8c-.7 0-1.3-.6-1.3-1.3v-9.4c0-.7.6-1.3 1.3-1.3zm2.6 0h4.8V7a2.4 2.4 0 0 0-4.8 0z"/></svg>';
@@ -109564,6 +110499,7 @@ const Net = (() => {
       case 'copy': try { navigator.clipboard.writeText(C.room.code); a.textContent = 'COPIED'; setTimeout(() => { delete regC.top; render(); }, 900); } catch (x) {} break;
       case 'set': { const row = ROWS.find(r => r.k === a.dataset.k); if (row) cycleSetting(row, +a.dataset.d || 1); break; }
       case 'wxshuf': wxShuffle(); break;
+      case 'trkrnd': randomTrack(); break;
       case 'me': cycleMe(a.dataset.k, +a.dataset.d || 1); break;
       case 'tyre': { const p = meP(); if (p && /^[ASMHIW]$/.test(v) && p.compound !== v) { p.compound = v; setMe({ compound: v }); render(); } break; }   // (drawn now, the room message confirms)
       case 'team': pickLivery(v); break;
@@ -109573,6 +110509,16 @@ const Net = (() => {
   }
   const meP = () => C.room && C.room.players.find(p => p.id === C.room.you);
   const isHost = () => !!(C.room && C.room.host === C.room.you);
+  // RANDOM circuit (host, lobby): drawn once here and sent as an ordinary trackId setting, so the room (every client) has the same one
+  function randomTrack() {
+    if (!isHost() || C.room.phase !== 'lobby') return;
+    const st = C.room.settings, ids = trackIds(C.room.tracks), pool = ids.filter(id => id !== st.trackId);
+    if (!pool.length) return;
+    const row = ROWS.find(r => r.k === 'trackId'), v = pool[Math.floor(Math.random() * pool.length)], o = row.set(st, v);
+    setRoomSettings(o);
+    for (const p of C.room.players) if (p.id !== C.room.you) p.ready = false;
+    Object.assign(st, o); render();
+  }
   function cycleSetting(row, d) {
     if (!isHost() || C.room.phase !== 'lobby') return;
     const st = C.room.settings, opts = row.opts(), cur = row.get ? row.get(st) : st[row.k];
@@ -109733,10 +110679,11 @@ const Net = (() => {
   }
   const optLabel = (r, st) => { const cur = r.get ? r.get(st) : st[r.k], o = r.opts().find(x => x[0] === cur); return o ? o[1] : String(cur == null ? '\u2014' : cur).toUpperCase(); };
   const rowOn = (r, st) => (st.mode !== 'timetrial' || !r.race) && (!r.show || r.show(st));
-  function trackHTML(st) {
+  function trackHTML(st, hostTab) {
     const id = st.trackId, d = TRACK_DATA[id] || {}, svg = trackSVG(id), L = trackLen[id] || 0, n = trkSvg['n:' + id] | 0, race = st.mode !== 'timetrial';
     const lapsTxt = race ? optLabel(ROWS.find(r => r.k === 'laps'), st).replace(/ \(\d+\)$/, '') + (st.lapPct ? ' · ' + st.laps + ' LAPS' : ' LAPS') : 'TIME TRIAL';
-    return `<h4>TRACK <span>${race ? 'RACE' : 'TIME TRIAL · GHOSTS'}</span></h4><div class="agp-net-trk"><b>${esc(trName(id))}</b>` +
+    const rnd = hostTab && isHost() && C.room.phase === 'lobby' ? '<b class="agp-net-btn is-small" data-a="trkrnd" role="button" title="Picks a random circuit now: the room (everyone) gets the same one">RANDOM</b>' : '';
+    return `<h4>TRACK${rnd} <span>${race ? 'RACE' : 'TIME TRIAL · GHOSTS'}</span></h4><div class="agp-net-trk"><b>${esc(trName(id))}</b>` +
       `<span>${esc(String(d.country || '').toUpperCase())}${L ? ` · ${(L / 1000).toFixed(2)} KM` : ''}${n ? ` · ${n} TURNS` : ''} · ${esc(lapsTxt)}</span>${svg}</div>`;
   }
   const WXI = { dry: 'sun', damp: 'light', wet: 'heavy', dynamic: 'partly', custom: 'partly' };
@@ -109873,7 +110820,7 @@ const Net = (() => {
       const ed = host && lobbyPh, rows = ROWS.filter(r => ROW_TAB[r.k] === tab && rowOn(r, st));
       reg('htitle', `${(HTABS.find(t => t[0] === tab) || ['', ''])[1]} <span>${ed ? 'CLICK OR USE \u2039 \u203a TO CHANGE' : 'LOCKED WHILE A SESSION RUNS'}</span>`);
       reg('hrows', rows.map(r => `<div class="agp-net-row${ed ? ' is-edit' : ''}"><span>${r.label}</span>${ed ? `<i data-a="set" data-k="${r.k}" data-d="-1" role="button">\u2039</i>` : ''}<b${ed ? ` data-a="set" data-k="${r.k}" data-d="1"` : ''}>${esc(optLabel(r, st))}</b>${ed ? `<i data-a="set" data-k="${r.k}" data-d="1" role="button">\u203a</i>` : ''}</div>`).join(''));
-      reg('hside', tab === 'track' ? trackHTML(st) : tab === 'wx' ? wxHTML(st, true) : `<h4>RULES OVERVIEW</h4><div class="agp-net-rcs is-col">${rulesHTML(st)}</div>`);
+      reg('hside', tab === 'track' ? trackHTML(st, true) : tab === 'wx' ? wxHTML(st, true) : `<h4>RULES OVERVIEW</h4><div class="agp-net-rcs is-col">${rulesHTML(st)}</div>`);
     }
     reg('err', errHTML());
     const waiting = R.players.filter(p => !p.host && p.conn && !p.ready).length;
@@ -111077,7 +112024,7 @@ const Game = (() => {
   const DEFAULTS = {
     mode: 'race', trackId: 'vortex', laps: 5, difficulty: 'medium', teamIndex: 0, compound: 'A', view: 'chase',   // (A = AUTO start tyre)
     assists: { tc: true, abs: true, brakeGuide: true, kb: 'normal', steer: 'off', brake: 'off', line: 'off' }, tyreWear: 'normal', twoCompound: false, volume: 0.8,
-    grid: 'choose', gridPos: 7, playerName: 'Player', playerNumber: 7, timeOfDay: 'day', weather: 'dry', penalties: true, investigations: true, graphics: 'high', mirror: true,   // (investigations: race.js penalise)
+    grid: 'choose', gridPos: 7, playerName: 'Player', playerNumber: 7, timeOfDay: 'day', todTo: 'none', todMins: 20, weather: 'dry', penalties: true, investigations: true, graphics: 'high', mirror: true,   // (investigations: race.js penalise)
     grassSlip: 0.8,   // grass slipperiness 0..1 (Settings > Rules; CFG.grass: 0 = grips like the track, 0.8 = standard, 1 = 15 % less grip)
     maxFps: 60,   // frame rate limit: 30 | 60 | 120 | 0 = unlimited (frame cap below)
     reflections: 'auto',   // wet-track puddle reflections: 'auto' | 'on' | 'off' (render3d)
@@ -111288,7 +112235,7 @@ const Game = (() => {
 
     if (params.has('autostart') || !M.menu) {
       const s = { ...G.settings };
-      for (const k of ['trackId', 'mode', 'difficulty', 'view', 'compound', 'tyreWear', 'weather', 'timeOfDay', 'grid', 'weatherStart', 'weatherEnd', 'weatherWhen', 'qualiLen', 'qualiDay']) if (params.has(k)) s[k] = params.get(k);
+      for (const k of ['trackId', 'mode', 'difficulty', 'view', 'compound', 'tyreWear', 'weather', 'timeOfDay', 'todTo', 'todMins', 'grid', 'weatherStart', 'weatherEnd', 'weatherWhen', 'qualiLen', 'qualiDay']) if (params.has(k)) s[k] = params.get(k);
       if (params.has('track')) s.trackId = params.get('track');
       if ((params.has('track') || params.has('trackId')) && !params.has('timeOfDay')) s.timeOfDay = trackTod(s.trackId);   // (the circuit's default, as the menu picks it)
       if (params.has('laps')) s.laps = +params.get('laps');
@@ -111434,6 +112381,7 @@ const Game = (() => {
       mode: attract ? 'race' : settings.mode, laps: attract ? 99 : settings.laps, difficulty: settings.difficulty,
       playerTeam: settings.teamIndex, playerCompound: settings.compound, tyreWear: attract ? 'off' : settings.tyreWear,
       twoCompound: settings.twoCompound, seed, attract,
+      spread: !attract && !netS,   // (a single-player quick race: the AI cars in a real grid's order, seeded per race - race.js carSpread)
       // drivers on the grid: a championship keeps its season's entry list, the menu showcase has its own random field
       fieldSize: settings.fieldSize,
       field: attract ? settings.field : !attract && settings.mode === 'championship' && G.champ && M.race && M.race.champField ? M.race.champField(G.champ) : null,
@@ -111501,8 +112449,16 @@ const Game = (() => {
       ws = (G.champ.wxSeed + 7919 * (G.champ.round || 0)) >>> 0;
     }
     const laps = attract || settings.mode === 'timetrial' ? 0 : settings.laps;
-    return Weather.create({ mode, timeOfDay: tod, track: G.track, laps, seed: ws,
-      custom: { start: settings.weatherStart, end: settings.weatherEnd, when: settings.weatherWhen } });
+    return withTod(Weather.create({ mode, timeOfDay: tod, track: G.track, laps, seed: ws,
+      custom: { start: settings.weatherStart, end: settings.weatherEnd, when: settings.weatherWhen } }), settings, attract);
+  }
+  // time of day changing over the session (settings.todTo; Weather.todPath / todPhase; render3d follows it): quick race /
+  // time trial / multiplayer only, never the menu showcase or a championship round (each round at its circuit's race time)
+  function withTod(W, settings, attract) {
+    if (W && !attract && settings.mode !== 'championship' && Weather.todPath && Weather.todPath(W.timeOfDay, settings.todTo)) {
+      W.todTo = settings.todTo; W.todMins = Math.max(1, +settings.todMins || 20);
+    }
+    return W;
   }
 
   // minimal stand-in until race.js exists: one player car on the grid
@@ -111842,7 +112798,8 @@ const Game = (() => {
   const rcDnfOn = r => !!(r && r.rc && r.rc.on && M.menu && M.menu.showRaceControl && M.race && M.race.simulateRest);
   function rcDnfOpen() {
     RCD.open = true; RCD.k = 1;   // (every DNF screen starts at x1, user 2026-10-18)
-    RCD.ctl = RCD.ctl || { speed: k => (k == null ? RCD.k : (RCD.k = RC_K.includes(+k) ? +k : RCD.k)), skip: () => { if (G.race && M.race.simulateRest(G)) { RCD.k = 1; acc = 0; } } };
+    RCD.ctl = RCD.ctl || { speed: k => (k == null ? RCD.k : (RCD.k = RC_K.includes(+k) ? +k : RCD.k)), skip: () => { if (G.race && M.race.simulateRest(G)) { RCD.k = 1; acc = 0; dwHide(); DW.st = 'done'; } },
+      watch: () => { RCD.open = false; RCD.k = 1; if (M.menu && M.menu.visible() && !G.paused) M.menu.hide(); if (M.hud) M.hud.setVisible(true); dwShow('watch'); } };
     if (M.hud) M.hud.setVisible(false);
     if (!G.paused) M.menu.showRaceControl(G, RCD.ctl);
   }
@@ -111872,14 +112829,54 @@ const Game = (() => {
       if (M.hud && G.screen === 'race') M.hud.setVisible(true);
     }
   }
-  let ffShown = null;
+  // DNF spectating (single player): the player's car retired (crash / mechanical / pause-menu retire). After RC_DNF s a small
+  // prompt asks KEEP WATCHING (the camera stays on the stopped car: marshals, recovery, the race going by at x1; the camera keys
+  // work) or RESULTS (Race.simulateRest). While watching a RESULTS pill stays up. Nothing auto-skips to the race overview any more
+  // (race control on or off); the race ends as usual at the flag. DW.k: 1 (asking / watching), 4 (RESULTS but no simulation: x4)
+  const DW = { race: null, el: null, st: '', k: 1 };
+  function dwHide() { if (DW.el) DW.el.style.display = 'none'; DW.st = ''; DW.k = 1; }
+  function dwResults() {
+    const ok = !!(M.race && M.race.simulateRest && M.race.simulateRest(G));
+    if (ok) acc = 0; else DW.k = 4;   // (cannot simulate: the rest at x4 to the flag)
+    dwHide(); DW.st = 'done'; if (!ok) DW.k = 4;
+  }
+  function dwOverview() {   // the race overview (the race control screen: positions, gaps, the race at x1-x10); BACK TO WATCHING / RESULTS inside it
+    if (!M.menu || !M.menu.showRaceControl || !G.race || G.race.net) return false;
+    RCD.race = G.race; rcDnfOpen();
+    if (DW.el) DW.el.style.display = 'none';
+    return true;
+  }
+  function dwShow(st) {
+    DW.st = st;
+    if (!DW.el) {
+      const e = DW.el = document.createElement('div');
+      e.className = 'agp-dnfw';
+      e.innerHTML = '<div class="agp-dnfw-t">YOU ARE OUT OF THE RACE</div><div class="agp-dnfw-b"><b class="agp-dnfw-keep" role="button"><kbd>ENTER</kbd>KEEP WATCHING</b><b class="agp-dnfw-ov" role="button"><kbd>O</kbd>OVERVIEW</b><b class="agp-dnfw-res" role="button"><kbd>X</kbd>RESULTS \u203a</b></div>';
+      e.addEventListener('pointerdown', ev => ev.stopPropagation());
+      e.querySelector('.agp-dnfw-keep').addEventListener('click', () => { if (DW.st === 'ask') dwShow('watch'); });
+      e.querySelector('.agp-dnfw-ov').addEventListener('click', () => { if ((DW.st === 'ask' || DW.st === 'watch') && dwOverview()) { /* shown */ } });
+      e.querySelector('.agp-dnfw-res').addEventListener('click', () => { if (DW.st === 'ask' || DW.st === 'watch') dwResults(); });
+      document.body.appendChild(e);
+      addEventListener('keydown', ev => {
+        if (G.paused || (M.menu && M.menu.visible && M.menu.visible()) || (ev.target && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName))) return;
+        if ((ev.code === 'Enter' || ev.code === 'NumpadEnter') && DW.st === 'ask') { dwShow('watch'); ev.preventDefault(); }
+        else if (ev.code === 'KeyO' && !ev.repeat && (DW.st === 'ask' || DW.st === 'watch')) { dwOverview(); ev.preventDefault(); }
+        else if (ev.code === 'KeyX' && !ev.repeat && (DW.st === 'ask' || DW.st === 'watch')) { dwResults(); ev.preventDefault(); }
+      });
+    }
+    DW.el.style.display = '';
+    DW.el.classList.toggle('is-watch', st === 'watch');
+    DW.el.querySelector('.agp-dnfw-t').textContent = st === 'watch' ? 'WATCHING THE RACE' : 'YOU ARE OUT OF THE RACE';
+  }
   function retiredFF() {
     const P = G.player, r = G.race;
     if (RCD.open && (r !== RCD.race || !P || !P.retired)) rcDnfClose();
-    if (!P || !P.retired || !r || r.phase !== 'racing' || G.attract || (M.net && r.net) || r.t - P.retired.t < (rcDnfOn(r) ? RC_DNF : 3)) { if (RCD.open && r && r.phase !== 'racing') RCD.open = false; return 1; }
-    if (rcDnfOn(r)) { if (RCD.race !== r) { RCD.race = r; rcDnfOpen(); } return RCD.open && !G.paused ? RCD.k : 1; }
-    if (ffShown !== r) { ffShown = r; if (M.hud && M.hud.flash) M.hud.flash('RETIRED', { color: '#ff5a4f', sub: 'FAST FORWARD TO THE FLAG · ESC FOR THE MENU', duration: 4 }); }
-    return 4;
+    if (!P || !P.retired || !r || r.phase !== 'racing' || G.attract || (M.net && r.net)) { if (DW.st || DW.race) { dwHide(); DW.race = null; } return 1; }
+    if (DW.race !== r) { DW.race = r; DW.st = ''; DW.k = 1; DW.el && (DW.el.style.display = 'none'); }
+    if (RCD.open && !G.paused) return RCD.k;   // (the overview: its own race speed)
+    if (DW.st === 'done') return DW.k;
+    if (!DW.st && r.t - P.retired.t >= (rcDnfOn(r) ? RC_DNF : 3)) dwShow('ask');
+    return 1;
   }
 
   // qualifying: the player's last lap done -> the AI drives his car (car.qAuto: Quali in Q1-Q3 until the session ends,
@@ -112143,6 +113140,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-01 13:13 -->
+<!-- Apex GP build 2026-11-06 00:38 -->
 </body>
 </html>
