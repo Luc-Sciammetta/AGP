@@ -776,7 +776,7 @@ const Livery = (() => {
   // sponsor spots (car_model.js SPOT_GEO places them; menu order, front to back): [id, label, default design, default size]
   const SPOTS = [['nose', 'NOSE', 0, 1], ['fwing', 'FRONT WING', 4, 1], ['fwend', 'FRONT ENDPLATES', 3, 1], ['chassis', 'CHASSIS SIDE', 0, 1],
     ['halol', 'HALO LEFT', 3, 2], ['halor', 'HALO RIGHT', 3, 2], ['pod', 'SIDEPODS', 0, 2], ['airbox', 'AIRBOX', 1, 1],
-    ['ecfront', 'COVER FRONT', 2, 1], ['ecrear', 'COVER REAR', 3, 1], ['finl', 'FIN LEFT', 3, 1], ['finr', 'FIN RIGHT', 3, 1],
+    ['ecfront', 'COVER FRONT', 2, 1], ['ecrear', 'COVER REAR', 3, 1], ['fin', 'FIN', 3, 1],
     ['rwtop', 'REAR WING TOP', 0, 2], ['rwend', 'REAR ENDPLATES', 3, 1]];
   const SPOT_IDS = SPOTS.map(s => s[0]);
   const SP_N = 40, SP_D = 5, SP_Z = 3;   // sponsors (sponsors.js LIST length, append-only), designs, sizes
@@ -786,7 +786,7 @@ const Livery = (() => {
     const r = {};
     let n = 0;
     for (const k of SPOT_IDS) {
-      const v = o[k];
+      const v = k === 'fin' && !o.fin ? o.finl || o.finr : o[k];   // (older saves: separate left / right fin spots)
       if (!Array.isArray(v)) continue;
       const s = Math.round(+v[0]), d = Math.round(+v[1]), z = Math.round(+v[2]);
       if (!(s >= 0 && s < SP_N)) continue;

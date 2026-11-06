@@ -55943,7 +55943,7 @@ const Livery = (() => {
   // sponsor spots (car_model.js SPOT_GEO places them; menu order, front to back): [id, label, default design, default size]
   const SPOTS = [['nose', 'NOSE', 0, 1], ['fwing', 'FRONT WING', 4, 1], ['fwend', 'FRONT ENDPLATES', 3, 1], ['chassis', 'CHASSIS SIDE', 0, 1],
     ['halol', 'HALO LEFT', 3, 2], ['halor', 'HALO RIGHT', 3, 2], ['pod', 'SIDEPODS', 0, 2], ['airbox', 'AIRBOX', 1, 1],
-    ['ecfront', 'COVER FRONT', 2, 1], ['ecrear', 'COVER REAR', 3, 1], ['finl', 'FIN LEFT', 3, 1], ['finr', 'FIN RIGHT', 3, 1],
+    ['ecfront', 'COVER FRONT', 2, 1], ['ecrear', 'COVER REAR', 3, 1], ['fin', 'FIN', 3, 1],
     ['rwtop', 'REAR WING TOP', 0, 2], ['rwend', 'REAR ENDPLATES', 3, 1]];
   const SPOT_IDS = SPOTS.map(s => s[0]);
   const SP_N = 40, SP_D = 5, SP_Z = 3;   // sponsors (sponsors.js LIST length, append-only), designs, sizes
@@ -55953,7 +55953,7 @@ const Livery = (() => {
     const r = {};
     let n = 0;
     for (const k of SPOT_IDS) {
-      const v = o[k];
+      const v = k === 'fin' && !o.fin ? o.finl || o.finr : o[k];   // (older saves: separate left / right fin spots)
       if (!Array.isArray(v)) continue;
       const s = Math.round(+v[0]), d = Math.round(+v[1]), z = Math.round(+v[2]);
       if (!(s >= 0 && s < SP_N)) continue;
@@ -77104,7 +77104,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-06 00:38';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-06 08:29';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -82764,7 +82764,7 @@ const Sponsors = (() => {
     const tw = pick([0, 3, 3]);
     put('pod', title, [tw], 2); put('rwtop', title, [tw, 3, 4], 2); put('rwend', title, [3, 0], 1, 0.15); put('nose', r() < 0.6 ? title : p3, [3, 0], 1, 0.15);
     put('ecrear', title, [3, 0], 1, 0.5);
-    put('chassis', p1, [0, 3], 1 + (r() < 0.5), 0.1); const fd = pick([3, 0]), fz = pick([1, 2]); if (r() > 0.2) { S.finl = [p1, fd, fz]; S.finr = [p1, fd, fz]; }
+    put('chassis', p1, [0, 3], 1 + (r() < 0.5), 0.1); const fd = pick([3, 0]), fz = pick([1, 2]); if (r() > 0.2) S.fin = [p1, fd, fz];
     put('fwing', p2, [4, 3, 0], 2, 0.15); put('airbox', p3, [1, 3], 1, 0.3);
     const hd = pick([3, 0]); if (r() > 0.3) { S.halol = [p2, hd, 2]; S.halor = [p2, hd, 2]; }
     put('ecfront', p4, [2, 3], 1, 0.4); put('fwend', p4, [3, 0, 2], 1, 0.3);
@@ -83786,7 +83786,7 @@ const buildCarModel = (() => {
   const HALO_MAP = { x0: -0.15, y0: 0.90, ox: 0.8, oy: 0.74, kx: 2.8, ky: 3.83 }, END_MAP = { x0: 0, y0: 0, ox: 0, oy: 0.8, kx: 1, ky: 1 };
   const SPOT_GEO = {
     nose: { s: [0, 1], x: 1.86, y: 0.30, r: -0.15, w: 0.62, h: 0.075 },
-    fwing: { t: [[2.45, 0.5, Math.PI / 2], [2.45, -0.5, Math.PI / 2]], w: 0.62, h: 0.14 },
+    fwing: { t: [[2.45, 0.5, -Math.PI / 2], [2.45, -0.5, -Math.PI / 2]], w: 0.62, h: 0.14 },
     fwend: { s: [0, 1], x: 2.6, y: 0.17, r: 0, w: 0.44, h: 0.12, m: END_MAP },
     chassis: { s: [0, 1], x: 0.95, y: 0.40, r: -0.08, w: 0.62, h: 0.12 },
     halol: { s: [1], x: 0.08, y: 0.97, r: 0.066, w: 0.34, h: 0.03, m: HALO_MAP },
@@ -83795,8 +83795,7 @@ const buildCarModel = (() => {
     airbox: { s: [0, 1], x: -0.38, y: 0.93, r: 0.1, w: 0.30, h: 0.075 },
     ecfront: { t: [[-0.74, 0.1, 0], [-0.74, -0.1, Math.PI]], w: 0.42, h: 0.11 },
     ecrear: { t: [[-1.62, 0.075, 0], [-1.62, -0.075, Math.PI]], w: 0.40, h: 0.08 },
-    finl: { s: [1], x: -1.5, y: 0.765, r: 0.245, w: 0.62, h: 0.10 },
-    finr: { s: [0], x: -1.5, y: 0.765, r: 0.245, w: 0.62, h: 0.10 },
+    fin: { s: [0, 1], x: -1.5, y: 0.765, r: 0.245, w: 0.62, h: 0.10 },   // (one spot, both sides - user 2026-11-06)
     rwtop: { t: [[-2.69, 0, -Math.PI / 2]], w: 0.92, h: 0.14 },   // (reads from the front on the steep upper face, from behind on the back: FRAG_COLOR)
     rwend: { s: [0, 1], x: -2.60, y: 1.0, r: 0, w: 0.40, h: 0.10 },
   };
@@ -83804,7 +83803,7 @@ const buildCarModel = (() => {
   // 3D anchor of each spot (car frame: the livery editor's hotspots)
   const SPOT_PTS = { nose: [1.86, 0.33, 0.1], fwing: [2.45, 0.2, 0.5], fwend: [2.6, 0.18, 0.9], chassis: [0.95, 0.42, 0.26], halol: [0.08, 0.97, -0.25],
     halor: [0.08, 0.97, 0.25], pod: [-0.30, 0.42, 0.6], airbox: [-0.38, 0.95, 0.13], ecfront: [-0.74, 0.97, 0.1], ecrear: [-1.62, 0.7, 0.08],
-    finl: [-1.5, 0.8, -0.01], finr: [-1.5, 0.8, 0.01], rwtop: [-2.70, 0.98, 0], rwend: [-2.6, 1.0, 0.5] };
+    fin: [-1.5, 0.8, 0.01], rwtop: [-2.70, 0.98, 0], rwend: [-2.6, 1.0, 0.5] };
   const SPN = () => (typeof Sponsors !== 'undefined' ? Sponsors : null);
   const SPOT_ORDER = () => (typeof Livery !== 'undefined' && Livery.SPOT_IDS) || Object.keys(SPOT_GEO);
   // background estimate behind each spot: the paint layer drawn at 1/4 size on a small read-back canvas (no read-back of
@@ -83930,6 +83929,10 @@ const buildCarModel = (() => {
       // reserved areas read by the halo / the front wing endplates (HALO_MAP / END_MAP; nothing else lies there)
       L.side([[0.78, 0.72], [2.24, 0.72], [2.24, 1.21], [0.78, 1.21]], pick(L, D.halo));
       L.side([[2.24, 0.80], [2.95, 0.80], [2.95, 1.21], [2.24, 1.21]], pick(L, D.end));
+      // wing panels (rear endplate block, rear flap, front flaps): here so a sponsor's colours are picked against them
+      L.side([[-2.35, 0.60], [-2.35, 1.19], [-2.92, 1.19], [-2.92, 0.60]], pick(L, D.end));
+      L.top([[-2.555, -0.52], [-2.555, 0.52], [-2.83, 0.52], [-2.83, -0.52]], pick(L, D.rflap), false);
+      L.top([[2.29, 0.1], [2.63, 0.1], [2.63, 0.93], [2.29, 0.93]], pick(L, D.flap));
       return;
     }
     drawLivery(g, team, D, num, true);
@@ -83948,16 +83951,9 @@ const buildCarModel = (() => {
       L.sideText(name, -0.46, 0.405, 0.06, onColour(txt), null, 'bold', 0.8);
     }
     // rear wing endplates: team colour block, sponsor + number
-    const end = pick(L, D.end), endTxt = onColour(end);
-    L.side([[-2.35, 0.60], [-2.35, 1.19], [-2.92, 1.19], [-2.92, 0.60]], end);
+    const end = pick(L, D.end), endTxt = onColour(end);   // (the block itself: base layer)
     L.sideText(num, -2.62, 0.82, 0.15, endTxt, null, 'bold italic');
     L.sideLine([[-2.36, 0.71], [-2.84, 0.71]], 0.012, team.accent === end ? team.secondary : team.accent);
-    // rear wing flap (top band): sponsor readable from behind
-    const rfl = pick(L, D.rflap);
-    L.top([[-2.555, -0.52], [-2.555, 0.52], [-2.83, 0.52], [-2.83, -0.52]], rfl, false);
-    // front wing flaps (top band)
-    const ffl = pick(L, D.flap);
-    L.top([[2.29, 0.1], [2.63, 0.1], [2.63, 0.93], [2.29, 0.93]], ffl);
     // sponsors (team set / the custom livery's own): drawn in mm units, fitted into the spot box
     if (set) for (const id of SPOT_ORDER()) {
       const v = set[id], P = SPOT_GEO[id];
@@ -107481,9 +107477,9 @@ const Menu = (() => {
   const SPS = () => (typeof Sponsors !== 'undefined' ? Sponsors : null);
   // per spot: turntable yaw, camera elevation (rad), distance (x the whole-car distance)
   const SPOT_VIEW = { nose: [-0.75, 0.2, 0.5], fwing: [-1.0, 0.55, 0.6], fwend: [-0.5, 0.15, 0.45], chassis: [-0.35, 0.18, 0.55], halol: [Math.PI + 0.45, 0.3, 0.38], halor: [-0.45, 0.3, 0.38],
-    pod: [-0.15, 0.2, 0.62], airbox: [-0.25, 0.3, 0.45], ecfront: [0.5, 0.6, 0.55], ecrear: [0.55, 0.6, 0.55], finl: [Math.PI - 0.35, 0.25, 0.55], finr: [0.35, 0.25, 0.55],
+    pod: [-0.15, 0.2, 0.62], airbox: [-0.25, 0.3, 0.45], ecfront: [0.5, 0.6, 0.55], ecrear: [0.55, 0.6, 0.55], fin: [0.35, 0.25, 0.55],
     rwtop: [Math.PI / 2 - 0.3, 0.32, 0.55], rwend: [0.6, 0.2, 0.5] };
-  const HOT_DIR = { halol: -1, finl: -1, halor: 1, finr: 1, fwing: 0, ecfront: 0, ecrear: 0, rwtop: 0 };   // (-1 left, 1 right, 0 top; others: the side facing you)
+  const HOT_DIR = { halol: -1, halor: 1, fwing: 0, ecfront: 0, ecrear: 0, rwtop: 0 };   // (-1 left, 1 right, 0 top; others: the side facing you)
   function lvTabSet(t, quiet) {
     if (t === 'spon' && !SPS()) t = 'paint';
     lvTab = t;
@@ -113140,6 +113136,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-06 00:38 -->
+<!-- Apex GP build 2026-11-06 08:29 -->
 </body>
 </html>
