@@ -61310,6 +61310,9 @@ const Weather = (() => {
   function todPhase(W, G) {
     const P = W && todPath(W.timeOfDay, W.todTo);
     if (!P) return W ? (TOD_PH[W.timeOfDay] != null ? TOD_PH[W.timeOfDay] : 0) : 0;
+    // the highlight reel playing: the light of the clip's own moment (not stored: the race's clock stays where it was)
+    const rv = typeof Reel !== 'undefined' && Reel.viewT != null && Reel.todAt ? Reel.todAt(Reel.viewT) : null;
+    if (rv != null) return P.a + (P.b - P.a) * clamp(rv / 0.97, 0, 1);
     const p = Math.max(W.todP || 0, todProgress(W, G));
     W.todP = p;
     return P.a + (P.b - P.a) * clamp(p / 0.97, 0, 1);
@@ -77173,7 +77176,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-07 09:33';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-07 10:22';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -80546,6 +80549,7 @@ const Reel = (() => {
       colMax: new Float32Array(n), cool: new Float64Array(n * 4).fill(-1e9), offT: new Float32Array(n), contactT: new Float64Array(n).fill(-1e9),
       pitT: new Float64Array(n).fill(-1e9), pairs: new Map(), batT: new Map(), fin: [], lightsT: null, flagT: null, fl: null,
       seed: ((G.race && G.race.seed) >>> 0) || 1,
+      tl: [],   // (time of day: [G.time, Weather.todProgress] every 2 s while the sky changes over the race: the clips replay their own light)
       bl: [], bv: -1,   // (race control, phase 6: the movable barriers' state on each change: { t, off (G.time - race.t), L })
       vl: [], vT: -1, vOn: false,   // (race control, phase 7: the safety car / medical car out: [t, on, x, z, h, li, s, d] x 2 at 10 Hz, then one 'off' record)
       jm: new Map(), jl: [], jLive: [], ro: [],   // (race control, phase 2: the recovery jobs seen (marshals / tractors / cranes: a timeline each) { J, a, e: first seen / gone, G.time }; ro: [G.time, G.time - race.t] on each change)
@@ -80563,6 +80567,7 @@ const Reel = (() => {
     const B = R.blocks.get(bt); if (B) B.n = Math.min(B.n, Math.max(B.lo, Math.floor(t * HZ + 1e-6) - bt * BS));
     R.live = B ? bt : -1;
     R.moments = R.moments.filter(m => m.t <= t);
+    if (R.tl) R.tl = R.tl.filter(q => q[0] <= t);
     if (R.lightsT != null && R.lightsT > t) R.lightsT = null;
     if (R.flagT != null && R.flagT > t) R.flagT = null;
     R.fin = R.fin.filter(f => f && f.t <= t);
@@ -80582,6 +80587,7 @@ const Reel = (() => {
     const t = G.time || 0;
     if (t < R.lastT - 1e-6) rewound(t);
     R.lastT = t;
+    { const W = G.weather; if (W && W.todTo && W.todTo !== W.timeOfDay && typeof Weather !== 'undefined' && Weather.todProgress && (!R.tl.length || t - R.tl[R.tl.length - 1][0] >= 2)) R.tl.push([t, Weather.todProgress(W, G)]); }
     const rc = G.race.rc;
     if (rc && rc.bar && rc.brv !== R.bv) {   // (the barriers pushed back / repaired: their state from now; a change within 0.25 s replaces the last)
       R.bv = rc.brv;
@@ -81257,6 +81263,8 @@ const Reel = (() => {
   const api = {
     enabled: false, HZ, MIN_DUR, MAX_DUR,
     step, build, apply, camera, pose, wxSave, wxApply,
+    // the time-of-day progress (0..1) the race had at G.time t (null: none recorded - a fixed time of day)
+    todAt: t => { const L = R && R.tl; if (!L || !L.length) return null; if (t <= L[0][0]) return L[0][1]; for (let i = 1; i < L.length; i++) if (L[i][0] >= t) { const a = L[i - 1], b = L[i], f = (t - a[0]) / Math.max(1e-6, b[0] - a[0]); return a[1] + (b[1] - a[1]) * f; } return L[L.length - 1][1]; },
     reset: () => { R = null; },
     viewT: null,   // (reel_ui: the playback's sim time while a clip plays, else null: render3d draws the barriers as they were then)
     // the SC / medical car at sim time t (render3d while a clip plays): [{ on, x, z, h, li, s, d }] x 2 (shared), between the
@@ -113710,6 +113718,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-07 09:33 -->
+<!-- Apex GP build 2026-11-07 10:22 -->
 </body>
 </html>

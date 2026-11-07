@@ -6143,6 +6143,9 @@ const Weather = (() => {
   function todPhase(W, G) {
     const P = W && todPath(W.timeOfDay, W.todTo);
     if (!P) return W ? (TOD_PH[W.timeOfDay] != null ? TOD_PH[W.timeOfDay] : 0) : 0;
+    // the highlight reel playing: the light of the clip's own moment (not stored: the race's clock stays where it was)
+    const rv = typeof Reel !== 'undefined' && Reel.viewT != null && Reel.todAt ? Reel.todAt(Reel.viewT) : null;
+    if (rv != null) return P.a + (P.b - P.a) * clamp(rv / 0.97, 0, 1);
     const p = Math.max(W.todP || 0, todProgress(W, G));
     W.todP = p;
     return P.a + (P.b - P.a) * clamp(p / 0.97, 0, 1);
