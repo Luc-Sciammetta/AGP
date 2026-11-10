@@ -443,7 +443,7 @@ class RaceSim {
   // out with the newest state); loading: soon
   nextT(t) { return this.stopped ? Infinity : this.phase === 'loading' ? t + 15 : this.snapT + 1000 / N.HZ.snap; }
   brief() {
-    const lead = this.race.order[0], qs = this.race.qs, q = qs && qs.st !== 'done' ? (qs.st === 'break' ? 'BREAK' : qs.fmt.names[qs.idx]) : null;   // (q: the qualifying session running)
+    const lead = this.race.order.find(c => !(c.dnf && !c.finished)) || this.race.order[0], qs = this.race.qs, q = qs && qs.st !== 'done' ? (qs.st === 'break' ? 'BREAK' : qs.fmt.names[qs.idx]) : null;   // (q: the qualifying session running)
     return { mode: 'race', phase: this.race.phase, lap: lead ? Math.min(this.race.laps, Math.max(1, lead.lap | 0)) : 0, laps: this.race.laps, track: this.track.id, q: q || undefined };
   }
   setupMsg(p, resume) {
@@ -616,7 +616,7 @@ class RaceSim {
       // (pre: on the grid. A report from after this step - the steps run in batches - is not where the car was then: a car
       // that left at lights out would be a jump start on a step still before it. Qualifying: placed at the step's time like
       // in the race - it took the newest report as it was, the batches would put up to 33 ms of noise in the laps)
-      const r = n.rep, pre = race.phase === 'grid' || race.phase === 'lights';
+      const r = n.rep, pre = race.phase === 'grid' || race.phase === 'lights' || !!(race.rc && race.rc.rf === 3);   // (rf 3: a red flag's standing restart, on the grid)
       if (pre && r.t > tNow + 1) return;
       // (dead reckoning as the clients do it: N.MAX_EXTRAP, the speed change between the last two reports carried on)
       // (e < 0: a report newer than this step - the steps run in batches at each snapshot, up to 33 ms after their time -
@@ -686,8 +686,9 @@ class RaceSim {
       if (n) {
         const on = connected(n.p) && n.p.room === this.room && !n.left;
         // (race control on: a retired car stays where it stopped and its job moves it - the server has it from then on, 'rc')
-        // (a red flag: the server has every car until the restart's lights go out - the AI drives it in, race control lines it up)
-        const want = race.rc && race.rc.on && race.rc.rf && !car.dnf ? 'rc' : car.dnf && car.retired && race.rc && race.rc.on ? 'rc' : car.kinematic ? 'pit' : !on || n.afk ? 'ai' : null;
+        // (a red flag: the server has every car until it stands on its restart grid slot - the AI drives it in, race control lines it
+        // up; at rf 3 the player has it back before the lights, as at the start: a jump start is judged on it, user 2026-11-10)
+        const want = race.rc && race.rc.on && race.rc.rf && race.rc.rf !== 3 && !car.dnf ? 'rc' : car.dnf && car.retired && race.rc && race.rc.on ? 'rc' : car.kinematic ? 'pit' : !on || n.afk ? 'ai' : null;
         if (want && n.auth === 'client') { n.auth = 'server'; n.why = want; n.epoch = nextEpoch(n.p); this.ctl(car); }
         else if (want && n.why !== want) { n.why = want; this.ctl(car); }
         else if (!want && n.auth === 'server') { n.auth = 'client'; n.why = null; n.epoch = nextEpoch(n.p); n.rep = null; n.rep0 = null; n.ex = n.ez = n.eh = 0; n.n = 0; n.recvT = tNow; if (race.qs) car.wantPit = false; this.ctl(car, tNow - STEPMS); }
