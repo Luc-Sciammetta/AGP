@@ -307,7 +307,7 @@ function splitName(n) {
   const parts = String(n).trim().split(/\s+/); return parts.length > 1 ? { first: parts[0], last: parts.slice(1).join(' ') } : { first: '', last: parts[0] || 'Player' };
 }
 function makeWeather(S, track, seed) {
-  const mode = S.weather || 'dry', tod = S.timeOfDay || 'day';
+  const mode = S.weather || 'dry', tq = Weather && Weather.sessionTod ? Weather.sessionTod(S, track && track.id || S.trackId) : null, tod = tq ? tq.tod : ['day', 'dusk', 'night'].includes(S.timeOfDay) ? S.timeOfDay : 'day';   // ('dynamic': the circuit's own time)
   if (!Weather || !Weather.create) { const wet = { dry: 0, damp: 0.5, wet: 1 }[mode] || 0; return { wet, rain: wet >= 1 ? 1 : wet > 0 ? 0.35 : 0, timeOfDay: tod }; }
   // (a race's seed comes from the room's wxSeed: this seed is then exactly wxSeed, the lobby's forecast - netcore raceSeed)
   return Weather.create({ mode, timeOfDay: tod, track, laps: S.mode === 'timetrial' ? 0 : S.laps, seed: (seed ^ N.WX_K) >>> 0,
@@ -567,6 +567,14 @@ class RaceSim {
     Race.retire(this.G, race, car, 'Retired');
     if (car.retired) car.retired.pull = 1;
     log(`room ${this.room.code}: #${p.id} ${dname(p)} retired`);
+  }
+  // (user 2026-11-10) the red flag: the restart's wings for the player's own car (clamped, fitted on the grid: RaceControl
+  // chooseWings / Race rfGrid); the accepted wings go back to that player only ('rfw': private, the client fits them too)
+  onRfw(p, m) {
+    const car = this.byPid.get(p.id);
+    if (!car || !m || typeof RaceControl === 'undefined' || !RaceControl.chooseWings) return;
+    const w = RaceControl.chooseWings(this.G, car, m.fw, m.rw);
+    send(p, w ? { t: 'rfw', ok: true, fw: w.fw, rw: w.rw } : { t: 'rfw', ok: false });
   }
   onRft(p, m) { const car = this.byPid.get(p.id); if (car && N.COMP.includes(m.c) && typeof RaceControl !== 'undefined') RaceControl.chooseTyre(this.G, car, m.c); }   // (the red flag: the restart's tyres)
   onRcx(p, m) {   // (tests only: node server.mjs --rc-test, tools/rc_mp_test.mjs) race control on demand: m.cfg the switches, m.n AI cars (<= 3) retired where they are
@@ -881,7 +889,7 @@ class RaceSim {
     if (t - this.snapT >= 1000 / N.HZ.snap) { this.snapT = Math.max(this.snapT + 1000 / N.HZ.snap, t - 100); this.snapshots(t); }
     if (t - this.raceT >= 1000 / N.HZ.race) { this.raceT = Math.max(this.raceT + 1000 / N.HZ.race, t - 200); this.raceBlock(); this.info(); }
     const W = race.qs && race.qs.st !== 'done' && race.phase === 'quali' ? race.qs.W : race.wx;   // (qualifying: its own weather, time clock wt)
-    if (W && W.dynamic && t - this.wxT >= 1000) { this.wxT = t; sendAll(this.room, { t: 'wx', x: W.x, wet: W.wet, rain: W.rain, trend: W.trend, wt: W.clock === 'time' ? Math.round(W.t * 100) / 100 : undefined }); }
+    if (W && W.dynamic && t - this.wxT >= 1000) { this.wxT = t; sendAll(this.room, { t: 'wx', x: W.x, wet: W.wet, rain: W.rain, trend: W.trend, wt: W.clock === 'time' ? Math.round(W.t * 100) / 100 : undefined, xa: W.clock !== 'time' && W.xAdd > 0 ? Math.round(W.xAdd * 1e4) / 1e4 : undefined }); }   // (xa: the race clock's offset - red flags' stoppages / rain fast-forward, Weather.skip)
     if (this.endT != null && t - this.endT > 45000) this.stop();   // cool-down laps done
   }
   snapshots(t) {
@@ -1200,6 +1208,7 @@ function onText(p, raw) {
     case 'pitw': if (sim && sim.onPitw) sim.onPitw(p, m); break;
     case 'retire': if (sim && sim.onRetire) sim.onRetire(p); break;   // (the pause menu's RETIRE)
     case 'rft': if (sim && sim.onRft) sim.onRft(p, m); break;   // (the red flag: a tyre choice for the restart)
+    case 'rfw': if (sim && sim.onRfw) sim.onRfw(p, m); break;   // (the red flag: the wings for the restart)
     case 'rcx': if (sim && sim.onRcx) sim.onRcx(p, m); break;   // (tests only: --rc-test)
     case 'rulesq': if (ARG['rules-test'] && sim && sim.onRulesQ) sim.onRulesQ(p); break;   // (tests only: --rules-test)
     case 'wh': if (sim && sim.onWallHit) sim.onWallHit(p, m); break;   // (contact damage: a client's wall hit)
