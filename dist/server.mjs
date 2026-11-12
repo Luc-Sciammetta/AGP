@@ -375,6 +375,7 @@ class RaceSim {
     Race.create(G, { mode: 'race', laps: S.laps, difficulty: diffId, playerTeam: humans.length ? humans[0].team : field[0], playerCompound: 'M', tyreWear: S.tyreWear, twoCompound: S.twoCompound,
       penalties: S.penalties, penaltyLevel: S.penaltyLevel, pitExitPen: S.pitExitPen === true, investigations: S.investigations !== false, weather: S.weather, grid: qf ? 'qfull' : 'random', seed, field, fieldSize: n, raceControl: S.raceControl });
     const race = this.race = G.race;
+    if (ARG['rc-pre'] && race.rc && !race.qs) race.rc.preF = 1;   // (tests only: --rc-pre, tools/rc_mp_test.mjs - the rain red flag before the start, RaceControl.preRain)
     this.brainQ = [];
     if (race.qs) {
       race.qs.mp = true;   // (no garage speed-up; humans drive in at a session's end)
