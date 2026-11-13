@@ -68225,7 +68225,8 @@ const AI = (() => {
     // beached (gravel) or otherwise going nowhere for a long time: put the car back on track (like the player's R) - only
     // into a gap (rjReset: no car about to arrive; at the edge on its side, not mid-track)
     if (v < 1.5 && !startPh && !finished && phase === 'racing' && !b.rjHoldP) b.beachT = (b.beachT || 0) + dt; else if (v > 5) b.beachT = 0;
-    if (b.beachT > 8 && rjReset(b, car, G, A)) b.beachT = 0;
+    // (user 2026-11-13: back in 5-15 s - was 8 s anywhere; a scripted mistake beached in the gravel still retires there first, mkPre)
+    if (b.beachT > (car.surface !== SURF.GRAVEL ? RJ.beach : b.mk && b.mk.ph >= 1 ? RJ.beach + 1 : RJ.beachG) && rjReset(b, car, G, A)) b.beachT = 0;
     if (b.rec === 3) return recover(b, car, G, A, rel, dt);
 
     if (b.adaptive) adaptDrive(b, car, G, dt);
@@ -68883,6 +68884,9 @@ const AI = (() => {
         // track: at 15 deg the path ran into it and the car scraped along it at ~10 km/h)
         if (ad > hw + 2) { b.absDT = sd * (hw + 1); b.absRate = track.openAreas.length && track.inOpenArea(car.s, car.d) >= 0 ? clamp(v * 1.2, 2, 14) : clamp(v * 0.27, 1.6, 7); }
       }
+      // far out on a run-off without an apron plan (A.apron): to just outside the line at the apron's ~15 deg angle, not
+      // RJ.rate (1.2 m/s across: ~20 s back from 25 m out on Solstice's run-offs, user 2026-11-13) - the merge itself stays gentle
+      else if (slow && sd * b.absD > hw + RJ.edge + 1) b.absRate = Math.max(b.absRate, clamp(v * 0.27, 1.6, 7));
       // (all four wheels past the kerb: ease off while crossing back \u2014 a rejoin that cuts across the inside of the next
       // corner must not gain time, Race's track-limits rule counts that as a strike)
       // (just over the kerb: rejoin without lifting)
@@ -70423,7 +70427,7 @@ const AI = (() => {
       if (car.vLong > 0.8) { inp.throttle = 0; inp.brake = 1; }   // stop before reversing
       if (b.recT > 0.5 && (b.recT > 2.2 || wallBehind < 2.5 || cr > 0.6 || (b.recT > 1.2 && v < 0.4))) { b.recFwd = 1; b.recT = 0; }
     }
-    if (b.recTot > 9) rjReset(b, car, G, A);
+    if (b.recTot > RJ.recMax) rjReset(b, car, G, A);
     return inp;
   }
 
@@ -70439,7 +70443,12 @@ const AI = (() => {
   // just as a car gets there: RJ.go 3.2 -> 1.4 s, and off the track only the cars in the lane it joins, RJ.lane m of its edge)
   // (under a double yellow / VSC / SC / red flag the old caution - RJ.ncGo / ncGo2 / ncHold, every car on the track: the bunched field at
   // neutralised pace; rejoining in front of the SC queue made swaps / contacts there, rc_test RC4)
-  const RJ = { go: 1.4, go2: 1.2, wait: 4, dec: 0.25, turnT: 1.5, hold: 0.9, lane: 4.5, ncGo: 3.2, ncGo2: 3.0, ncHold: 1.8, near: 3, slow: 0.6, pace: 0.8, rate: 1.2, edge: 1.5, vWait: 18, max: 25,
+  // (user 2026-11-13, rejoins in 5-15 s: a double yellow no longer brings the cautious gaps - the car's own stop raised one and
+  // held it 10-38 s while the field went by at racing speed; there the normal gaps to every car on the track. rjEta counts its
+  // own speed along the track (RJ.vK x it off the other's, at least RJ.vMin x the other's); the lane narrows to RJ.lane2 after
+  // RJ.wait s of waiting (was 4 s to the easing); resets after RJ.beach s stopped (RJ.beachG in the gravel) / RJ.recMax s of
+  // turning, were 8 / 9 s)
+  const RJ = { go: 1.4, go2: 1.2, wait: 2, dec: 0.25, vK: 0.5, vMin: 0.25, turnT: 1.5, hold: 0.9, lane: 4.5, lane2: 3.5, laneK: 0.5, beach: 5, beachG: 3, recMax: 7, ncGo: 3.2, ncGo2: 3.0, ncHold: 1.8, near: 3, slow: 0.6, pace: 0.8, rate: 1.2, edge: 1.5, vWait: 18, max: 25,
     obV: 8, obA: 200, obM: 1.0, obIn: 6, obOut: 70 };
   // spun / stopped cars (< RJ.obV m/s) on or by the asphalt from 10 m behind to RJ.obA m ahead -> b.rjOb [s, d, half width
   // across the track, half length along it, ...] (their heading: a car sideways reaches its half length across; null = none).
@@ -70477,18 +70486,21 @@ const AI = (() => {
     return d < lo ? lo : d > hi ? hi : d;
   }
   // the soonest a car on the track behind reaches s (s at its own speed; 0 = alongside), Infinity = none in range
-  function rjEta(car, G, A, s, dl) {
+  function rjEta(car, G, A, s, dl, lane = RJ.lane) {
     let tm = Infinity;
+    // (its own speed along the track counts: a car rolling at 25 m/s is caught at the closing speed, not the other's full
+    // speed - a crawl / a standstill as before; user 2026-11-13: rejoins in 5-15 s)
+    const ci = car.idx >= 0 ? car.idx : 0, vMe = Math.max(0, (car.speed || 0) * Math.cos(wrapA(car.h - A.th[ci])));
     for (const o of G.cars) {
       if (o === car || o.kinematic || o.inPitLane || o.ghosted) continue;
       const vo = o.speed || 0;
       if (vo < 3) continue;
       const oi = o.idx >= 0 ? o.idx : 0;
       if (Math.abs(o.d || 0) > A.hw[oi] + 2.5) continue;   // (off the track itself)
-      if (dl != null && Math.abs((o.d || 0) - dl) > RJ.lane) continue;   // (dl: the lane it joins - a car further across goes by)
+      if (dl != null && Math.abs((o.d || 0) - dl) > lane) continue;   // (dl: the lane it joins - a car further across goes by)
       const ds = wrapDS(A, s - o.s);                      // m it is behind s
       if (ds < -(LEN + 2) || ds > vo * Math.max(RJ.go, RJ.ncGo) + 80) continue;   // (in range for the longer, neutralised gap too)
-      const t = Math.max(0, ds - LEN) / vo;
+      const t = Math.max(0, ds - LEN) / Math.max(vo - RJ.vK * vMe, RJ.vMin * vo);
       if (t < tm) tm = t;
     }
     return tm;
@@ -70496,13 +70508,19 @@ const AI = (() => {
   // true = wait (traffic): the gap needed is RJ.go s + extra (a turn's time), after RJ.wait s of waiting down by RJ.dec s per
   // s to RJ.go2 (a slow stream of cars under a yellow); `held` s once under way (0: the full gap). b.rjW = s waited
   // a double yellow up (a stopped / crashed car - the SC may be coming), a VSC / SC / red flag: the old, cautious gaps
-  const rjNc = race => { const R = race && race.rc; return !!(R && R.on && (R.vs || R.sp || R.rf || (R.lvl | 0) >= 2)); };
+  const rjNc = race => { const R = race && race.rc; return !!(R && R.on && (R.vs || R.sp || R.rf)); };   // (2026-11-13: not a double yellow - the field is at racing speed there, user 2026-10-31; rjNeed's yy)
   function rjNeed(b, car, G, A, dt, held, extra = 0, dl) {
     const race = G.race;
     if (!race || (race.phase !== 'racing' && !inQ(race)) || car.finished) return false;
     const nc = rjNc(race);
     const need = held > 0 ? (nc ? Math.max(held, RJ.ncHold) : held) : Math.max(nc ? RJ.ncGo2 : RJ.go2, (nc ? RJ.ncGo : RJ.go) + extra - RJ.dec * Math.max(0, (b.rjW || 0) - RJ.wait));
-    const wait = rjEta(car, G, A, car.s, nc ? null : dl) < need;
+    // (the lane it joins narrows the longer it waits, RJ.lane -> RJ.lane2 m at RJ.laneK m per s after RJ.wait s: a car going by
+    // a little further across no longer holds it - a stream of cars on the line kept a car off for 10-20 s, user 2026-11-13)
+    const lane = Math.max(RJ.lane2, RJ.lane - RJ.laneK * Math.max(0, (b.rjW || 0) - RJ.wait));
+    // (a double yellow: the normal gaps, but every car on the track counts - not only its lane: ai_rejoin_test's unsafe-rejoin
+    // warnings 3 -> 7 with the lane alone there)
+    const yy = !nc && !!(race.rc && race.rc.on && (race.rc.lvl | 0) >= 2);
+    const wait = rjEta(car, G, A, car.s, nc || yy ? null : dl, lane) < need;
     b.rjW = wait ? (b.rjW || 0) + dt : 0;
     if (wait) car.aiRjT = race.t;   // (read by Race's stuck check: no reset onto the line while it waits for a gap)
     return wait;
@@ -77430,7 +77448,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-12 15:07';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-13 15:10';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -114102,6 +114120,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-12 15:07 -->
+<!-- Apex GP build 2026-11-13 15:10 -->
 </body>
 </html>
