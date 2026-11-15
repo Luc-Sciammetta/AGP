@@ -63796,7 +63796,7 @@ const RaceControl = (() => {
       sp: 0, scN: 0, scT0: 0, scL: 0, scLp: 0, lapW: 0, inL: 0, fin: 0, pick: 0, scCap: 0, go: 0, goS: -1, rsLap: 0, rsT: -99, clr: 0, clrT: 0, nl: 0, offS: 0, dE: 0,   // phase 4: the SC period (see scStep)
       sc: newVeh(0), mc: newVeh(1), scs: [], warnQ: {}, vrT: 0,   // the safety car, the medical car; [n, lap from, lap to] per SC; queue-gap offences
       q: 0, qr: 0, qrEnd: 0,   // qualifying (qStep): race control in Q1-Q3, its red flag (the session clock stopped)
-      rf: 0, rfN: 0, rfT0: 0, rfDrv: 0, rfEnd: 0, rfLap: 0, rfWhy: 0, rfRain: 0, rfTurn: '', rfCars: [], rfPre: 0, rfX: 0, rfRate: 0, rfOrd: [], rfLd: [], rfNs: 0, rfTy: {}, rfs: [],   // phase 5: the red flag (see red / rfStep)
+      rf: 0, rfN: 0, rfT0: 0, rfDrv: 0, rfEnd: 0, rfLap: 0, rfWhy: 0, rfRain: 0, rfTurn: '', rfCars: [], rfPre: 0, rfX: 0, rfRate: 0, rfOrd: [], rfLd: [], rfNs: 0, rfAt: [], rfTy: {}, rfs: [],   // phase 5: the red flag (see red / rfStep)
       rfMin: 0, rfMinF: 0, rfT2: 0, todA: 0, todA0: 0, wxD: 0, wxA: 0, rfWg: {},   // (wxD / wxA: the weather clock's jump over the stoppage, laps / applied so far; rfWg: the restart's wings per car)   // the stoppage's length (min of race time; rfMinF: known), the hold's start, the time-of-day offset (stopMin / todStep)
       rl: 0, rlT: 0, rlH: 0, rgT: -99, rain: 0, rainT: 0,   // the restart's lights; the time of its lights out; the rain red flag check
       bar: [], brv: 0,   // phase 6: barrier segments pushed back [{ g, p, k, t, b, o, r0, r1 }] (see bars), bumped on every change
@@ -63813,7 +63813,7 @@ const RaceControl = (() => {
     const rc = race.rc;
     if (!rc || !rc.on || race.phase !== 'racing' || race.attract) return;
     const T = G.track, Lo = layout(T);
-    lineStep(G, race, rc);
+    lineStep(G, race, rc, dt);
     if (rc.fe) endStep(G, race, rc, Lo, H);   // (dev tools: end the SC / VSC now)
     if (rc.rf) { rfStep(G, race, rc, Lo, H, dt); if (rc.rf === 1 && ((rc.mc && rc.mc.st > 0 && rc.mc.st < 4) || (rc.sc && rc.sc.st > 0 && rc.sc.st < 4)) && T.pit) vehStep(G, race, rc, Lo, H, dt); return; }   // (the red flag: the drive in (the medical car carries on), the suspension, the restart)
     if (rc.jobs.length) { jobsStep(G, race, rc); judgeOb(G, race, rc, Lo, H); }
@@ -66385,37 +66385,61 @@ const RaceControl = (() => {
   // for the next 2 laps p >= p at >= fr, all for hold laps in a row; eased: rain and the next 1.5 laps < ease
   const RAIN = { r: 0.85, w: 0.95, depth: 0.2, share: 0.85, p: 0.9, fr: 0.75, ease: 0.6, hold: 0.25 };
   const BLK_W = 3.4, BLK_S = 30, BLK_T = 8, BLK_N = 2, BLK_VM = 0.5, BLK_MM = 1.2, _bka = [];   // the track blocked: no gap of BLK_W m across it beside BLK_N+ cars stopped (retired / BLK_T s) within BLK_S m
-  // the timing lines each car crossed last (cs.tl times / cs.td race distances, per line: 0 the control line, 1-2 the sector lines)
-  function lineStep(G, race, rc) {
-    const T = G.track, t = race.t;
+  // the timing lines each car crossed (cs.lh: [race distance, time] of its last LH_N crossings of the control line / the
+  // sector lines, oldest first; race distances: the control line lap x L, a sector line + sectorS): from its high-water race
+  // distance (Race maxDist; cs.md the last seen), the time interpolated in the step. A line passed again after a move back:
+  // its first crossing; a move (a jump, the restart's grid) crosses nothing - the grid itself is a pass in the restart order
+  // (grid). (Not Race's next-line index: a car moved back to the grid past a line it had crossed never crosses it again there.)
+  const LH_N = 9;
+  function lineStep(G, race, rc, dt) {
+    const T = G.track, L = T.length, S = T.sectorS, t = race.t;
     for (const c of G.cars) {
       const R = c._race;
       if (!R || c.dnf || c.finished) continue;
-      const cs = csOf(rc, c), k = R.nextBi;
-      if (cs.tb === k) continue;
-      if (cs.tb != null) {
-        if (!cs.tl) { cs.tl = [null, null, null]; cs.td = [0, 0, 0]; }
-        cs.tl[k] = t; cs.td[k] = k === 0 ? R.lineDist : R.lineDist + T.sectorS[k - 1];
+      const cs = csOf(rc, c), m1 = R.maxDist, m0 = cs.md;
+      cs.md = m1;
+      if (m0 == null || !(m1 > m0) || m1 - m0 > 50) continue;
+      const h = cs.lh || (cs.lh = []);
+      for (let n = Math.floor(m0 / L); n <= Math.floor(m1 / L); n++) for (let k = 0; k < 3; k++) {
+        const D = n * L + (k ? S[k - 1] : 0);
+        if (D > m0 && D <= m1 && !h.some(e => Math.abs(e[0] - D) < 0.5)) { h.push([D, t - (dt || 0) * (m1 - D) / (m1 - m0)]); if (h.length > LH_N) h.shift(); }
       }
-      cs.tb = k;
     }
   }
   const live = c => !!c._race && !c.dnf && !c.retired && !c.finished;
-  // the restart order: lapped cars (laps down at that line) at the back; the line every car crossed most recently; who was
-  // further there, then who got there first. -> { ids, lb (laps down), ns: the lead lap's next control line (race metres) }
+  // the restart order (user 2026-11-14): the order at the last timing line every
+  // running car had crossed. The leader's own crossings, latest first: at its crossing of race distance D (time tA) each
+  // car's own crossing of the same line in that pass - D, or D - k laps for a car k laps down then (its last line before
+  // tA); the first such pass every running car has completed. Lapped cars (k > 0) at the back; then who got there first.
+  // (Not each car's latest crossing of a line: the front of a spread field crosses it again a lap later than the tail -
+  // cars counted a lap down, lapped cars level with the lead lap.) No complete pass (the start, a car stopped for laps):
+  // by race distance. -> { ids, lb (laps down), ns: the lead lap's next control line (race metres) }
   function redOrder(G, race, rc) {
-    const L = G.track.length, cars = G.cars.filter(live), key = new Map();
-    let k = -1, bt = -Infinity, top = -Infinity;
-    for (let j = 0; j < 3; j++) {
-      let m = Infinity;
-      for (const c of cars) { const cs = rc.cs[c.id], x = cs && cs.tl ? cs.tl[j] : null; if (x == null) { m = -Infinity; break; } if (x < m) m = x; }
-      if (cars.length && m > bt) { bt = m; k = j; }
+    const L = G.track.length, cars = G.cars.filter(live), hist = c => (rc.cs[c.id] && rc.cs[c.id].lh) || [];
+    let rows = null, top = -Infinity;
+    if (cars.length) {
+      const A = cars.reduce((a, c) => (c._race.dist > a._race.dist ? c : a)), ha = hist(A);
+      for (let i = ha.length - 1; i >= 0 && !rows; i--) {
+        const D = ha[i][0], tA = ha[i][1], r = [];
+        for (const c of cars) {
+          const h = hist(c);
+          let j = h.length - 1;
+          while (j >= 0 && h[j][1] > tA) j--;
+          if (j < 0) break;
+          const k = h[j][0] >= D - 0.5 ? 0 : Math.floor((D - h[j][0] - 0.5) / L), e = h.find(x => Math.abs(x[0] - (D - k * L)) < 0.5);
+          if (!e) break;
+          r.push([c, k, e[1]]);
+        }
+        if (r.length === cars.length) { rows = r; top = D; }
+      }
     }
-    for (const c of cars) { const cs = rc.cs[c.id], d = k >= 0 ? cs.td[k] : c._race.dist; key.set(c, [d, k >= 0 ? cs.tl[k] : 0, 0]); if (d > top) top = d; }
-    for (const c of cars) { const q = key.get(c); q[2] = k >= 0 ? Math.max(0, Math.round((top - q[0]) / L)) : Math.max(0, Math.floor((top - q[0]) / L)); }
-    cars.sort((a, b) => { const p = key.get(a), q = key.get(b); return p[2] - q[2] || q[0] - p[0] || p[1] - q[1] || b._race.dist - a._race.dist; });
+    if (!rows) {
+      for (const c of cars) if (c._race.dist > top) top = c._race.dist;
+      rows = cars.map(c => [c, Math.max(0, Math.floor((top - c._race.dist) / L)), 0]);
+    }
+    rows.sort((p, q) => p[1] - q[1] || p[2] - q[2] || q[0]._race.dist - p[0]._race.dist);
     const ns = (Math.floor(top / L + 1e-6) + 1) * L;
-    return { ids: cars.map(c => c.id), lb: cars.map(c => key.get(c)[2]), ns: cars.length ? ns : 0 };
+    return { ids: rows.map(r => r[0].id), lb: rows.map(r => r[1]), ns: cars.length ? ns : 0 };
   }
   // the track blocked: stopped cars on the asphalt (one near another) leave no gap of BLK_W m across it
   const _bk = [];
@@ -66497,7 +66521,7 @@ const RaceControl = (() => {
     redSite(G, rc, Lo);
     rc.rfDrv = t + RF_DRV + RF_DRVR * rnd(race, rc.rfN, 81); rc.rfEnd = 0; rc.rl = 0; rc.rfTy = {}; rc.rfX = 0;
     const o = redOrder(G, race, rc);
-    rc.rfOrd = o.ids; rc.rfLd = o.lb; rc.rfNs = o.ns;
+    rc.rfOrd = o.ids; rc.rfLd = o.lb; rc.rfNs = o.ns; rc.rfAt = race.order.map(c => c.id);   // (rfAt: the order at the flag, retired cars too - grid)
     if (rc.sp) { const q = rc.scs && rc.scs[rc.scs.length - 1]; if (q && !q[2]) q[2] = race.leaderLap | 0; rc.sp = 0; rc.inL = 0; rc.go = 0; rc.pick = 0; }
     if (rc.sc && rc.sc.st === 1) vehPark(G.track, Lo, rc.sc, false);   // (still in the pit lane on its way out: back in its spot)
     if (rc.sc && rc.sc.st === 2) rc.inL = 2;   // (an SC that becomes a red flag, user 2026-10-31: the SC on the track drives into the pit lane - vehStep in the drive in)
@@ -66630,7 +66654,21 @@ const RaceControl = (() => {
       const g = slots[gi] || { s: T.wrapS(-(10 + 8 * gi)), d: 0 }, x = T.deltaS(g.s, 0), j = rc.rfOrd.indexOf(c.id);
       const lb = j >= 0 ? rc.rfLd[j] | 0 : 1;
       if (H.rfGrid) H.rfGrid(G, race, c, g.s, g.d, rc.rfNs - lb * L - x, rc.rfTy[c.id], rc.rfRain ? null : rnd(race, c.id, 88 + rc.rfN), rc.rfWg && rc.rfWg[c.id]);
+      { const cs = csOf(rc, c); cs.lh = [[rc.rfNs - (lb + 1) * L, t - 1], [rc.rfNs - lb * L, t + gi * 1e-6]]; cs.md = c._race.maxDist; }   // (the timing: the grid a pass of the restart line in this order - until the next real one: lineStep / redOrder)
     });
+    // (user 2026-11-14) a retired car keeps its place from the red flag, never better: the restart moved the running cars
+    // back to the line, so a car out on this lap (past the line) would sit ahead of them (Race aheadOf: a DNF by its
+    // distance covered) - the leader shown P2 on the grid. Its distance below every running car of the lead lap and every
+    // one that was ahead of it at the flag (lapped cars it was ahead of stay behind it until they pass it, as before)
+    const run = redCars(G, rc), at = rc.rfAt || [];
+    for (const d of G.cars) {
+      const R = d._race;
+      if (!R || !d.dnf || d.finished) continue;
+      const i = at.indexOf(d.id);
+      let lim = Infinity;
+      for (const c of run) { const j = rc.rfOrd.indexOf(c.id); if ((j >= 0 && !(rc.rfLd[j] > 0)) || i < 0 || at.indexOf(c.id) < i) lim = Math.min(lim, c._race.dist); }
+      if (lim < Infinity && (R.outD != null ? R.outD : Math.min(R.dist, R.maxDist)) > lim - 1) { R.outD = lim - 1; R.dist = Math.min(R.dist, lim - 1); R.maxDist = Math.min(R.maxDist, lim - 1); d.raceDist = R.dist; }
+    }
     if (rc.rfRain) { rc.rfMin = rainMin(rc); rc.rfMinF = 1; }
     todStep(G, race, rc, true); rc.rfT2 = 0;
     if (!rc.rfRain) mcGrid(race, T, redCars(G, rc).length);   // (a standing restart: the medical car follows the opening lap again)
@@ -67129,7 +67167,7 @@ const RaceControl = (() => {
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
     aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, chooseWings, qStep, qRedInfo, QR_GO, RF_K, RF_WAIT, RF_MIN0, RF_MIN1, TOD_RACE_MIN, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, evKeep, EV_K0, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
-    bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral, VSC_L0, VSC_L1, SC_L0, SC_L1, pxAt, spotFor, _stopMin: stopMin };
+    bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral, VSC_L0, VSC_L1, SC_L0, SC_L1, pxAt, spotFor, _stopMin: stopMin, _redOrder: redOrder };
 })();
 
 
@@ -77448,7 +77486,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-13 15:10';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-14 23:07';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -114120,6 +114158,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-13 15:10 -->
+<!-- Apex GP build 2026-11-14 23:07 -->
 </body>
 </html>
