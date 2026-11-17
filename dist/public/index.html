@@ -77486,7 +77486,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-14 23:07';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-17 17:10';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -83187,20 +83187,24 @@ const Sponsors = (() => {
     put('ecfront', p4, [2, 3], 1, 0.4); put('fwend', p4, [3, 0, 2], 1, 0.3);
     return S;
   }
+  // the AI teams' sets change per session (user 2026-11-17): salt = the race seed, or a championship's season seed (the
+  // same all season); the teams' title sponsors still differ (a common offset). 0 = the old fixed sets
   const SETS = new Map();
+  let SALT = 0;
+  function setSalt(n) { n = (n >>> 0) || 0; if (n !== SALT) { SALT = n; SETS.clear(); } }
   function teamSet(team) {
     if (!team || team.custom) return team && team.sponsors || null;
     const id = String(team.id || team.name || '');
     if (SETS.has(id)) return SETS.get(id);
-    const T = typeof TEAMS !== 'undefined' ? TEAMS : [], ti = T.findIndex(t => t.id === team.id), h = fnv('sp' + id);
-    const title = ti >= 0 && ti < LIST.length ? (ti * 7 + 3) % LIST.length : h % LIST.length;   // (7 coprime with 40: the teams' title sponsors differ)
+    const T = typeof TEAMS !== 'undefined' ? TEAMS : [], ti = T.findIndex(t => t.id === team.id), h = (fnv('sp' + id) ^ Math.imul(SALT, 0x9e3779b1)) >>> 0;
+    const title = ti >= 0 && ti < LIST.length ? (ti * 7 + 3 + SALT) % LIST.length : h % LIST.length;   // (7 coprime with 40: the teams' title sponsors differ)
     const S = makeSet(title, rng(h));
     SETS.set(id, S);
     return S;
   }
   const randomSet = seed => { const r = rng(seed >>> 0); return makeSet(Math.floor(r() * LIST.length), r); };
 
-  return { LIST, DESIGNS, SIZES, MARKS, draw, aspect, teamSet, randomSet, contrast: con, onColour: onCol };
+  return { LIST, DESIGNS, SIZES, MARKS, draw, aspect, teamSet, randomSet, setSalt, salt: () => SALT, contrast: con, onColour: onCol };
 })();
 
 
@@ -84635,7 +84639,8 @@ material.clearcoatRoughness = mix(mix(material.clearcoatRoughness, 0.07, agpRain
   }
 
   // own = an uncached material for one model (opts.live: the livery editor's turntable, repainted in place by repaint)
-  const livKey = team => (team.id || team.name || team.primary) + '#' + ((team.driver && team.driver.number) || '');
+  const spSalt = () => { const SP = SPN(); return SP && SP.salt ? SP.salt() : 0; };   // (AI sponsors change per session)
+  const livKey = team => (team.id || team.name || team.primary) + '#' + ((team.driver && team.driver.number) || '') + (team.custom ? '' : '~' + spSalt());
   // MEMORY: a cached livery keeps no canvas once its texture is on the GPU (a 1024 x 1024 canvas is 4 MB of GPU-backed
   // memory; 20 cars = 80 MB). Only the live (livery editor) material repaints its canvas; liveryCanvas paints a fresh one
   // when the cached one is gone; a lost WebGL context forgets these materials (buildCarModel.forget) and Render3D builds the
@@ -85488,7 +85493,7 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
     const into = opts.into || null;
     const w = into ? into.width : Math.max(1, Math.round(opts.w || 320)), h = into ? into.height : Math.max(1, Math.round(opts.h || w / 4)), sil = !!opts.silhouette;
     const n = number == null ? '' : String(number);
-    const key = (team.id || team.name || team.primary) + '#' + n + '@' + w + 'x' + h + (sil ? 's' : '');
+    const key = (team.id || team.name || team.primary) + '#' + n + '@' + w + 'x' + h + (sil ? 's' : '') + (team.custom ? '' : '~' + spSalt());
     if (!into && PREVIEW.has(key)) return PREVIEW.get(key);
     const cv = into || document.createElement('canvas');
     if (!into) { cv.width = w; cv.height = h; }
@@ -113383,6 +113388,13 @@ const Game = (() => {
     // custom livery (livery.js): the player's car in the slot (box, entry) of a team that sits out, its colours / name / code / number
     const lv = !attract && !netS && M.livery ? M.livery.forSession(settings, G.champ, seed) : null;
     G.weather = makeWeather(settings, attract, seed);
+    // the AI cars' sponsors: new each race (the race seed: Restart and every multiplayer client agree), a championship
+    // draws them once and keeps them all season (G.champ.spSeed, saved with the season) (user 2026-11-17)
+    if (!attract && typeof Sponsors !== 'undefined') {
+      const champ = settings.mode === 'championship' && G.champ ? G.champ : null;
+      if (champ && !champ.spSeed) { champ.spSeed = ((Math.random() * 4294967295) >>> 0) || 1; saveChamp(); }
+      Sponsors.setSalt(champ ? champ.spSeed : (seed >>> 0) || 1);
+    }
     const champNames = !attract && settings.mode === 'championship' && G.champ && G.champ.drivers ? G.champ.drivers : null;
     const opts = {
       grid: settings.grid, gridPos: settings.gridPos, playerName: settings.playerName, playerNumber: settings.playerNumber, penalties: settings.penalties !== false, pitExitPen: settings.pitExitPen === true, investigations: settings.investigations !== false, penaltyLevel: settings.penaltyLevel,
@@ -114158,6 +114170,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-14 23:07 -->
+<!-- Apex GP build 2026-11-17 17:10 -->
 </body>
 </html>
