@@ -645,7 +645,7 @@ class RaceSim {
       if (pre && Math.hypot(car.vx, car.vz) < 0.05) { car.vx = 0; car.vz = 0; }
     } else { car.x += car.vx * dt; car.z += car.vz * dt; }   // just handed back: dead reckoning until the client's first report
     const p = track.project(car.x, car.z, car.idx, this._pr, true);   // (with the pit roads, as Physics: Race's pit lane path on a road is in road coordinates - QUEUE 9, Monaco's garage road)
-    car.s = p.s; car.d = p.d; car.idx = p.idx;
+    car.s = p.s; car.d = p.d; car.idx = p.idx; car.lv = track.lvl ? track.lvl[p.idx] : 0;   // (a crossing's level: Physics.lvX)
     const ch = Math.cos(car.h), sh = Math.sin(car.h);
     car.speed = Math.hypot(car.vx, car.vz); car.vLong = car.vx * ch + car.vz * sh; car.vLat = -car.vx * sh + car.vz * ch;
     car.surface = track.surface(car.s, car.d);
