@@ -58430,6 +58430,7 @@ const TRACK_DATA = {
     rcType: "permanent",
     layoutOf: "kawasemi",
     layoutName: "Short",
+    wearRefDist: 307574,   // (tyres wear per metre as on full Kawasemi: 69 laps x 4457.6 m; user 2026-11-24)
     // The Short layout of Kawasemi (the user, 2026-11-24, v3 previews: tools/tracks_ref/kawasemi_alt_preview_v3.svg + the junction
     // close-ups; kawasemi_fit/NOTES.md "SHORT LAYOUT BUILD"): T1-T4, the loop instead of the diagonal, the old T7-T12, the connector
     // onto the bottom hairpin's exit, up the start straight. Not a card of its own: the Kawasemi card's layout arrows (layoutOf). Same
@@ -60122,6 +60123,9 @@ const buildTrack = (() => {
       // layoutName its label ('Short'); data.closedRoads {track, parts: [[s0, s1], ...]} = the other layout's roads over those s
       // ranges OF THAT TRACK (not resolved here), built as closed scenery by render3d (buildClosedRoads); data.wallHide [{from, to,
       // side}] -> hideL / hideR (Uint8Array N): a barrier that is there for physics but not drawn (an open grass island's divider)
+      // data.wearRefDist (m): a layout's tyres wear per metre as on the circuit it is a layout of (its full race distance; user 2026-11-24)
+      wearRefDist: +data.wearRefDist > 0 ? +data.wearRefDist : 0,
+      raceLaps: +data.raceLaps > 0 ? +data.raceLaps : 0,   // (its full race laps: wearRefDist's reference)
       layoutOf: typeof data.layoutOf === 'string' ? data.layoutOf : null, layoutName: typeof data.layoutName === 'string' ? data.layoutName : null,
       closedRoads: data.closedRoads && typeof data.closedRoads.track === 'string' && Array.isArray(data.closedRoads.parts) ? { track: data.closedRoads.track, parts: data.closedRoads.parts.filter(p => Array.isArray(p) && p.length === 2).map(p => [+p[0], +p[1]]) } : null,
       hideL, hideR,
@@ -71743,7 +71747,7 @@ const Race = (() => {
     if (race.messages.length > 8) race.messages.shift();
   }
   const nextPoint = (x, p, L) => p + (Math.floor((x - p) / L) + 1) * L;   // smallest p + kL strictly > x
-  const refLaps = race => Math.max(race.laps || 0, CFG.tyre.minRefLaps);
+  const refLaps = race => Math.max(race.laps || 0, CFG.tyre.minRefLaps) * (race.wearRefK || 1);   // (wearRefK: a layout wears like its full circuit)
   // the world's wear per metre (Physics): the planned scale x the race-day factor (main / server set world.wearPerMetre)
   const wearPerMetre = (race, track) => (race && race.wearScale > 0 && track && track.length > 0 ? race.wearScale * (race.wearDay || 1) / (refLaps(race) * track.length) : 0);
   const remainingLaps = (race, car, L) => (race.laps ? Math.max(0, (race.laps * L - car._race.dist) / L) : Infinity);
@@ -72561,6 +72565,7 @@ const Race = (() => {
       order: [], grid: [], leaderLap: 0, fastestLap: null, sessionBestSectors: [null, null, null],
       results: null, resultsFinal: false, resultsT: 0, messages: [],
       debris: [], debrisN: 0, debrisRev: 0, incidents: [],   // contact damage (damage.js, flag off): pieces on the track; crashes / retirements (race-control hook)
+      wearRefK: track.wearRefDist > 0 && track.raceLaps > 0 && track.length > 0 ? track.wearRefDist / (track.raceLaps * track.length) : 1,
       difficulty, tyreWear, wearScale: WEAR_SCALE[tyreWear], twoCompound: !!opts.twoCompound, twoCompoundActive: false,
       penalties: true, penaltyLevel: 'standard', pen: null, pitTolKmh: PIT_TOL_KMH, wet, gridMode, quali: null, driverNames: null,
       releaseEarly: new Set(), evSeen: 0,   // AI cars released before lights out (main skips its grid hold for them)
@@ -77802,7 +77807,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-24 11:59';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-24 12:14';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -108999,7 +109004,7 @@ const Menu = (() => {
         rows.map(([k, v, sub]) => `<div class="agp-stp-row"><span>${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ''}</span><b>${esc(v)}</b></div>`).join('') + '</section>').join('')}</div>`;
   }
   function stCircuitsHTML(P) {
-    const T = STS(), ids = trackIds(), recs = P ? P.t : {};
+    const T = STS(), ids = trackIds().flatMap(id => U.layoutsOf(id)), recs = P ? P.t : {};   // (a circuit's other layouts get their own card right after it: Kawasemi Short)
     const has = id => recs[id] && (recs[id].laps > 0 || recs[id].best), done = ids.filter(has), todo = ids.filter(id => !has(id));
     const card = id => {
       const t = recs[id], ti = trackInfo(id), b = t.best, th = T ? T.theo(t) : null;
@@ -115384,6 +115389,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-24 11:59 -->
+<!-- Apex GP build 2026-11-24 12:14 -->
 </body>
 </html>
