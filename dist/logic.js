@@ -19112,6 +19112,10 @@ const Race = (() => {
     // order the advantage; no new order, no strike)
     if (adv && open) return;
     if (adv && cut && gain <= adv.big) { giveBack(G, race, car, { kind: 'time', need: gain, k: x.k, turn, win: adv.timeWin, sec: tl.sec }); return; }
+    // (user 2026-11-25) no second track-limits strike within 5 s of the last one (a car wobbling over the same kerb / the
+    // next corner gets one warning, not two); a blatant cut still counts
+    if (!cut && car._tlLastT != null && race.t - car._tlLastT < 5) return;
+    if (!cut) car._tlLastT = race.t;
     car.tlWarn = (car.tlWarn || 0) + (cut ? 0 : 1);
     if (!cut && car.tlWarn <= tl.warn) { emit(G, { type: 'trackLimits', car, n: car.tlWarn, max: tl.warn, turn, gain, del, late }); return; }
     if (!cut) car.tlWarn = invActive(race) ? tl.warn : 0;   // (investigated: on the last warning until the penalty stands, invDecide)
