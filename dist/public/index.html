@@ -55743,6 +55743,9 @@ CFG.setup = {
     if (S._best) S._best.set(key, b);
     return b;
   },
+  // (user 2026-11-25) the engineer's setup for circuit T: the dry quickest (the AI's centre, choose) - a player with
+  // no saved wings for the circuit runs it; s = a saved {fw, rw} wins
+  forTrack(T, s) { const S = CFG.setup; if (s && typeof s === 'object') return { fw: S.wing(s.fw), rw: S.wing(s.rw) }; try { if (T && T.N) return S.best(T, 1); } catch (e) { /* baseline */ } return { fw: S.def, rw: S.def }; },
   bestRear(T, bias = 0, grip = 1) { return CFG.setup.best(T, grip).rw; },
   // speed plan (m/s per track sample) for setup a: the lap estimate's profile (HUD braking guide for the player)
   speeds(T, a, grip = 1) { const S = CFG.setup; S.lapTime(T, a, grip); const L = S._lap && S._lap.get(T); return L ? Float32Array.from(L.v) : null; },
@@ -72781,7 +72784,7 @@ const Race = (() => {
     else if (opts.spread === true && mode === 'race' && !opts.attract && (!diff.allOut || (CFG.setup && CFG.setup.lapTime))) carSpread(race, cars, track, opts.spreadAll ? -1 : playerTeam, diff, { rounds: [track.id], field: race.field, wxSeed: (seed ^ 0x3c6ef372) & 0x3fffffff, round: 0 });   // (a single-player quick race, main.js: the same kind of order, seeded per race)
     // car setup (front / rear wing, CFG.setup): the player's from opts.setup = {fw, rw}; each AI car picks its own for
     // the circuit (skill by difficulty and driver, team taste for front bias, more wing in the wet; opts.aiSetups false = off)
-    if (player && !opts.attract && CFG.setup && CFG.setup.apply) CFG.setup.apply(player, opts.setup);
+    if (player && !opts.attract && CFG.setup && CFG.setup.apply) CFG.setup.apply(player, CFG.setup.forTrack ? CFG.setup.forTrack(track, opts.setup) : opts.setup);   // (none saved: the engineer's)
     if (CFG.setup && CFG.setup.choose && opts.aiSetups !== false) {
       const sr = U.rng(seed ^ 0x5e7a9b1), sk0 = { easy: 0.3, medium: 0.6, hard: 0.85, extreme: 1.2, adaptive: 0.7 }[difficulty] ?? 0.6;
       for (const car of cars) {
@@ -74104,11 +74107,15 @@ const Race = (() => {
   }
   function trackLimitsStep(G, race, car, dt) {
     const rc = car._race, T = G.track;
-    if ((race.phase !== 'racing' && !qLike(race)) || race.attract || car.finished || car.dnf || car.kinematic || car.inPitLane || !T.halfW) { rc.tlOff = null; return; }
+    if ((race.phase !== 'racing' && !qLike(race)) || race.attract || car.finished || car.dnf || car.kinematic || !T.halfW) { rc.tlOff = null; return; }
+    // (user 2026-11-25) no track limits going into or coming out of the pits: an off that ends in the lane (cut across to the
+    // entry) is dropped, and nothing is judged from the release until 100 m past the lane's end (150 m at least)
+    if (car.inPitLane) { rc.tlOff = null; rc.tlPost = null; return; }
     if (inQ(race) && (car.qSt !== 'push' || !(car.q ? car.q.valid : car.qPush))) { rc.tlOff = null; return; }   // (qualifying: only a flying lap is judged - not out / in / cool-down laps; a slow human push lap too: qPush needs pace)
     if (oneShot(race) && !(car.lap >= 1)) { rc.tlOff = null; return; }   // (one-shot: the flying lap from the line, not the run-up)
     if (!race.pen) { rc.tlOff = null; return; }   // (penalties off: no strikes, no invalidated time-trial laps either)
     if (rc.pxOn) pitExitLine(G, race, car);
+    if (rc.dist < Math.max(rc.pitCooldown || -Infinity, rc.pxEnd != null ? rc.pxEnd + 100 : -Infinity)) { rc.tlOff = null; rc.tlPost = null; return; }
     // damage no longer exempts a car (user 2026-10-30: warnings stopped counting and the count seemed to reset once the car was
     // damaged; before, Damage.major dropped every off and its verdict): a slow damaged car loses time (no strike), a slide is lost control
     // lost control - a spin / big slide (body slip > 0.3 rad; not lostControl's heading test: a car cutting a chicane
@@ -77959,7 +77966,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 11:14';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 18:20';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -86894,7 +86901,7 @@ const RCModels = (() => {
   function defPanel() {
     const A = G(), D = C('#2a2d31'), D2 = C('#1b1d20'), M = C('#5b6068');
     cyl(A, D, 'y', [0, 1.55, 0], .075, .08, 3.1, 8); cyl(A, M, 'y', [0, .06, 0], .2, .2, .12, 10);
-    box(A, D, 0, 3.65, 0, .3, 1.3, 1.75);                                                             // housing (front face x = .15; the screen is drawn at .155)
+    box(A, D, 0, 3.65, 0, .3, 1.3, 1.75);                                                             // housing (front face x = .15; the screen is drawn at .175)
     for (const [y, h] of [[4.25, .1], [3.05, .1]]) box(A, D2, .165, y, 0, .06, h, 1.8);               // bezel top / bottom
     for (const sd of [1, -1]) box(A, D2, .165, 3.65, sd * .83, .06, 1.3, .1);                          // bezel sides
     beam(A, D, [0, 2.5, 0], [-.2, 3.05, 0], .07, .07); cyl(A, D2, 'y', [-.05, 4.36, 0], .09, .09, .12, 8);
@@ -86965,11 +86972,11 @@ const RCModels = (() => {
     if (kind === 'panel') {
       const sm = mat('screen'), uv = new Float32Array(8);
       const sg = new THREE.BufferGeometry();
-      sg.setAttribute('position', new THREE.Float32BufferAttribute([.155, 3.1, -.775, .155, 3.1, .775, .155, 4.2, .775, .155, 4.2, -.775], 3));
+      sg.setAttribute('position', new THREE.Float32BufferAttribute([.175, 3.1, -.775, .175, 3.1, .775, .175, 4.2, .775, .175, 4.2, -.775], 3));
       sg.setAttribute('normal', new THREE.Float32BufferAttribute([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0], 3));
       const ua = new THREE.BufferAttribute(uv, 2); ua.setUsage(THREE.DynamicDrawUsage); sg.setAttribute('uv', ua);
       sg.setIndex([0, 2, 1, 0, 3, 2]);
-      sg.boundingSphere = new THREE.Sphere(new THREE.Vector3(.155, 3.65, 0), 1.2);
+      sg.boundingSphere = new THREE.Sphere(new THREE.Vector3(.175, 3.65, 0), 1.2);
       const scr = new THREE.Mesh(sg, sm); scr.name = 'screen'; scr.castShadow = false; g.add(scr); mats.push(sg);
       const CELL = [0, 1, 2, 4, 5, 6, 7, 8], NAMES = { off: 0, yellow: 1, double: 2, slippery: 3, white: 4, green: 5, red: 6, blue: 7 };
       let state = 0, shown = -1;
@@ -100728,7 +100735,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       g.fillStyle = SC[j][i] === '#' ? '#ffd21f' : '#16181b'; g.beginPath(); g.arc(7 * W + 3 + (i + 0.5) / 13 * (W - 6), 4 + (j + 0.5) / 7 * (H - 8), 1.9, 0, 6.2832); g.fill();
     }
     const t = new THREE.CanvasTexture(cv);
-    t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
+    t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 4;   // (mipmapped: the LED dots shimmered when seen small / at an angle)
     return t;
   }
   function buildPanels() {
@@ -100741,7 +100748,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     const hg = new THREE.BufferGeometry();
     for (const a of ['position', 'normal']) hg.setAttribute(a, new THREE.Float32BufferAttribute([].concat(...parts.map(q => Array.from(q.attributes[a].array))), 3));
     parts.forEach(q => q.dispose());
-    const sg = new THREE.PlaneGeometry(1.55, 1.1).rotateY(Math.PI / 2).translate(0.155, 3.65, 0);
+    const sg = new THREE.PlaneGeometry(1.55, 1.1).rotateY(Math.PI / 2).translate(0.175, 3.65, 0);   // (2 cm proud of the housing's face, inside the bezel: 5 mm flickered against it at a distance, user 2026-11-25)
     const cell = new THREE.InstancedBufferAttribute(new Float32Array(n), 1); cell.setUsage(THREE.DynamicDrawUsage);
     sg.setAttribute('aCell', cell);
     const tex = panelSheet();
@@ -100753,6 +100760,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
         '  if ((c > 0.5 && c < 1.5) || c > 8.5) b = step(0.4, fract(uT * 1.6));\n' +                         // yellow, blue: flashing
         '  if (c > 1.5 && c < 2.5) b = (vUv.x < 0.5) == (fract(uT * 2.0) < 0.5) ? 1.0 : 0.0;\n' +              // double yellow: the halves in turn
         '  gl_FragColor = vec4(mix(texture2D(uMap, vec2(vUv.x / ' + PNL_CELLS + '.0, vUv.y)).rgb, col, b) * 1.15, 1.0); }',
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,   // (drawn over the housing's face, never fighting it)
     });
     let hm;
     const rp = typeof RCModels !== 'undefined' ? RCModels.make('panel') : null, rb = rp && rp.getObjectByName('body');   // (rc_models.js housing: same shape, its colours)
@@ -105879,14 +105887,14 @@ const Menu = (() => {
       '<g stroke="#ff9a4a" stroke-width="1.8" stroke-linecap="round"><path d="M12 5.4v2.2M4.3 9l1.6 1.4M19.7 9l-1.6 1.4"/></g><path d="M2.5 19.2h19" stroke="#ffd1a1" stroke-width="1.6" stroke-linecap="round"/></svg>';
     return typeof Weather !== 'undefined' && Weather.iconSVG ? Weather.iconSVG('sun', t === 'night') : '';
   }
-  // car setups: known circuits only, wings clamped to 1..11, the baseline (6 / 6) not stored
+  // car setups: known circuits only, wings clamped to 1..11 (any value kept: a missing circuit runs the engineer's, engDef)
   function cleanSetups(o) {
-    const out = {}, su = typeof CFG !== 'undefined' && CFG.setup, ids = trackIds();
+    const out = {}, su = typeof CFG !== 'undefined' && CFG.setup, ids = trackIds().flatMap(id => U.layoutsOf(id));   // (each layout keeps its own wings: Kawasemi Short, Dorado L2 / L3)
     if (!o || typeof o !== 'object' || !su) return out;
     for (const id of Object.keys(o)) {
       if (ids.length && !ids.includes(id)) continue;
       const fw = su.wing(o[id] && o[id].fw), rw = su.wing(o[id] && o[id].rw);
-      if (fw !== su.def || rw !== su.def) out[id] = { fw, rw };
+      out[id] = { fw, rw };
     }
     return out;
   }
@@ -105955,7 +105963,7 @@ const Menu = (() => {
     if (r.type === 'toggle') return `<div class="agp-row agp-row-tgl" data-k="${r.k}">${lbl}<span class="agp-row-val"><b></b><span class="agp-tgl"><i></i></span></span></div>`;
     if (r.type === 'slider') return `<div class="agp-row agp-row-sld" data-k="${r.k}">${lbl}<span class="agp-row-val"><span class="agp-sld"><em></em><i></i></span><b></b></span></div>`;
     if (r.type === 'text') return `<div class="agp-row agp-row-txt" data-k="${r.k}">${lbl}<span class="agp-row-val"><input type="text" maxlength="16" spellcheck="false" autocomplete="off"></span></div>`;
-    if (r.type === 'button') return `<div class="agp-row" data-k="${r.k}">${lbl}<span class="agp-row-val"><b class="agp-row-btn">${esc(r.text)}</b></span></div>`;
+    if (r.type === 'button') return `<div class="agp-row" data-k="${r.k}">${lbl}<span class="agp-row-val"><b class="agp-row-btn">${esc(typeof r.text === 'function' ? r.text() : r.text)}</b></span></div>`;
     if (r.type === 'action') return `<div class="agp-row agp-row-act${r.danger ? ' is-danger' : ''}" data-k="${r.k}"><span class="agp-row-lbl">${esc(r.label)}</span>${CH('r')}</div>`;
     if (r.type === 'wing') return `<div class="agp-row agp-row-cyc agp-setup-row" data-k="${r.k}">${lbl}<span class="agp-row-val">${CH('l')}<span class="agp-row-v">${pipsHTML()}<b></b></span>${CH('r')}</span></div>`;
     // controls: a rebindable action (two key cells) / a group head / a fixed (gamepad) line
@@ -106095,8 +106103,8 @@ const Menu = (() => {
     { k: 'setupFw', label: 'Front wing', type: 'wing', side: 'fw', tab: 'setup', set: v => { if (setWing(setupTrackId(), 'fw', v)) commit(); } },
     { k: 'setupRw', label: 'Rear wing', type: 'wing', side: 'rw', tab: 'setup', set: v => { if (setWing(setupTrackId(), 'rw', v)) commit(); } },
     { k: 'setupPreset', label: 'Preset', type: 'preset', tab: 'setup', opts: () => PRESET_OPTS() },
-    { k: 'setupReset', label: 'Reset setup', type: 'button', text: 'BASELINE 6 · 6', tab: 'setup',
-      act: () => { const id = setupTrackId(), st = getSetup(id), su = SU(); if (su && (st.fw !== su.def || st.rw !== su.def)) { putSetup(id, { fw: su.def, rw: su.def }); commit(); } else sfx('move'); } },
+    { k: 'setupReset', label: 'Reset setup', type: 'button', text: () => { const e = engDef(setupTrackId()); return `ENGINEER ${e.fw} · ${e.rw}`; }, tab: 'setup',
+      act: () => { const id = setupTrackId(), st = getSetup(id), e = engDef(id); if (S.setups && S.setups[id] || st.fw !== e.fw || st.rw !== e.rw) { putSetup(id, e); commit(); } else sfx('move'); } },
     { k: 'telemetry', label: 'Record telemetry', type: 'toggle', tab: 'data' },
     { k: 'telExportAll', label: 'Export telemetry', type: 'button', text: 'ALL CIRCUITS', tab: 'data', act: () => telExport(true, rowBtn('telExportAll'), 'ALL CIRCUITS') },
     { k: 'telClear', label: 'Clear telemetry', type: 'button', text: 'CLEAR', tab: 'data', act: () => telClearPress() },
@@ -106790,12 +106798,24 @@ const Menu = (() => {
     if (setupSel && ids.includes(setupSel)) return setupSel;
     return (champInProgress() && ch.rounds[ch.round]) || ids[0] || S.trackId;
   }
-  function getSetup(id) { const su = SU(), s = S.setups && S.setups[id]; return su ? { fw: su.wing(s && s.fw), rw: su.wing(s && s.rw) } : { fw: 6, rw: 6 }; }
+  // (user 2026-11-25) the engineer's setup for a circuit (CFG.setup.forTrack: the dry quickest, the AI's centre): what a
+  // circuit with no saved wings runs; cached per circuit
+  const engDefs = {};
+  function engDef(id) {
+    const su = SU();
+    if (!su) return { fw: 6, rw: 6 };
+    if (engDefs[id]) return engDefs[id];
+    let d = null;
+    try { const tr = trackInfo(id).track; if (tr && tr.N && su.forTrack) d = su.forTrack(tr, null); } catch (e) { d = null; }
+    return d ? (engDefs[id] = d) : { fw: su.def, rw: su.def };
+  }
+  function getSetup(id) { const su = SU(), s = S.setups && S.setups[id]; return su ? (s ? { fw: su.wing(s.fw), rw: su.wing(s.rw) } : Object.assign({}, engDef(id))) : { fw: 6, rw: 6 }; }
   function putSetup(id, st) {
     const su = SU();
     if (!su || !id) return;
     const o = Object.assign({}, S.setups), fw = su.wing(st.fw), rw = su.wing(st.rw);
-    if (fw === su.def && rw === su.def) delete o[id]; else o[id] = { fw, rw };
+    const e = engDef(id);
+    if (fw === e.fw && rw === e.rw) delete o[id]; else o[id] = { fw, rw };
     S.setups = o;
   }
   // one wing ±1 (clamped at 1 and 11, never wraps) / set; false = unchanged
@@ -107160,8 +107180,8 @@ const Menu = (() => {
     let best = su.def;
     let bf = su.def;
     try { const bb = su.best(tr, 1 - 0.2 * wet); best = bb.rw; bf = bb.fw; } catch (e) { best = su.def; }
-    const off = [0, 1, -1, 0, 1, 0, -1][h % 7] + (wet >= 0.9 ? 2 : wet > 0 ? 1 : 0);
-    const c = Math.max(2, Math.min(10, best + off)), lo = c - 1, hi = Math.min(11, c + 1 + (h >>> 3) % 2);
+    const off = wet >= 0.9 ? 2 : wet > 0 ? 1 : 0;   // (user 2026-11-25: centred on the engineer's setup, engDef - no random shift)
+    const c = Math.max(2, Math.min(10, best + off)), lo = c - 1, hi = c + 1;
     const ch = String(tr.character || '').toLowerCase(), pick = arr => arr[(h >>> 5) % arr.length];
     const own = typeof TRACK_DATA !== 'undefined' && TRACK_DATA[id] && TRACK_DATA[id].engineerWhy;   // circuit's own lines (optional)
     const why = Array.isArray(own) && own.length ? pick(own)
@@ -107170,14 +107190,15 @@ const Menu = (() => {
       : ch === 'technical' ? pick(['The quick stuff in the middle is where the lap is', 'Plenty of fast direction changes', 'Technical layout, you need the car to bite'])
       : pick(['Big flowing corners, the car has to stick', 'Fast sweepers everywhere', 'Flowing lap, keep it planted']);
     const cond = wet >= 0.9 ? ' It is wet, so I have added a couple of clicks.' : wet > 0 ? ' Track is damp, a click more than usual.' : fc ? ' Watch the forecast, add wing if the rain comes.' : '';
-    const fw = Math.max(2, Math.min(10, bf + [0, 0, 1, -1][(h >>> 7) % 4]));   // the front: its own rounded window
+    const fw = Math.max(2, Math.min(10, bf));   // the front: around the engineer's
     const front = pick([` Front around ${fw - 1}\u2013${fw + 1}, more if you like a keen nose.`, ` Front somewhere near ${fw}, a bit less if the rear feels nervous.`, ` Try the front around ${fw - 1}\u2013${fw + 1} and tune it to feel.`]);
     const cur = st.rw < lo - 1 ? ' You are well under that at the moment.' : st.rw > hi + 1 ? ' That is a lot more rear than I would run.' : '';
     return `${why}. I would run the rear wing around ${lo}\u2013${hi}.${front}${cond}${cur}`;
   }
   const pipsHTML = () => `<span class="agp-setup-pips">${Array.from({ length: WINGS }, (_, i) => `<i data-v="${i + 1}" style="height:${Math.round(36 + i * 6.4)}%"></i>`).join('')}</span>`;
-  function paintWing(el, v) {
-    el.querySelectorAll('.agp-setup-pips i').forEach((p, i) => { p.classList.toggle('on', i < v); p.classList.toggle('is-def', i + 1 === (SU() ? SU().def : 6)); });
+  function paintWing(el, v, tid) {   // (tid: the circuit - its engineer's setup is the marked pip; none: the baseline)
+    const side = el.dataset && el.dataset.side || (el.dataset && el.dataset.k === 'setupFw' ? 'fw' : 'rw'), dv = tid ? engDef(tid)[side] : (SU() ? SU().def : 6);
+    el.querySelectorAll('.agp-setup-pips i').forEach((p, i) => { p.classList.toggle('on', i < v); p.classList.toggle('is-def', i + 1 === dv); });
     const b = el.querySelector('.agp-row-v b'); if (b) b.textContent = v;
   }
   // pre-race screens: compact CAR SETUP box beside the tyre choice (this circuit; applied to the player's car at once)
@@ -107190,7 +107211,7 @@ const Menu = (() => {
   function paintPreSetup(box, tid, tr, grip, wx) {   // wx: { wet 0..1, dynamic } for the engineer (default: today's weather)
     if (!box) return;
     const st = getSetup(tid), x = setupStats(st, tr, grip);
-    box.querySelectorAll('.agp-setup-row').forEach(r => paintWing(r, st[r.dataset.side]));
+    box.querySelectorAll('.agp-setup-row').forEach(r => paintWing(r, st[r.dataset.side], tid));
     if (!x) return;
     const fx = effects(x), wd = i => fx[i][2].toUpperCase();
     box.querySelector('.agp-setup-pre-stats').innerHTML = `<span>FAST CORNERS <b>${wd(0)}</b></span><span>TURN-IN <b>${wd(3)}</b></span>` +
@@ -107237,7 +107258,7 @@ const Menu = (() => {
         el.classList.toggle('is-fixed', opts.length < 2 || lk);   // (one choice, e.g. a season's team / field: no \u2039 \u203a)
         el.classList.toggle('is-season', lk);
         if (it.ring) { const r = el.querySelector('.agp-ring'); r.textContent = v; r.style.setProperty('--tc', compColor(v)); }
-      } else if (it.type === 'wing') paintWing(el, getSetup(setupTrackId())[it.side]);
+      } else if (it.type === 'wing') paintWing(el, getSetup(setupTrackId())[it.side], setupTrackId());
       else if (it.type === 'preset') {
         const id = presetOf(getSetup(setupTrackId())), o = optsOf(it).find(x => x[0] === id);
         el.querySelector('.agp-row-v b').textContent = o ? o[1] : 'CUSTOM';
@@ -107255,6 +107276,7 @@ const Menu = (() => {
         el.querySelector('.agp-row-val b').textContent = Math.round(v * 100) + '%';
       } else if (it.type === 'bind') paintBind(it);
       else if (it.type === 'next') { const nx = tabsOf()[tabI + 1]; el.querySelector('.agp-row-val b').textContent = nx ? TAB_NAME[nx] : ''; }
+      else if (it.type === 'button' && typeof it.text === 'function') { const b = el.querySelector('.agp-row-btn'), t = it.text(); if (b && b.textContent !== t) b.textContent = t; }   // (ENGINEER f · r: the circuit's own)
       else if (it.type === 'head' && it.text) { const sp = el.querySelector('span'), t = it.text(); if (sp.textContent !== t) sp.textContent = t; }   // (a help line)
       it.hidden = !!(it.showIf && !it.showIf()) || (name === 'main' && !!it.tab && (it.tab !== curTab() || (!!it.raceOnly && tt)));   // (a boolean: toggle(x, undefined) would flip)
       if (it.label2 && !it.hidden) { const l = el.querySelector('.agp-row-lbl'), t = it.label2(); if (l && l.textContent !== t) l.textContent = t; }   // (a label that changes)
@@ -108682,7 +108704,7 @@ const Menu = (() => {
         ready: () => { QG.ready = !QG.ready; ctl.ready(QG.ready); sfx('select'); qgTexts(G); }, cont: () => { sfx('start'); ctl.cont(); } }[b.dataset.k] }));
     lists.garage = { items, focus: 0 };
     items.forEach((it, i) => { if (it.type === 'tyre') it.el.addEventListener('pointerenter', () => { if (screen === 'garage') setFocus('garage', i, false); }); else wire('garage', it, i); });
-    E.rsBtns.querySelectorAll('.agp-qg-wing').forEach(r => paintWing(r, getSetup(tid)[r.dataset.side]));
+    E.rsBtns.querySelectorAll('.agp-qg-wing').forEach(r => paintWing(r, getSetup(tid)[r.dataset.side], tid));
     // focus: the mode's main button (break: SKIP / READY; green: GO OUT; spectator: SKIP TO THE GRID)
     const go = items.findIndex(it => it.k === (brk ? (ctl.mp ? 'ready' : 'skip') : spec ? 'skipAll' : 'go'));
     setFocus('garage', go >= 0 ? go : 0, false);
@@ -108690,7 +108712,7 @@ const Menu = (() => {
   function qgWingSaved(G) {
     store();
     if (H.onSettings) { try { H.onSettings(clone(S)); } catch (e) { console.error(e); } }
-    E.rsBtns.querySelectorAll('.agp-qg-wing').forEach(r => paintWing(r, getSetup(G.track.id)[r.dataset.side]));
+    E.rsBtns.querySelectorAll('.agp-qg-wing').forEach(r => paintWing(r, getSetup(G.track.id)[r.dataset.side], G.track.id));
     qgTexts(G); sfx('change');
   }
   // the bar's live bits: chosen tyre, speed, GO OUT's state (+ a lock countdown), SKIP's break time
@@ -115670,6 +115692,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-25 11:14 -->
+<!-- Apex GP build 2026-11-25 18:20 -->
 </body>
 </html>

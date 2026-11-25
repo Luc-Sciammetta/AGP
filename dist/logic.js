@@ -559,6 +559,9 @@ CFG.setup = {
     if (S._best) S._best.set(key, b);
     return b;
   },
+  // (user 2026-11-25) the engineer's setup for circuit T: the dry quickest (the AI's centre, choose) - a player with
+  // no saved wings for the circuit runs it; s = a saved {fw, rw} wins
+  forTrack(T, s) { const S = CFG.setup; if (s && typeof s === 'object') return { fw: S.wing(s.fw), rw: S.wing(s.rw) }; try { if (T && T.N) return S.best(T, 1); } catch (e) { /* baseline */ } return { fw: S.def, rw: S.def }; },
   bestRear(T, bias = 0, grip = 1) { return CFG.setup.best(T, grip).rw; },
   // speed plan (m/s per track sample) for setup a: the lap estimate's profile (HUD braking guide for the player)
   speeds(T, a, grip = 1) { const S = CFG.setup; S.lapTime(T, a, grip); const L = S._lap && S._lap.get(T); return L ? Float32Array.from(L.v) : null; },
@@ -17597,7 +17600,7 @@ const Race = (() => {
     else if (opts.spread === true && mode === 'race' && !opts.attract && (!diff.allOut || (CFG.setup && CFG.setup.lapTime))) carSpread(race, cars, track, opts.spreadAll ? -1 : playerTeam, diff, { rounds: [track.id], field: race.field, wxSeed: (seed ^ 0x3c6ef372) & 0x3fffffff, round: 0 });   // (a single-player quick race, main.js: the same kind of order, seeded per race)
     // car setup (front / rear wing, CFG.setup): the player's from opts.setup = {fw, rw}; each AI car picks its own for
     // the circuit (skill by difficulty and driver, team taste for front bias, more wing in the wet; opts.aiSetups false = off)
-    if (player && !opts.attract && CFG.setup && CFG.setup.apply) CFG.setup.apply(player, opts.setup);
+    if (player && !opts.attract && CFG.setup && CFG.setup.apply) CFG.setup.apply(player, CFG.setup.forTrack ? CFG.setup.forTrack(track, opts.setup) : opts.setup);   // (none saved: the engineer's)
     if (CFG.setup && CFG.setup.choose && opts.aiSetups !== false) {
       const sr = U.rng(seed ^ 0x5e7a9b1), sk0 = { easy: 0.3, medium: 0.6, hard: 0.85, extreme: 1.2, adaptive: 0.7 }[difficulty] ?? 0.6;
       for (const car of cars) {
@@ -18920,11 +18923,15 @@ const Race = (() => {
   }
   function trackLimitsStep(G, race, car, dt) {
     const rc = car._race, T = G.track;
-    if ((race.phase !== 'racing' && !qLike(race)) || race.attract || car.finished || car.dnf || car.kinematic || car.inPitLane || !T.halfW) { rc.tlOff = null; return; }
+    if ((race.phase !== 'racing' && !qLike(race)) || race.attract || car.finished || car.dnf || car.kinematic || !T.halfW) { rc.tlOff = null; return; }
+    // (user 2026-11-25) no track limits going into or coming out of the pits: an off that ends in the lane (cut across to the
+    // entry) is dropped, and nothing is judged from the release until 100 m past the lane's end (150 m at least)
+    if (car.inPitLane) { rc.tlOff = null; rc.tlPost = null; return; }
     if (inQ(race) && (car.qSt !== 'push' || !(car.q ? car.q.valid : car.qPush))) { rc.tlOff = null; return; }   // (qualifying: only a flying lap is judged - not out / in / cool-down laps; a slow human push lap too: qPush needs pace)
     if (oneShot(race) && !(car.lap >= 1)) { rc.tlOff = null; return; }   // (one-shot: the flying lap from the line, not the run-up)
     if (!race.pen) { rc.tlOff = null; return; }   // (penalties off: no strikes, no invalidated time-trial laps either)
     if (rc.pxOn) pitExitLine(G, race, car);
+    if (rc.dist < Math.max(rc.pitCooldown || -Infinity, rc.pxEnd != null ? rc.pxEnd + 100 : -Infinity)) { rc.tlOff = null; rc.tlPost = null; return; }
     // damage no longer exempts a car (user 2026-10-30: warnings stopped counting and the count seemed to reset once the car was
     // damaged; before, Damage.major dropped every off and its verdict): a slow damaged car loses time (no strike), a slide is lost control
     // lost control - a spin / big slide (body slip > 0.3 rad; not lostControl's heading test: a car cutting a chicane

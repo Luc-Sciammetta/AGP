@@ -399,7 +399,7 @@ class RaceSim {
         car.strategy = { auto: false, stops: [], plan: '', pending: null }; car.wantPit = false; car.pitSpeedingChance = 0;
         const c = N.COMP.includes(p.compound) ? p.compound : suitCompound(race, 'M');   // (a picked tyre exactly; AUTO 'A': the one the conditions call for)
         car.tyre.compound = c; car.tyre.wear = 0; car.compoundsUsed = [c]; car.grip = COMPOUNDS[c].grip; car._startC = c;   // (_startC: the race start tyre after qualifying)
-        if (CFG.setup && CFG.setup.apply) CFG.setup.apply(car, (p.setups && p.setups[S.trackId]) || null);   // the player's own wings (lobby setup)
+        if (CFG.setup && CFG.setup.apply) CFG.setup.apply(car, CFG.setup.forTrack(track, (p.setups && p.setups[S.trackId]) || null));   // (none saved: the engineer's)   // the player's own wings (lobby setup)
         p.carId = car.id; p.loaded = false;
       } else this.brainQ.push(car);   // (AI brains: made while the clients load, makeBrains)
     }
