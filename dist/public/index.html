@@ -77955,7 +77955,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 09:59';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 10:11';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -105782,7 +105782,7 @@ const Menu = (() => {
     ['q1', 'q2', 'q3'].forEach((k, i) => { s.qualiCustom[k] = Math.max(3, Math.min(30, Math.round(+qc[k]) || qd[i])); });
     s.qualiDay = pick(s.qualiDay, OPT.qualiDay, 'same');
     // championship calendar: circuit ids in race order (picked on the CIRCUITS tab); default / nothing valid = every circuit in list order
-    const co = Array.isArray(s.champOrder) ? s.champOrder.filter((id, i, a) => typeof TRACK_DATA !== 'undefined' && TRACK_DATA[id] && ids.includes(U.layoutBase(id)) && a.findIndex(x => U.layoutBase(x) === U.layoutBase(id)) === i) : [];   // (a round may be a layout: its circuit once)
+    const co = Array.isArray(s.champOrder) ? s.champOrder.filter((id, i, a) => typeof TRACK_DATA !== 'undefined' && TRACK_DATA[id] && ids.includes(U.layoutBase(id)) && a.indexOf(id) === i) : [];   // (a round may be any layout; each layout once)
     s.champOrder = co.length ? co : ids.slice();
     delete s.champRounds;   // old per-circuit on/off toggles (before the calendar picker): ignored
     s.playerNumber = Math.max(1, Math.min(99, (s.playerNumber | 0) || 7));
@@ -106472,7 +106472,7 @@ const Menu = (() => {
     E.pickCal.addEventListener('click', e => {   // a round's name line: take it out (its condition chips are fixed)
       if (screen !== 'main' || helpOpen || curTab() !== 'rounds') return;
       const r = e.target.closest('.agp-pk-top');
-      if (r && r.parentNode.dataset.id) toggleRound(r.parentNode.dataset.id);
+      if (r && r.parentNode.dataset.id) toggleRound(r.parentNode.dataset.id, true);   // (a round row: exactly its layout)
     });
     E.help.addEventListener('click', e => { if (e.target === E.help) closeHelp(); });
     E.backBtn.addEventListener('pointerdown', e => e.preventDefault());
@@ -106578,8 +106578,8 @@ const Menu = (() => {
     E.cardEls.forEach((c, i) => {
       cardText(c);
       c.querySelectorAll('.agp-card-lay').forEach(a => a.addEventListener('click', e => {   // (layout arrows: switch + pick, the click goes no further)
-        e.stopPropagation(); if (screen !== 'main' || helpOpen || curTab() === 'rounds') return;
-        setFocus('main', idxOf('trackId'), false); cardLayoutStep(c, +a.dataset.d);
+        e.stopPropagation(); if (screen !== 'main' || helpOpen) return;
+        setFocus('main', idxOf(curTab() === 'rounds' ? 'champGrid' : 'trackId'), false); cardLayoutStep(c, +a.dataset.d);
       }));
       c.addEventListener('pointerdown', e => e.preventDefault());
       c.addEventListener('pointerenter', () => { if (screen === 'main' && !helpOpen && curTab() === 'rounds') { setCur(i, false); setFocus('main', idxOf('champGrid'), false); } });
@@ -106594,10 +106594,9 @@ const Menu = (() => {
     });
   }
   // the layout a circuit's card shows: the picked circuit's own if it is this one, else the layout last picked there (else the circuit)
-  const roundIdx = id => S.champOrder.findIndex(x => U.layoutBase(x) === U.layoutBase(id));   // a circuit's round (its entry may be a layout id)
+  const roundIdx = id => S.champOrder.indexOf(cardLayout(U.layoutBase(id)));   // the round of the layout a circuit's card shows (each layout can be its own round)
   function cardLayout(id) {
-    if (curTab() === 'rounds') { const r = roundIdx(id); if (r >= 0) return S.champOrder[r]; }   // (the calendar: the round's own layout)
-    if (U.layoutBase(S.trackId) === id) return S.trackId;
+    if (curTab() !== 'rounds' && U.layoutBase(S.trackId) === id) return S.trackId;
     const p = S.layoutPick && S.layoutPick[id]; return p && U.layoutBase(p) === id && typeof TRACK_DATA !== 'undefined' && TRACK_DATA[p] ? p : id;
   }
   // a card's name / country / KM · TURNS · LAPS · ZONES for the layout it shows (+ the layout's label when the circuit has layouts)
@@ -106619,9 +106618,9 @@ const Menu = (() => {
   function cardLayoutStep(c, d) {
     const L = U.layoutsOf(c.dataset.id); if (L.length < 2) return false;
     const k = L.indexOf(cardLayout(c.dataset.id)), nid = L[((k < 0 ? 0 : k) + d + L.length) % L.length];
-    if (curTab() === 'rounds') {   // championship calendar: the round (if picked) races this layout; an unpicked card remembers it for when it is added
-      const r = roundIdx(c.dataset.id); if (r >= 0) S.champOrder[r] = nid;
+    if (curTab() === 'rounds') {   // championship calendar: the card shows this layout; clicking the card adds / removes it as a round
       (S.layoutPick || (S.layoutPick = {}))[c.dataset.id] = nid; sfx('move'); commit(false);
+      cardText(c); drawPreview(c.querySelector('canvas'), trackInfo(nid), cardOn(c.dataset.id));
     } else { S.trackRandom = false; pickCircuit(nid); sfx('move'); commit(); }
     cardText(c); drawPreview(c.querySelector('canvas'), trackInfo(nid), cardOn(c.dataset.id));
     return true;
@@ -106672,9 +106671,9 @@ const Menu = (() => {
   // S.champOrder = circuit ids in race order. Click / Enter on a card adds it as the next round or takes it out (the
   // rest renumber); it never leaves the tab \u2014 only NEXT does, and only with at least one round.
   let pickCur = 0, pickNew = null, champFresh = false;   // keyboard cursor (card index), row to animate in, NEW CHAMPIONSHIP chosen
-  function toggleRound(id) {
-    const o = S.champOrder, i = roundIdx(id);
-    if (i >= 0) o.splice(i, 1); else { const lid = cardLayout(id); o.push(lid); pickNew = lid; }   // (added as the layout its card shows)
+  function toggleRound(id, exact) {
+    const lid = exact ? id : cardLayout(id), o = S.champOrder, i = o.indexOf(lid);   // (a card: the layout it shows; a round row: exactly its own)
+    if (i >= 0) o.splice(i, 1); else { o.push(lid); pickNew = lid; }
     sfx(i >= 0 ? 'back' : 'select');
     commit(false);
   }
@@ -107260,7 +107259,7 @@ const Menu = (() => {
     if (name !== 'main') return;
     const pk = curTab() === 'rounds', order = S.champOrder;
     (E.cardEls || []).forEach((c, i) => {
-      const id = c.dataset.id, n = order.findIndex(x => U.layoutBase(x) === id), on = pk ? n >= 0 : id === U.layoutBase(S.trackId) && !S.trackRandom;
+      const id = c.dataset.id, n = pk ? order.indexOf(cardLayout(id)) : -1, on = pk ? n >= 0 : id === U.layoutBase(S.trackId) && !S.trackRandom;
       c.classList.toggle('is-rounds', pk);   // (the calendar: the round's own layout; \u2039 \u203a switch it)
       if (c.dataset.lay !== cardLayout(id)) { cardText(c); drawPreview(c.querySelector('canvas'), trackInfo(cardLayout(id)), cardOn(id)); }
       c.classList.toggle('is-sel', on);
@@ -115667,6 +115666,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-25 09:59 -->
+<!-- Apex GP build 2026-11-25 10:11 -->
 </body>
 </html>
