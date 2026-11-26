@@ -56254,9 +56254,9 @@ const TRACK_DATA = {
         { at: [0, 280], side: -1, len: 300, rows: 14 },   // main straight, opposite the pits
         { at: [0, 1000], side: -1, len: 120, rows: 10 },  // T1 braking zone
         { at: [5, 80], side: -1, len: 100, rows: 8 },     // Curva Grande
-        { at: 2340.3, side: -1, len: 54, rows: 8 },     // Lesmo
+        { at: [13, 30], side: -1, len: 90, rows: 8 },     // Lesmo
         { at: [16, 20], side: -1, len: 110, rows: 8 },    // Ascari
-        { at: 4419.0, side: -1, len: 132, rows: 12 },   // Parabolica outside
+        { at: [19, 40], side: -1, len: 220, rows: 12 },   // Parabolica outside
       ],
       trees: 0.85, treeKinds: ['broadleaf', 'pine'], buildings: 0.05, hills: 0.1,
       pitBuilding: { from: [0, 200], to: [0, 560] },
@@ -56335,9 +56335,9 @@ const TRACK_DATA = {
     scenery: {
       grandstands: [
         { at: [0, 150], side: 1, len: 200, rows: 10 },   // main straight, opposite the pits
-        { at: 160.0, side: -1, len: 30, rows: 8 },     // T1 outside
-        { at: 789.3, side: 1, len: 40, rows: 6 },      // casino square
-        { at: 2439.8, side: 1, len: 48, rows: 8 },     // harbour front (water on the other side)
+        { at: [1, 10], side: -1, len: 60, rows: 8 },     // T1 outside
+        { at: [7, 10], side: 1, len: 50, rows: 6 },      // casino square
+        { at: 2441.8, side: 1, len: 56, rows: 8 },     // harbour front (water on the other side)
         { at: [28, 0], side: 1, len: 70, rows: 8 },      // swimming pool
       ],
       trees: 0.15, treeKinds: ['palm'], buildings: 0.95, hills: 0.6,
@@ -56422,8 +56422,8 @@ const TRACK_DATA = {
         { at: [0, 380], side: -1, len: 320, rows: 14 },  // main straight, opposite the pits
         { at: [1, 40], side: 1, len: 140, rows: 10 },    // T1 outside
         { at: [7, 10], side: 1, len: 110, rows: 8 },     // esses
-        { at: 1852.1, side: 1, len: 41, rows: 8 },      // hairpin
-        { at: 3856.4, side: -1, len: 54, rows: 10 },   // final chicane
+        { at: [19, 0], side: 1, len: 90, rows: 8 },      // hairpin
+        { at: 3852.4, side: -1, len: 72, rows: 10 },   // final chicane
       ],
       trees: 0.95, treeKinds: ['pine', 'broadleaf', 'cypress'], buildings: 0.05, hills: 0.85,
       ferrisWheel: { at: [2, 0], side: -1, dist: 170 },    // amusement park inside T1
@@ -56524,16 +56524,16 @@ const TRACK_DATA = {
     scenery: {
       grandstands: [
         { at: [1, 437.4], side: -1, len: 340, rows: 16 },   // Grandstand 1, opposite the pits
-        { at: 297.7, side: -1, len: 136, rows: 10 },   // Stand 3, T1 braking zone
+        { at: [1, 854.7], side: -1, len: 170, rows: 10 },   // Stand 3, T1 braking zone
         { at: [5, 58], side: -1, len: 110, rows: 8 },       // Stand 4, T2-T3
-        { at: 945.1, side: -1, len: 128, rows: 10 },     // Stand 5, run up to T5
+        { at: [9, 120], side: -1, len: 160, rows: 10 },     // Stand 5, run up to T5
         { at: [16, 20], side: 1, len: 120, rows: 8 },       // Stand 6, T6 exit
         { at: 1621.3, side: -1, len: 140, rows: 10 },     // Stand 7, T7 braking zone
-        { at: 2130.8, side: -1, len: 50, rows: 8 },      // Stand 8, outside T8-T9
-        { at: 2251.6, side: -1, len: 140, rows: 8 },      // Stand 9, top straight
+        { at: 2122.8, side: -1, len: 74, rows: 8 },      // Stand 8, outside T8-T9
+        { at: [22, 40], side: -1, len: 140, rows: 8 },      // Stand 9, top straight
         { at: [28, 489.7], side: 1, len: 150, rows: 10 },   // Stand 10, T12 braking zone
-        { at: 4048.2, side: -1, len: 84, rows: 8 },   // Stand 11, T15 braking zone
-        { at: 4278.6, side: 1, len: 39, rows: 12 },      // Stand 1, wraps the stadium loop
+        { at: 4037.2, side: -1, len: 118, rows: 8 },   // Stand 11, T15 braking zone
+        { at: 4318.6, side: 1, len: 130, rows: 12 },      // Stand 1, wraps the stadium loop
       ],
       stadium: { from: 3940, to: 4400 },   // T15\u2013T18 "stadium" section: grandstands ringed all around it (render3d)
       trees: 0.12, treeKinds: ['palm'], buildings: 0.3, hills: 0.22,
@@ -56635,12 +56635,12 @@ const TRACK_DATA = {
         { at: [0, 291.5], side: -1, len: 400, rows: 16 },    // Grand Stand 1, opposite the pits
         { at: [1, 75.4], side: -1, len: 70, rows: 8 },      // Stand 2, outside T1
         { at: [2, 2], side: -1, len: 90, rows: 8 },      // Stand 3, T1 exit
-        { at: 1006.3, side: -1, len: 130, rows: 10 },    // Stand 4, T3 exit
-        { at: 1823.6, side: -1, len: 56, rows: 8 },      // Stand 5, T6
+        { at: [6, 40.2], side: -1, len: 130, rows: 10 },    // Stand 4, T3 exit
+        { at: 1820.6, side: -1, len: 64, rows: 8 },      // Stand 5, T6
         { at: [13, 11.1], side: -1, len: 80, rows: 8 },      // Stand 6, T7
-        { at: 2499.5, side: -1, len: 84, rows: 10 },    // Stand 7, T9 braking zone
+        { at: [16, 227.2], side: -1, len: 140, rows: 10 },    // Stand 7, T9 braking zone
         { at: [18, 450.3], side: -1, len: 240, rows: 12 },    // Stand 8, top straight / T10
-        { at: 3621.7, side: 1, len: 120, rows: 10 },     // Stand 9, T12 braking zone
+        { at: [22, 186], side: 1, len: 150, rows: 10 },     // Stand 9, T12 braking zone
         { at: [30, 12.1], side: -1, len: 100, rows: 10 },   // Stand 10, pit entry / T16
       ],
       trees: 0.95, treeKinds: ['broadleaf', 'pine'], buildings: 0.06, hills: 0.9,
@@ -56751,19 +56751,19 @@ const TRACK_DATA = {
         { at: [0, 274.6], side: -1, len: 330, rows: 16 },    // main grandstand, opposite the pits
         { at: [0, 690], side: -1, len: 220, rows: 10 },   // T1 braking zone
         { at: [5, 30.1], side: -1, len: 110, rows: 8 },     // outside T2/T3
-        { at: 912.3, side: -1, len: 45, rows: 8 },     // outside T4
+        { at: 905.3, side: -1, len: 66, rows: 8 },     // outside T4
         { at: [9, 128.5], side: -1, len: 110, rows: 8 },     // T4-T5
         { at: [11, 102.4], side: 1, len: 110, rows: 8 },      // T5-T6
-        { at: 1704.1, side: -1, len: 120, rows: 10 },    // T8 exit, lakeside
-        { at: 2328.7, side: -1, len: 90, rows: 10 },   // outside T9
-        { at: 2599.8, side: 1, len: 110, rows: 8 },     // T11 braking zone
+        { at: [18, 38.2], side: -1, len: 150, rows: 10 },    // T8 exit, lakeside
+        { at: [19, 69.3], side: -1, len: 150, rows: 10 },   // outside T9
+        { at: [22, 176.7], side: 1, len: 110, rows: 8 },     // T11 braking zone
         { at: [32, 44.2], side: 1, len: 130, rows: 8 },     // NE diagonal
-        { at: 3829.6, side: -1, len: 110, rows: 8 },    // T16 braking zone
-        { at: 3921.9, side: -1, len: 42, rows: 8 },     // outside T16
-        { at: 3997.0, side: -1, len: 80, rows: 8 },    // outside T16/T17
+        { at: [33, 1], side: -1, len: 110, rows: 8 },    // T16 braking zone
+        { at: 3930.9, side: -1, len: 32, rows: 8 },     // outside T16
+        { at: 3992.0, side: -1, len: 90, rows: 8 },    // outside T16/T17
         { at: [35, 58.2], side: -1, len: 110, rows: 8 },    // T17 exit
-        { at: 4465.9, side: -1, len: 120, rows: 10 },    // T18 approach
-        { at: [43, 86.3], side: -1, len: 100, rows: 8 },     // T19
+        { at: [40, 39.2], side: -1, len: 200, rows: 10 },    // T18 approach
+        { at: 4629.0, side: -1, len: 98, rows: 8 },     // T19
       ],
       trees: 0.7, treeKinds: ['broadleaf', 'pine'], buildings: 0.2, hills: 0.95,
       pitBuilding: { from: [0, 130.5], to: [0, 425.2] },
@@ -56895,19 +56895,19 @@ const TRACK_DATA = {
       grandstands: [
         { at: [0, 285.4], side: 1, len: 300, rows: 16 },   // Stand 1, main straight opposite the pits
         { at: [0, 283.3], side: -1, len: 360, rows: 14 },  // Stand 2, behind the pit building
-        { at: 284.4, side: 1, len: 50, rows: 8 },        // Stand 3, outside T1
+        { at: 303.4, side: 1, len: 48, rows: 8 },        // Stand 3, outside T1
         { at: [2, 30], side: 1, len: 90, rows: 10 },       // Stand 4, T1 exit
         { at: [6, 4.4], side: 1, len: 90, rows: 8 },       // Stand 5, outside T3
         { at: [10, 41], side: 1, len: 70, rows: 8 },       // Stand 6, east straight
         { at: [10, 205], side: 1, len: 85, rows: 8 },      // Stand 7, T4 braking zone
-        { at: 1623.6, side: 1, len: 114, rows: 16 },     // Stand 8, big stand above T4 / T5
-        { at: [13, 75], side: 1, len: 110, rows: 10 },     // Stand 9, outside T5
+        { at: [12, 61], side: 1, len: 190, rows: 16 },     // Stand 8, big stand above T4 / T5
+        { at: 1755.8, side: 1, len: 74, rows: 10 },     // Stand 9, outside T5
         { at: [20, 296], side: 1, len: 115, rows: 10 },  // Stand 10, back straight (was [20, 322.3]: slid 26 m back to end before the open junction at T9, user 2026-11-24 - on every layout)
         { at: [37, -45], side: -1, len: 85, rows: 8, bay: 1 },   // Stand 11, beside the lower straight before T17 (its original spot, infield at T17 at [37, 50] left, is where the leg of add-on (1) joins: moved 95 m back along the same side, behind the open junction's barrier; bay: stands beyond an open bay; user 2026-11-24: the same stands on every layout)
-        { at: 3399.4, side: 1, len: 56, rows: 8 },    // Stand 12, climb to T12
-        { at: 3470.1, side: 1, len: 36, rows: 8 },     // Stand 13, outside T12
+        { at: [26, 113.1], side: 1, len: 70, rows: 8 },    // Stand 12, climb to T12
+        { at: 3460.1, side: 1, len: 30, rows: 8 },     // Stand 13, outside T12
         { at: 4111.2, side: 1, len: 33, rows: 8 },     // Stand 14, outside T16
-        { at: 4213.1, side: 1, len: 120, rows: 10 },     // Stand 15, T16 exit
+        { at: [36, 10], side: 1, len: 150, rows: 10 },     // Stand 15, T16 exit
       ],
       // grass banks with spectators (render3d): {at, side, dist (m beyond the barrier), len}
       grassSeating: [{ at: [2, 127], side: 1, dist: 30, len: 140 }, { at: [29, 66], side: 1, dist: 35, len: 170 }, { at: [34, 56], side: 1, dist: 30, len: 150 }],
@@ -57063,10 +57063,10 @@ const TRACK_DATA = {
         { at: 1810, side: 1, len: 95, rows: 8, dist: 40 },
         { at: 1602, side: 1, len: 86, rows: 8, dist: 21 },
         { at: 2643, side: 1, len: 190, rows: 10, dist: 21 },
-        { at: 3583.0, side: 1, len: 45, rows: 8, dist: 5 },
-        { at: 3370.0, side: 1, len: 90, rows: 8, dist: 28 },
+        { at: 3583, side: 1, len: 75, rows: 8, dist: 5 },
+        { at: 3370, side: 1, len: 112, rows: 8, dist: 28 },
         { at: 3154, side: -1, len: 88, rows: 8, dist: 26 },
-        { at: 3779.0, side: 1, len: 50, rows: 8, dist: 12 },
+        { at: 3749.0, side: 1, len: 66, rows: 8, dist: 12 },
         { at: 401, side: -1, len: 81, rows: 8, dist: 21 },
         { at: 3890, side: -1, len: 40, rows: 8, dist: 28 },
         { at: 4101, side: 1, len: 55, rows: 8, dist: 23 },
@@ -58396,7 +58396,7 @@ const TRACK_DATA = {
     description: 'An evening race on the Portuguese cliff tops, into the sunset of the longest day: down the hill to the T3 hairpin by the cove, the S-bends, the steep climb to the blind, flat-out T8, along the plateau, the plunge through the T10 hairpin, the cliff-top sweepers to the T16 hairpin under the lighthouse and the twisty run back to the pits.',
     // ---- SCN: theme + scenery (owned by the scenery agent: tools/tracks_ref/solstice_fit/scenery/; entry.py keeps this region) ----
     /*THEME*/theme: { timeOfDay: 'day', palette: 'day', sky: '#9fc3ea', skyTop: '#3f78c6', fog: '#e4dac2', sun: '#ffe1ae', grass: '#a89b5b', ground: '#a89b5b', water: '#10507a', seaShallow: '#55b3b0', seaMid: '#27829b', hill: '#a89b5b', hillDark: '#7d7a45', sunElevation: 0.3 },/*/THEME*/
-    scenery: { /*COAST*/coast: {"cs":4.0697,"nx":395,"nz":500,"rle":["s158i20s217","s158i20.s216","s158i20.s216","s158i20s130.3s84","s159i19s128.8s81","s161i16s128.10s80","s161i15s128.12s79","s161.i13s127.15s78","s161.i13s115.4s7.17s77","s161.i13s114.29s77","s161.i12s114.31s76","s162i11s114.33s75","s163i7s117.33s75","s164i5s117.35s74","s166.s119.35s74","s285.36s74","s285.37s73","s285.37s73","s285.37s73","s285.37s73","s285.37s73","s285.37s73","s68.4s213.37s73","s65i8s212.37s73","s41.4s18i10s212.37s73",".s39i7s15i11.s212.36s73",".s38i10s11i13.s212.36s73",".2s37i11s8i15s213.36s73",".3s36i12s6i16s213.36s73",".4s35i13.s3i17s213.36s73",".5s34i33s164.13s37.36s73",".7s32.i31s162.18s34.37s73",".9s31i30s162.21s32.36s74",".12s29i29s161.24s29.37s74",".16s26i27.s159.28s26.38s74",".18s25i26.s158.31s23.39s74",".20s24i25s157.35s20.39s75",".20s26i23s154.40s16.41s75",".21s28i20s152.44s13.42s75",".22s27i20s149.50s7.45s75",".22s27.i19s146.105s75",".23s27i19s144.107s75",".23s27i18.s143.107s76",".24s26i18.s142.108s76",".24s25.i18s142.109s76",".25s24.i18s49.3s89.110s76",".25s24.i18s46.11s84.109s77",".25s24.i17.s44.15s81.110s77",".25s24.i17.s43.17s80.110s77",".26s23.i17s43.19s79.109s78",".26s23.i17s42.21s78.109s78",".26s23.i17s40.24s77.109s78",".26s23.i16.s40.25s76.109s78",".27s23i16s40.28s73.109s79",".27s23i16s39.32s70.109s79",".27s24i14s39.39s64.109s79",".27s24i13s39.49s54.109s80",".28s25i8s41.53s51.109s80",".28s26i5s43.55s48.110s80",".28s73.59s45.109s81",".28s72.62s43.109s81",".28s71.65s40.109s82",".29s69.67s38.110s82",".29s68.70s36.110s82",".29s67.72s34.110s83",".29s67.74s31.111s83",".29s66.76s29.111s84",".29s65.78s27.112s84",".29s64.81s24.112s85",".30s63.82s22.113s85",".30s62.85s18.115s85",".30s61.88s14.116s86",".31s60.93s6.119s86",".31s59.219s86",".31s58.219s87",".31s58.218s88",".31s57.219s88",".31s56.219s89",".32s54.220s89",".32s54.219s90",".32s53.220s90",".33s51.220s91",".33s50.221s91",".33s49.222s91",".33s49.221s92",".34s47.222s92",".34s45.223s93",".35s43.224s93",".35s42.225s93",".36s40.225s94",".36s39.226s94",".36s38.226s95",".37s36.227s95",".37s35.228s95",".38s33.228s96",".39s31.229s96",".40s29.230s34i4s58",".40s28.231s32i7s57",".41s26.231s32i9s56",".42s25.231s32i9.s55",".43s23.232s31.i9.s55",".43s22.233s31i10.s55",".44s21.233s31i10.s55",".46s18.234s31.i9.s55",".47s17.234s32i9.s55",".48s15.235s32i9s56",".50s13.235s32i9s56",".52s10.236s33i8s56",".54s7.237s33i8s56",".57s2.239s33i8s56",".298s32i10s55",".299s30i11s55",".300s29i12s54",".299s30i12s54",".299s30i13s53",".299s31i12s53",".300s31i11.s52",".301s31i10.s52",".300s32i11s52",".300s32i11s52",".302s31.2i8s52",".301s35i6.s52",".303s34i5s53",".304s34i4s53",".303s36.s55",".301s94",".301s94",".301s94",".301s94",".302s93",".302s93",".303s92",".304s91",".304s91",".305s90",".307s88",".308s87",".309s86",".310s85",".311s84",".312s83",".313s82",".314s81",".315s80",".316s79",".318s77",".319s76",".320s75",".321s74",".322s73",".323s72",".324s71",".324s71",".325s70",".325s70",".325s70",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".325s70",".325s70",".325s70",".325s70",".325s70",".326s69",".326s69",".326s69",".327s68",".327s68",".327s68",".328s67",".329s66",".329s66",".330s65",".331s64",".331s64",".332s63",".333s62",".334s61",".334s61",".335s60",".336s59",".337s58",".338s57",".339s56",".340s55",".340s55",".341s54",".342s.4s48",".351s44",".354s41",".356s39",".357s38",".359s36",".360s35",".362s33",".363s32",".364s31",".365s30",".366s29",".367s28",".367s28",".368s27",".369s26",".370s25",".371s24",".371s24",".372s23",".372s23",".373s22",".374s21",".374s21",".375s20",".375s20",".376s19",".376s19",".377s18",".377s18",".377s18",".378s17",".378s17",".379s16",".379s16",".379s16",".380s15",".380s15",".380s15",".381s14",".381s14",".381s14",".382s13",".382s13",".382s13",".382s13",".383s12",".383s12",".383s12",".383s12",".383s12",".384s11",".384s11",".384s11",".384s11",".384s11",".384s11",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".384s11",".384s11",".384s11",".384s11",".384s11",".384s11",".383s12",".383s12",".383s12",".383s12",".383s12",".382s13",".382s13",".382s13",".382s13",".381s14",".381s14",".381s14",".380s15",".380s15",".380s15",".379s16",".379s16",".379s16",".378s17",".378s17",".378s17",".377s18",".377s18",".376s19",".376s19",".375s20",".375s20",".374s21",".374s21",".373s22",".373s22",".372s23",".371s24",".371s24",".370s25",".369s26",".368s27",".368s27",".367s28",".366s29",".365s30",".364s31",".363s32",".362s33",".361s34",".359s36",".358s37",".356s39",".354s41",".352s43",".349s46",".343s52",".343s52",".343s52",".342s53",".342s53",".342s53",".341s54",".341s54",".341s54",".341s54",".340s55",".340s55",".339s56",".339s56",".338s57",".338s57",".338s57",".337s58",".336s59",".336s59",".335s60",".334s61",".334s61",".333s62",".332s63",".331s64",".329s66",".328s67",".327s68",".326s69",".325s70",".324s71",".323s72",".322s73",".322s73",".321s74",".321s74",".320s75",".320s75",".320s75",".320s75",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".319s76",".319s76",".319s76",".319s76",".319s76",".318s77",".318s77",".318s77",".317s78",".317s78",".317s78",".316s79",".316s79",".316s79",".315s80",".315s80",".314s81",".314s81",".313s82",".312s83",".312s83",".311s84",".310s85",".309s86",".307s88",".306s89",".304s91",".302s93",".301s94",".300s95",".298s97",".254s4.39s98",".253s7.35s100",".252s9.32s102",".251s11.28s105",".251s13.23s108",".250s17.17s111",".250s20.12s113",".250s23.7s115",".249s146",".249s146",".249s146",".248s147",".247s148",".245s150",".239s156",".234s161",".232s163",".229s166",".228s167",".226s169",".225s170",".223s172",".222s173",".220s175",".219s176"],"islands":[{"poly":[[643.0,0.0],[724.4,0.0],[725.4,3.1],[725.4,13.2],[721.4,21.4],[711.2,29.5],[709.1,41.7],[703.0,47.8],[692.9,47.8],[684.7,56.0],[676.6,58.0],[660.3,48.8],[657.3,26.5],[646.1,16.3],[643.0,2.0]],"h":40},{"poly":[[276.7,91.6],[293.0,92.6],[298.1,108.9],[294.0,121.1],[281.8,135.3],[277.8,178.1],[265.5,222.8],[259.4,228.9],[235.0,239.1],[220.8,238.1],[208.6,229.9],[201.5,215.7],[201.5,160.8],[196.4,154.6],[174.0,144.5],[163.8,134.3],[158.7,122.1],[158.7,109.9],[166.9,99.7],[183.1,99.7],[221.8,124.1],[254.4,99.7],[274.7,93.6]],"h":54},{"poly":[[1355.2,390.7],[1371.5,391.7],[1380.7,403.9],[1378.6,442.6],[1392.9,473.1],[1394.9,489.4],[1390.8,501.6],[1380.7,505.7],[1364.4,490.4],[1354.2,488.4],[1349.1,480.2],[1350.1,476.2],[1338.9,461.9],[1338.9,453.8],[1347.1,445.6],[1338.9,413.1],[1343.0,400.9],[1353.2,392.7]],"h":46}],"lh":{"x":1232.1,"z":99.7,"r":29.5,"kx":1250.4,"kz":145.5},"ref":[[1176.1,911.2],[1197.3,1008.9],[1218.8,1106.6],[1240.3,1204.2],[1262.7,1301.7],[1268.2,1401.4],[1256.0,1500.5],[1219.7,1592.8],[1150.1,1662.6],[1155.0,1760.8],[1076.6,1777.8],[983.6,1741.1],[891.5,1702.0],[809.8,1649.8],[783.6,1553.5],[809.6,1458.2],[842.0,1363.7],[822.4,1268.5],[836.1,1171.7],[870.3,1077.8],[880.5,979.4],[842.0,888.2],[765.8,824.8],[669.5,800.7],[570.0,809.6],[471.1,823.9],[375.6,853.1],[281.3,886.0],[185.4,865.8],[120.5,792.9],[169.7,722.4],[141.0,627.1],[173.6,535.5],[263.1,493.1],[341.6,432.6],[398.0,350.1],[475.2,288.9],[573.2,281.8],[668.0,313.5],[766.7,324.2],[861.0,292.8],[949.1,245.4],[1039.7,203.4],[1054.0,249.4],[1009.9,334.9],[1078.3,399.4],[1126.2,485.7],[1134.1,574.6],[1118.6,658.2],[1141.3,755.0]],"seaY":-2,"plateau":44,"fall":120,"margin":900,"scrub":4500,"clusters":[[569.8,1200.6,71,14,0.3],[610.5,590.1,61,11,-0.2],[335.8,1058.1,46,8,0.5],[610.5,1627.9,51,8,0.1],[864.8,569.8,46,8,0.4]],"pines":[[1210.7,305.2,4,40],[712.2,915.7,3,80],[407.0,712.2,4,70],[966.6,457.8,3,60],[508.7,1424.4,4,100]]}, trees: 0, hills: 0,/*/COAST*/ pitBuilding: { from: 4889.3, to: 250.0 }, grandstands: [{at:73.0,side:-1,len:407,dist:10.0},{at:765.0,side:1,len:78,dist:9.7},{at:870.0,side:-1,len:78,dist:16.2},{at:1060.3,side:-1,len:89,dist:9.3},{at:2126.7,side:1,len:163,dist:14.8},{at:2743.9,side:-1,len:65,dist:14.6},{at: 2845.1,side: -1,len: 96,dist: 6},{at: 2914.3,side: -1,len: 43,dist: 7.7},{at:4133.1,side:-1,len:117,dist:9.8}] },
+    scenery: { /*COAST*/coast: {"cs":4.0697,"nx":395,"nz":500,"rle":["s158i20s217","s158i20.s216","s158i20.s216","s158i20s130.3s84","s159i19s128.8s81","s161i16s128.10s80","s161i15s128.12s79","s161.i13s127.15s78","s161.i13s115.4s7.17s77","s161.i13s114.29s77","s161.i12s114.31s76","s162i11s114.33s75","s163i7s117.33s75","s164i5s117.35s74","s166.s119.35s74","s285.36s74","s285.37s73","s285.37s73","s285.37s73","s285.37s73","s285.37s73","s285.37s73","s68.4s213.37s73","s65i8s212.37s73","s41.4s18i10s212.37s73",".s39i7s15i11.s212.36s73",".s38i10s11i13.s212.36s73",".2s37i11s8i15s213.36s73",".3s36i12s6i16s213.36s73",".4s35i13.s3i17s213.36s73",".5s34i33s164.13s37.36s73",".7s32.i31s162.18s34.37s73",".9s31i30s162.21s32.36s74",".12s29i29s161.24s29.37s74",".16s26i27.s159.28s26.38s74",".18s25i26.s158.31s23.39s74",".20s24i25s157.35s20.39s75",".20s26i23s154.40s16.41s75",".21s28i20s152.44s13.42s75",".22s27i20s149.50s7.45s75",".22s27.i19s146.105s75",".23s27i19s144.107s75",".23s27i18.s143.107s76",".24s26i18.s142.108s76",".24s25.i18s142.109s76",".25s24.i18s49.3s89.110s76",".25s24.i18s46.11s84.109s77",".25s24.i17.s44.15s81.110s77",".25s24.i17.s43.17s80.110s77",".26s23.i17s43.19s79.109s78",".26s23.i17s42.21s78.109s78",".26s23.i17s40.24s77.109s78",".26s23.i16.s40.25s76.109s78",".27s23i16s40.28s73.109s79",".27s23i16s39.32s70.109s79",".27s24i14s39.39s64.109s79",".27s24i13s39.49s54.109s80",".28s25i8s41.53s51.109s80",".28s26i5s43.55s48.110s80",".28s73.59s45.109s81",".28s72.62s43.109s81",".28s71.65s40.109s82",".29s69.67s38.110s82",".29s68.70s36.110s82",".29s67.72s34.110s83",".29s67.74s31.111s83",".29s66.76s29.111s84",".29s65.78s27.112s84",".29s64.81s24.112s85",".30s63.82s22.113s85",".30s62.85s18.115s85",".30s61.88s14.116s86",".31s60.93s6.119s86",".31s59.219s86",".31s58.219s87",".31s58.218s88",".31s57.219s88",".31s56.219s89",".32s54.220s89",".32s54.219s90",".32s53.220s90",".33s51.220s91",".33s50.221s91",".33s49.222s91",".33s49.221s92",".34s47.222s92",".34s45.223s93",".35s43.224s93",".35s42.225s93",".36s40.225s94",".36s39.226s94",".36s38.226s95",".37s36.227s95",".37s35.228s95",".38s33.228s96",".39s31.229s96",".40s29.230s34i4s58",".40s28.231s32i7s57",".41s26.231s32i9s56",".42s25.231s32i9.s55",".43s23.232s31.i9.s55",".43s22.233s31i10.s55",".44s21.233s31i10.s55",".46s18.234s31.i9.s55",".47s17.234s32i9.s55",".48s15.235s32i9s56",".50s13.235s32i9s56",".52s10.236s33i8s56",".54s7.237s33i8s56",".57s2.239s33i8s56",".298s32i10s55",".299s30i11s55",".300s29i12s54",".299s30i12s54",".299s30i13s53",".299s31i12s53",".300s31i11.s52",".301s31i10.s52",".300s32i11s52",".300s32i11s52",".302s31.2i8s52",".301s35i6.s52",".303s34i5s53",".304s34i4s53",".303s36.s55",".301s94",".301s94",".301s94",".301s94",".302s93",".302s93",".303s92",".304s91",".304s91",".305s90",".307s88",".308s87",".309s86",".310s85",".311s84",".312s83",".313s82",".314s81",".315s80",".316s79",".318s77",".319s76",".320s75",".321s74",".322s73",".323s72",".324s71",".324s71",".325s70",".325s70",".325s70",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".326s69",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".325s70",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".324s71",".325s70",".325s70",".325s70",".325s70",".325s70",".326s69",".326s69",".326s69",".327s68",".327s68",".327s68",".328s67",".329s66",".329s66",".330s65",".331s64",".331s64",".332s63",".333s62",".334s61",".334s61",".335s60",".336s59",".337s58",".338s57",".339s56",".340s55",".340s55",".341s54",".342s.4s48",".351s44",".354s41",".356s39",".357s38",".359s36",".360s35",".362s33",".363s32",".364s31",".365s30",".366s29",".367s28",".367s28",".368s27",".369s26",".370s25",".371s24",".371s24",".372s23",".372s23",".373s22",".374s21",".374s21",".375s20",".375s20",".376s19",".376s19",".377s18",".377s18",".377s18",".378s17",".378s17",".379s16",".379s16",".379s16",".380s15",".380s15",".380s15",".381s14",".381s14",".381s14",".382s13",".382s13",".382s13",".382s13",".383s12",".383s12",".383s12",".383s12",".383s12",".384s11",".384s11",".384s11",".384s11",".384s11",".384s11",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".385s10",".384s11",".384s11",".384s11",".384s11",".384s11",".384s11",".383s12",".383s12",".383s12",".383s12",".383s12",".382s13",".382s13",".382s13",".382s13",".381s14",".381s14",".381s14",".380s15",".380s15",".380s15",".379s16",".379s16",".379s16",".378s17",".378s17",".378s17",".377s18",".377s18",".376s19",".376s19",".375s20",".375s20",".374s21",".374s21",".373s22",".373s22",".372s23",".371s24",".371s24",".370s25",".369s26",".368s27",".368s27",".367s28",".366s29",".365s30",".364s31",".363s32",".362s33",".361s34",".359s36",".358s37",".356s39",".354s41",".352s43",".349s46",".343s52",".343s52",".343s52",".342s53",".342s53",".342s53",".341s54",".341s54",".341s54",".341s54",".340s55",".340s55",".339s56",".339s56",".338s57",".338s57",".338s57",".337s58",".336s59",".336s59",".335s60",".334s61",".334s61",".333s62",".332s63",".331s64",".329s66",".328s67",".327s68",".326s69",".325s70",".324s71",".323s72",".322s73",".322s73",".321s74",".321s74",".320s75",".320s75",".320s75",".320s75",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".319s76",".319s76",".319s76",".319s76",".319s76",".319s76",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".320s75",".319s76",".319s76",".319s76",".319s76",".319s76",".318s77",".318s77",".318s77",".317s78",".317s78",".317s78",".316s79",".316s79",".316s79",".315s80",".315s80",".314s81",".314s81",".313s82",".312s83",".312s83",".311s84",".310s85",".309s86",".307s88",".306s89",".304s91",".302s93",".301s94",".300s95",".298s97",".254s4.39s98",".253s7.35s100",".252s9.32s102",".251s11.28s105",".251s13.23s108",".250s17.17s111",".250s20.12s113",".250s23.7s115",".249s146",".249s146",".249s146",".248s147",".247s148",".245s150",".239s156",".234s161",".232s163",".229s166",".228s167",".226s169",".225s170",".223s172",".222s173",".220s175",".219s176"],"islands":[{"poly":[[643.0,0.0],[724.4,0.0],[725.4,3.1],[725.4,13.2],[721.4,21.4],[711.2,29.5],[709.1,41.7],[703.0,47.8],[692.9,47.8],[684.7,56.0],[676.6,58.0],[660.3,48.8],[657.3,26.5],[646.1,16.3],[643.0,2.0]],"h":40},{"poly":[[276.7,91.6],[293.0,92.6],[298.1,108.9],[294.0,121.1],[281.8,135.3],[277.8,178.1],[265.5,222.8],[259.4,228.9],[235.0,239.1],[220.8,238.1],[208.6,229.9],[201.5,215.7],[201.5,160.8],[196.4,154.6],[174.0,144.5],[163.8,134.3],[158.7,122.1],[158.7,109.9],[166.9,99.7],[183.1,99.7],[221.8,124.1],[254.4,99.7],[274.7,93.6]],"h":54},{"poly":[[1355.2,390.7],[1371.5,391.7],[1380.7,403.9],[1378.6,442.6],[1392.9,473.1],[1394.9,489.4],[1390.8,501.6],[1380.7,505.7],[1364.4,490.4],[1354.2,488.4],[1349.1,480.2],[1350.1,476.2],[1338.9,461.9],[1338.9,453.8],[1347.1,445.6],[1338.9,413.1],[1343.0,400.9],[1353.2,392.7]],"h":46}],"lh":{"x":1232.1,"z":99.7,"r":29.5,"kx":1250.4,"kz":145.5},"ref":[[1176.1,911.2],[1197.3,1008.9],[1218.8,1106.6],[1240.3,1204.2],[1262.7,1301.7],[1268.2,1401.4],[1256.0,1500.5],[1219.7,1592.8],[1150.1,1662.6],[1155.0,1760.8],[1076.6,1777.8],[983.6,1741.1],[891.5,1702.0],[809.8,1649.8],[783.6,1553.5],[809.6,1458.2],[842.0,1363.7],[822.4,1268.5],[836.1,1171.7],[870.3,1077.8],[880.5,979.4],[842.0,888.2],[765.8,824.8],[669.5,800.7],[570.0,809.6],[471.1,823.9],[375.6,853.1],[281.3,886.0],[185.4,865.8],[120.5,792.9],[169.7,722.4],[141.0,627.1],[173.6,535.5],[263.1,493.1],[341.6,432.6],[398.0,350.1],[475.2,288.9],[573.2,281.8],[668.0,313.5],[766.7,324.2],[861.0,292.8],[949.1,245.4],[1039.7,203.4],[1054.0,249.4],[1009.9,334.9],[1078.3,399.4],[1126.2,485.7],[1134.1,574.6],[1118.6,658.2],[1141.3,755.0]],"seaY":-2,"plateau":44,"fall":120,"margin":900,"scrub":4500,"clusters":[[569.8,1200.6,71,14,0.3],[610.5,590.1,61,11,-0.2],[335.8,1058.1,46,8,0.5],[610.5,1627.9,51,8,0.1],[864.8,569.8,46,8,0.4]],"pines":[[1210.7,305.2,4,40],[712.2,915.7,3,80],[407.0,712.2,4,70],[966.6,457.8,3,60],[508.7,1424.4,4,100]]}, trees: 0, hills: 0,/*/COAST*/ pitBuilding: { from: 4889.3, to: 250.0 }, grandstands: [{at:73.0,side:-1,len:407,dist:10.0},{at:765.0,side:1,len:78,dist:9.7},{at:870.0,side:-1,len:78,dist:16.2},{at:1060.3,side:-1,len:89,dist:9.3},{at:2126.7,side:1,len:163,dist:14.8},{at:2743.9,side:-1,len:65,dist:14.6},{at: 2841.1,side: -1,len: 88,dist: 9.8},{at: 2912.3,side: -1,len: 72,dist: 7.7},{at:4133.1,side:-1,len:117,dist:9.8}] },
     // ---- /SCN ----
   },
   tempesta: {
@@ -58446,7 +58446,7 @@ const TRACK_DATA = {
     description: 'An evening race on the hills above the Italian coast, from sunset into the night: the climb to Il Tramonto, the Chicane della Costa, down past Vesuvio Bend and through Il Serpente to Ponte Curva under the bridge, the long Vento Lungo straight, the steep climb to La Svolta dei Napoli and over the bridge from Luce back to the pits.',
     // ---- SCN: theme + scenery (the scenery helper's region; entry.py keeps it) ----
     theme: { timeOfDay: 'dusk', palette: 'dusk', water: '#1d4f73', hill: '#7b8456', hillDark: '#59613e', concreteWalls: [{from:1280.5,to:1720.2,side:1},{from:1750.2,to:2021.4,side:-1},{from:1871.7,to:2021.4,side:1},{from:3974.4,to:4199.6,side:0}] },   // (concrete: the orange walls, the bridge's parapets, the raised road, Ponte Curva's cutting)
-    scenery: { grandstands: [{at: 290.0,side: -1,len: 69,dist: 6},{at: 421.5,side: -1,len: 82,dist: 6},{at: 390.7,side: -1,len: 57,dist: 14},{at: 838.2,side: -1,len: 174,dist: 14},{at:1006.0,side:-1,len:67,dist:14.0},{at:1101.0,side:-1,len:91,dist:14.0},{at:2882.6,side:1,len:217,dist:14.0},{at: 3071.4,side: 1,len: 68,dist: 6},{at:3081.4,side:1,len:107,dist:14.0},{at:3291.6,side:1,len:100,dist:5.0},{at:3532.6,side:-1,len:142,dist:14.0},{at:3815.4,side:1,len:121,dist:14.0},{at:4252.6,side:-1,len:137,dist:14.0},{at:4638.6,side:1,len:255,dist:4.0},{at:4670.6,side:-1,len:260,dist:14.0}], trees: 0.35, treeKinds: ['pine', 'cypress', 'broadleaf'], hills: 0.6, buildings: 0.15, lights: true, marshalPosts: true, wallLines: [{ pts: [[4019.6,-4.9,116.6],[4019.6,-3.5,103.8],[4019.6,-2.0,90.9],[4019.6,-0.6,78.0],[4019.6,0.9,65.2],[4019.6,2.3,52.3],[4019.6,3.8,39.5],[4019.6,5.2,26.6]], h: 1.3 }], farSea: { deg: 185, half: 55, r0: -350 }, volcano: { deg: 8, dist: 2100, h: 560, r: 1800 } },   // (farSea: the bay to the west; volcano: Vesuvius on the eastern horizon)
+    scenery: { grandstands: [{at:335.0,side:-1,len:153,dist:14.0},{at: 391.5,side: -1,len: 30,dist: 6},{at: 470.7,side: -1,len: 127,dist: 12},{at:828.2,side:-1,len:174,dist:14.0},{at:1006.0,side:-1,len:67,dist:14.0},{at:1101.0,side:-1,len:91,dist:14.0},{at:2882.6,side:1,len:217,dist:14.0},{at: 3009.4,side: 1,len: 34,dist: 14},{at:3081.4,side:1,len:107,dist:14.0},{at:3291.6,side:1,len:100,dist:5.0},{at:3532.6,side:-1,len:142,dist:14.0},{at:3815.4,side:1,len:121,dist:14.0},{at:4252.6,side:-1,len:137,dist:14.0},{at:4638.6,side:1,len:255,dist:4.0},{at:4670.6,side:-1,len:260,dist:14.0}], trees: 0.35, treeKinds: ['pine', 'cypress', 'broadleaf'], hills: 0.6, buildings: 0.15, lights: true, marshalPosts: true, wallLines: [{ pts: [[4019.6,-4.9,116.6],[4019.6,-3.5,103.8],[4019.6,-2.0,90.9],[4019.6,-0.6,78.0],[4019.6,0.9,65.2],[4019.6,2.3,52.3],[4019.6,3.8,39.5],[4019.6,5.2,26.6]], h: 1.3 }], farSea: { deg: 185, half: 55, r0: -350 }, volcano: { deg: 8, dist: 2100, h: 560, r: 1800 } },   // (farSea: the bay to the west; volcano: Vesuvius on the eastern horizon)
     // ---- /SCN ----
   },
   kawasemi: {
@@ -64906,19 +64906,63 @@ const RaceControl = (() => {
     J.ci = J.P.length - 1;
     return J;
   }
-  // a tractor (permanent circuits) from its depot: the service road behind the wall to the gap, through it to the car, lifts
-  // it (n 2 marshals strap it), backs out through the gap with it, sets it down behind the wall, drives back
+  // The telehandler's boom (rc_models defTractor: pivot (-1.75, 2.15), jib tip (5.3, -0.36) in the boom's frame, the telescope
+  // out e m along it, the straps' feet 0.9 m under the tip). armFor(e, y): the boom angle that puts the strap feet at height y;
+  // armX / armY: the tip ahead of / above the tractor's origin. (User 2026-11-26: "the car doesn't go into the lifting arm, the
+  // truck drives into the race car" - before: the tractor stopped 3.6 m from the car's centre (its bumper 2.4 m ahead of its
+  // own: up to 1.6 m into the car), the car rode 3.6 m ahead 0.5 m up while the straps hung 3.2 m ahead, 1.8 m above it.)
+  // Now: the tractor stops with its bumper TOW_CLR clear of the car turned any way (TOW_R ahead), the telescope runs out over
+  // the car, the straps go down onto it (CAR_TOP), the marshals strap it, the boom lifts it TOW_LIFT m and it turns to hang
+  // square to the arm; set down, unstrapped, the straps lifted clear and the telescope pulled in.
+  const ARM_P = [-1.75, 2.15], ARM_T = [5.3, -0.36], ARM_DROP = 0.9, CAR_TOP = 0.95, TOW_LIFT = 0.6, ARM_REST = -0.16, ARM_TRAV = 0.15, TOW_CLR = 0.35;
+  const armFor = (e, y) => { const L = ARM_T[0] + e, r = Math.hypot(L, ARM_T[1]); return Math.atan2(-ARM_T[1], L) + Math.asin(clamp((y + ARM_DROP - ARM_P[1]) / r, -1, 1)); };
+  const armX = (e, a) => ARM_P[0] + (ARM_T[0] + e) * Math.cos(a) - ARM_T[1] * Math.sin(a);
+  const armY = (e, a) => ARM_P[1] + (ARM_T[0] + e) * Math.sin(a) + ARM_T[1] * Math.cos(a);
+  const TOW_R = 2.42 + ((typeof CFG !== 'undefined' && CFG.car && CFG.car.length) || 5.6) / 2 + TOW_CLR;   // (the bumper at 2.42 m + half a car + clear)
+  const TOW_E = (() => { let e = 0; for (let k = 0; k < 6; k++) e += TOW_R - armX(e, armFor(e, CAR_TOP)); return e; })();
+  const ARM_ON = armFor(TOW_E, CAR_TOP), ARM_UP = armFor(TOW_E, CAR_TOP + TOW_LIFT);
+  const sm01 = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+  // the rig at a tow job's phase i, u: { a (boom angle), e (telescope), lift (the car's), on (0..1: the car on the straps / turned) }
+  const _rig = { a: 0, e: 0, lift: 0, on: 0 };
+  function towRig(J, i, u, out) {
+    const P = J.P, hk = J.hk != null ? J.hk : (J.hk = P.findIndex(q => q[5] === M.HOOK)), q = P[Math.min(i, P.length - 1)], m = i < P.length ? q[5] : -1;
+    out.a = ARM_TRAV; out.e = 0; out.lift = 0; out.on = 0;
+    if (i === 0 && m === M.WAIT) { out.a = ARM_REST + (ARM_TRAV - ARM_REST) * sm01(u); return out; }   // (at the depot: up off its rest)
+    if (i < hk) return out;
+    if (i === hk) {   // HOOK: telescope out (0-0.2), straps down onto the car (0.2-0.35), strapped (-0.7), lifted + turned (0.7-1)
+      out.e = TOW_E * sm01(u / 0.2);
+      out.a = u < 0.2 ? ARM_TRAV : u < 0.35 ? ARM_TRAV + (ARM_ON - ARM_TRAV) * sm01((u - 0.2) / 0.15) : u < 0.7 ? ARM_ON : ARM_ON + (ARM_UP - ARM_ON) * sm01((u - 0.7) / 0.3);
+      if (u >= 0.7) { out.lift = Math.max(0, armY(out.e, out.a) - ARM_DROP - CAR_TOP); out.on = sm01((u - 0.7) / 0.3); }
+      return out;
+    }
+    if (i <= J.ci) { out.e = TOW_E; out.a = ARM_UP; out.lift = TOW_LIFT; out.on = 1; return out; }   // (carried)
+    if (i === J.ci + 1) {   // set down (0-0.45), unstrapped, straps up clear (0.45-0.65), telescope in (0.65-1)
+      out.e = TOW_E * (1 - sm01((u - 0.65) / 0.35));
+      out.a = u < 0.45 ? ARM_UP + (ARM_ON - ARM_UP) * sm01(u / 0.45) : u < 0.65 ? ARM_ON + (ARM_TRAV - ARM_ON) * sm01((u - 0.45) / 0.2) : ARM_TRAV;
+      out.lift = u < 0.45 ? Math.max(0, armY(TOW_E, out.a) - ARM_DROP - CAR_TOP) : 0; out.on = 1;
+      return out;
+    }
+    if (m === M.ROAD && i === P.length - 1) out.a = ARM_TRAV + (ARM_REST - ARM_TRAV) * sm01((u - 0.85) / 0.15);   // (back on its rest at the depot)
+    return out;
+  }
+  // a tractor (permanent circuits) from its depot: the service road behind the wall to the gap, through it, straight in to TOW_R
+  // short of the car, lifts it (n 2 marshals strap it), backs out through the gap with it, sets it down behind the wall, drives back
   function planTow(T, Lo, race, rc, o, c, di, gi) {
     const D = Lo.dep[di], g = Lo.posts[gi], sd = g.side, gs = g.gs, wd = g.gv, r = rnd(race, o.id, 33 + di), r2 = rnd(race, o.id, 34);
     const J = newJob(race, rc, o, KJ.tow, c, sd, gi, di, c.h), cs = c.s, cd = c.d || 0, mouth = sd * (wd - 1.4), road = sd * (wd + ROAD), beh = sd * (wd + 7.5);
-    const ds = T.deltaS(gs, cs), dd = cd - mouth, l = Math.max(0.1, Math.hypot(ds, dd)), as = gs + ds * Math.max(0, l - 3.6) / l, ad = mouth + dd * Math.max(0, l - 3.6) / l;
     J.n = 2; J.vh = headSD(T, gs, mouth, cs, cd, trackH(T, gs));
-    let bs = gs, bd = beh;   // (the tractor backs out until the car on its arm (3.6 m ahead) is on the post's car spot)
-    if (g.cd != null) { const w = T.toWorld(gs, sd * g.cd), q = T.project(w.x - Math.cos(J.vh) * 3.6, w.z - Math.sin(J.vh) * 3.6, T.idxAt(gs)); bs = q.s; bd = q.d; }
+    // (the stop: TOW_R back from the car along the heading from the mouth (the hook then over its centre) - behind the mouth when the car is nearer)
+    const cw = T.toWorld(cs, cd), aq = T.project(cw.x - Math.cos(J.vh) * TOW_R, cw.z - Math.sin(J.vh) * TOW_R, T.idxAt(cs)), as = aq.s, ad = aq.d;
+    const lm = Math.hypot(T.deltaS(gs, cs), cd - mouth);
+    let bs = gs, bd = beh;   // (the tractor backs out until the car on its arm (TOW_R ahead) is on the post's car spot)
+    if (g.cd != null) { const w = T.toWorld(gs, sd * g.cd), q = T.project(w.x - Math.cos(J.vh) * TOW_R, w.z - Math.sin(J.vh) * TOW_R, T.idxAt(gs)); bs = q.s; bd = q.d; }
     ph(J, M.WAIT, 3 + 3 * r, D.s, D.d);   // (2026-10-25 faster: was 6-12 s to start, 18-28 s hooking, 8 s setting down)
     if (D.side !== sd) go(T, J, M.GO, MV.off, 2, D.s, D.d, D.s, road);   // (the depot across the track: over it)
     ph(J, M.ROAD, Math.abs(T.deltaS(D.s, gs)) / MV.road + 1.5, D.s, ROAD, gs, ROAD);
-    go(T, J, M.GO, MV.off, 2, gs, road, as, ad);
+    // (the drive in takes as long as before the 2026-11-26 rig - to 3.6 m short of the car in one leg - so the clear-up times stay as tuned)
+    const ds0 = T.deltaS(gs, cs), dd0 = cd - mouth, l0 = Math.max(0.1, Math.hypot(ds0, dd0)), tIn = sdist(T, gs, road, gs + ds0 * Math.max(0, l0 - 3.6) / l0, mouth + dd0 * Math.max(0, l0 - 3.6) / l0) / MV.off + 2;
+    if (lm > TOW_R + 1) { const a1 = sdist(T, gs, road, gs, mouth), a2 = sdist(T, gs, mouth, as, ad), f = a1 / Math.max(0.1, a1 + a2); ph(J, M.GO, Math.round(tIn * f * 100) / 100, gs, road, gs, mouth); ph(J, M.GO, Math.round(tIn * (1 - f) * 100) / 100, gs, mouth, as, ad); }   // (through the mouth, then straight at the car)
+    else ph(J, M.GO, Math.round(tIn * 100) / 100, gs, road, as, ad);
     ph(J, M.HOOK, 12 + 6 * r2, as, ad);
     go(T, J, M.TOW, MV.tow, 1.5, as, ad, bs, bd);
     J.ci = J.P.length - 1;
@@ -64927,25 +64971,98 @@ const RaceControl = (() => {
     ph(J, M.ROAD, Math.abs(T.deltaS(gs - 12, D.s)) / MV.road + 2, gs - 12, ROAD, D.s, ROAD);
     return J;
   }
-  // a crane truck (street circuits): along the service road to the car, outriggers + boom, marshals strap it (n 2), lifts it
-  // over the wall (set down 8 m along, behind the wall), stows, drives back
+  // The crane truck's rig (rc_models defCrane): the superstructure slews on the ring (x -1.9 on the carrier), the boom's pivot is at
+  // (-1.4, 3.0, 0.3) on it, its tip (7.62 + e, -0.28) in the boom's frame (e: the telescope, 0..CR_EMAX), elevation g = setBoom - 0.5;
+  // the hook block hangs on L m of cable, the straps' feet CR_DROP under the cable's end. craneAim: the slew / boom / telescope that
+  // put the tip over a world point with the tip at height H (clamped to the boom's reach), and where the tip then is.
+  // (User 2026-11-26: "nothing lines up" - before, the boom only went up and down along the truck while the car flew on its own
+  // arc, twice: its HOOK and LIFT phases both moved it from where it stopped.)
+  const CR_X = -1.9, CR_PV = [-1.4, 3.0, 0.3], CR_T = [7.62, -0.28], CR_EMAX = 5, CR_DROP = 1.3, CR_LIFT = 4.5, CR_STOW = 0.4;
+  const CR_H = CAR_TOP + CR_LIFT + CR_DROP + 0.5;   // (the tip's working height: the car lifted CR_LIFT on >= 0.5 m of cable)
+  const CR_RMAX = (() => { const A = CR_T[0] + CR_EMAX, Y = CR_H - CR_PV[1]; return Math.sqrt(Math.max(0, A * A + CR_T[1] * CR_T[1] - Y * Y)) + CR_PV[0] - 0.2; })();
+  function craneAim(ax, az, h, px, pz, H, out) {
+    const dx = px - ax, dz = pz - az, rho = Math.hypot(dx, dz), xs = Math.sqrt(Math.max(0.01, rho * rho - CR_PV[2] * CR_PV[2])), X = xs - CR_PV[0];
+    let Y = H - CR_PV[1], A = Math.sqrt(Math.max(0, X * X + Y * Y - CR_T[1] * CR_T[1]));
+    if (A < CR_T[0]) { A = CR_T[0]; Y = Math.sqrt(Math.max(0, A * A + CR_T[1] * CR_T[1] - X * X)); }
+    else if (A > CR_T[0] + CR_EMAX) { A = CR_T[0] + CR_EMAX; Y = Math.sqrt(Math.max(0, A * A + CR_T[1] * CR_T[1] - X * X)); }
+    const g = Math.atan2(Y, X) + Math.atan2(-CR_T[1], A);
+    out.slew = wrapA(h + Math.atan2(CR_PV[2], xs) - Math.atan2(dz, dx)); out.b = g + 0.5; out.e = A - CR_T[0];
+    craneTip(ax, az, h, out.slew, out.b, out.e, out); return out;
+  }
+  function craneTip(ax, az, h, slew, b, e, out) {   // -> out.tx, out.tz, out.ty: the boom's tip in the world
+    const g = b - 0.5, A = CR_T[0] + e, x = CR_PV[0] + A * Math.cos(g) - CR_T[1] * Math.sin(g), y = CR_PV[1] + A * Math.sin(g) + CR_T[1] * Math.cos(g), z = CR_PV[2];
+    const mx = x * Math.cos(slew) + z * Math.sin(slew), mz = -x * Math.sin(slew) + z * Math.cos(slew);
+    out.tx = ax + mx * Math.cos(h) - mz * Math.sin(h); out.tz = az + mx * Math.sin(h) + mz * Math.cos(h); out.ty = y; return out;
+  }
+  // the stance (where it stands for the lift: its WORK phase) -> the slewing axis and heading, cached on the job (recomputed on clients)
+  function craneStance(T, J) {
+    if (J._cr) return J._cr;
+    const iW = J.P.findIndex(q => q[5] === M.WORK), iL = J.P.findIndex(q => q[5] === M.LIFT), p = { s: 0, d: 0, h: 0 };
+    leadAt(T, J, iW, 0, p);
+    const w = T.toWorld(p.s, p.d), ax = w.x + Math.cos(p.h) * CR_X, az = w.z + Math.sin(p.h) * CR_X;
+    const c = T.toWorld(J.cs, J.cd), f = T.toWorld(J.fs, J.fd), C = craneAim(ax, az, p.h, c.x, c.z, CR_H, {}), F = craneAim(ax, az, p.h, f.x, f.z, CR_H, {});
+    return (J._cr = { ax, az, h: p.h, iW, iH: J.P.findIndex(q => q[5] === M.HOOK), iL, C, F });
+  }
+  // the rig at a lift job's phase i, u: { slew, b, e, L (cable), lift (the car's), on (0..1 the car on the hook / its turn), x, z (the
+  // hook over the ground), car (1: the car hangs from it) }
+  const _crg = { slew: 0, b: 0.5, e: 0, L: CR_STOW, lift: 0, on: 0, x: 0, z: 0, car: 0, tx: 0, tz: 0, ty: 0 };
+  const lerpA = (a, b, w) => a + wrapA(b - a) * w;
+  function craneRig(T, J, i, u, out) {
+    const S = craneStance(T, J), C = S.C, F = S.F;
+    out.slew = 0; out.b = 0.5; out.e = 0; out.L = CR_STOW; out.lift = 0; out.on = 0; out.car = 0;
+    const toward = (P, w) => { out.slew = lerpA(0, P.slew, w); out.b = 0.5 + (P.b - 0.5) * w; out.e = P.e * w; };
+    const Lto = P => P.ty - CR_DROP - CAR_TOP;   // (the cable that puts the straps' feet on the car's top under the tip)
+    if (i < S.iW || i >= J.P.length) return out;
+    if (i === S.iW) { toward(C, sm01((u - 0.3) / 0.45)); out.L = CR_STOW + (Lto(C) - CR_STOW) * sm01((u - 0.75) / 0.25); }
+    else if (i === S.iH) { toward(C, 1); out.L = Lto(C); }
+    else if (i === S.iL) {   // hoist (0-0.3), swing to the set-down (0.3-0.7), lower (0.7-1)
+      out.car = 1;
+      if (u < 0.3) { toward(C, 1); out.L = Lto(C) - CR_LIFT * sm01(u / 0.3); }
+      else if (u < 0.7) {
+        const w = sm01((u - 0.3) / 0.4), ca = Math.atan2(C.tz - S.az, C.tx - S.ax), fa = Math.atan2(F.tz - S.az, F.tx - S.ax);
+        const r = Math.hypot(C.tx - S.ax, C.tz - S.az) * (1 - w) + Math.hypot(F.tx - S.ax, F.tz - S.az) * w, a = lerpA(ca, fa, w);
+        craneAim(S.ax, S.az, S.h, S.ax + Math.cos(a) * r, S.az + Math.sin(a) * r, CR_H, out); out.L = out.ty - CR_DROP - CAR_TOP - CR_LIFT; out.on = w;
+      } else { toward(F, 1); out.L = Lto(F) - CR_LIFT * (1 - sm01((u - 0.7) / 0.3)); out.on = 1; }
+    } else if (i === S.iL + 1) {   // unhooked (the straps up off it, 0-0.25), stowed (0.25-0.8)
+      toward(F, 1 - sm01((u - 0.25) / 0.55)); out.L = Math.max(CR_STOW, Lto(F) - 1.2 * sm01(u / 0.25)); out.on = 1;
+    }
+    craneTip(S.ax, S.az, S.h, out.slew, out.b, out.e, out);
+    out.x = out.tx; out.z = out.tz; out.L = Math.max(0.05, out.L);   // (the cable can't be shorter: a car beyond the boom's best reach rises less)
+    if (out.car) out.lift = Math.max(0, out.ty - out.L - CR_DROP - CAR_TOP);
+    return out;
+  }
+  // a crane truck (street circuits): along the service road to the car, outriggers, slews and runs the boom out over the car, the
+  // hook down, marshals strap it (n 2), hoists it over the wall, swings it to the set-down spot behind the wall within the boom's
+  // reach (behind the crane, else ahead of it), lowers it, stows, drives back
   function planLift(T, Lo, race, rc, o, c, di) {
     const D = Lo.dep[di], sd = D.side, cs = c.s, cd = c.d || 0, wd = gwAt(T, cs, sd), r = rnd(race, o.id, 35 + di), r2 = rnd(race, o.id, 36), r3 = rnd(race, o.id, 37);
     const J = newJob(race, rc, o, KJ.lift, c, sd, -1, di, c.h), away = T.deltaS(D.s, cs) >= 0 ? 1 : -1;
     let fs = cs + 8 * away, fd = sd * (gwAt(T, fs, sd) + 3.4);
-    lift: for (const ex of [0, 1.5, 3, 5]) for (const k of [8, 11, 14, -8, -11, 18, 24, -14, -18]) {   // (set down clear of every part of the track: fpClear)
-      const q = T.wrapS(cs + k * away), w = T.toWorld(q, sd * (wallD(T, q, sd) + 3.4 + ex));
-      if (fpClear(T, w.x, w.z, trackH(T, q), 2.75, 0.98)) { fs = cs + k * away; fd = sd * (wallD(T, q, sd) + 3.4 + ex); break lift; }
-    }
+    { const st = T.toWorld(cs, sd * (wd + ROAD)), hh = trackH(T, cs) + (away < 0 ? Math.PI : 0), ax = st.x + Math.cos(hh) * CR_X, az = st.z + Math.sin(hh) * CR_X;
+      let ok = false;
+      lift0: for (const ex of [0, 1.5, 3]) for (const k of [-7.8, -9, -10.5, 8.2, 9.5, -12, 11, -14, 13]) {   // (clear of the track (fpClear) and within the boom's reach)
+        const q = T.wrapS(cs + k * away), w = T.toWorld(q, sd * (wallD(T, q, sd) + 3.4 + ex));
+        if (Math.hypot(w.x - ax, w.z - az) <= CR_RMAX && fpClear(T, w.x, w.z, trackH(T, q), 2.75, 0.98)) { fs = cs + k * away; fd = sd * (wallD(T, q, sd) + 3.4 + ex); ok = true; break lift0; }
+      }
+      if (!ok) lift: for (const ex of [0, 1.5, 3, 5]) for (const k of [8, 11, 14, -8, -11, 18, 24, -14, -18]) {   // (none in reach: as before - the hook goes as far as it can)
+        const q = T.wrapS(cs + k * away), w = T.toWorld(q, sd * (wallD(T, q, sd) + 3.4 + ex));
+        if (fpClear(T, w.x, w.z, trackH(T, q), 2.75, 0.98)) { fs = cs + k * away; fd = sd * (wallD(T, q, sd) + 3.4 + ex); break lift; }
+      } }
     J.n = 2; J.hf = nearH(c.h, trackH(T, fs)); J.fs = fs; J.fd = fd;
+    // (the stance: on the service road; a car beyond the boom's reach from there - the crane pulls in to just behind the wall, angled in
+    // over 12 m so it still faces along the road, and back out after)
+    const hh = trackH(T, cs) + (away < 0 ? Math.PI : 0), reach = dd => { const st = T.toWorld(cs, sd * (wd + dd)), cw = T.toWorld(cs, cd); return Math.hypot(cw.x - st.x - Math.cos(hh) * CR_X, cw.z - st.z - Math.sin(hh) * CR_X); };
+    const sdd = reach(ROAD) > CR_RMAX - 0.3 ? Math.min(ROAD, 2.5) : ROAD, stD = sd * (wd + sdd), pin = sdd < ROAD ? 12 : 0;
     ph(J, M.WAIT, 3 + 3 * r, D.s, D.d);   // (2026-10-25 faster: was 6-12 s to start, outriggers 20-30 s, strapping 20-30 s, the lift 22 s, stowing 20 s)
-    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, cs)) / MV.crane + 2, D.s, ROAD, cs, ROAD);
-    ph(J, M.WORK, 12 + 6 * r2, cs, sd * (wd + ROAD));
-    ph(J, M.HOOK, 12 + 6 * r3, cs, sd * (wd + ROAD));
-    ph(J, M.LIFT, 16, cs, sd * (wd + ROAD));   // (the crane stands; the car flies J.cs, J.cd -> J.fs, J.fd)
+    ph(J, M.ROAD, Math.abs(T.deltaS(D.s, cs - pin * away)) / MV.crane + 2, D.s, ROAD, cs - pin * away, ROAD);
+    if (pin) go(T, J, M.GO, MV.off, 1, cs - pin * away, sd * (gwAt(T, cs - pin * away, sd) + ROAD), cs, stD);
+    ph(J, M.WORK, 12 + 6 * r2, cs, stD);
+    ph(J, M.HOOK, 12 + 6 * r3, cs, stD);
+    ph(J, M.LIFT, 16, cs, stD);   // (the crane stands; the car hangs from its hook: craneRig)
     J.ci = J.P.length - 1;
-    ph(J, M.WORK, 12, cs, sd * (wd + ROAD));
-    ph(J, M.ROAD, Math.abs(T.deltaS(cs, D.s)) / MV.crane + 3, cs, ROAD, D.s, ROAD);
+    ph(J, M.WORK, 12, cs, stD);
+    if (pin) go(T, J, M.GO, MV.off, 1, cs, stD, cs + pin * away, sd * (gwAt(T, cs + pin * away, sd) + ROAD));
+    ph(J, M.ROAD, Math.abs(T.deltaS(cs + pin * away, D.s)) / MV.crane + 3, cs + pin * away, ROAD, D.s, ROAD);
     return J;
   }
   // marshals (n 2) collect the zone's pieces in one trip and carry them back (user 2026-10-25; was one by one, 1.5-2.5 s each, then
@@ -65142,13 +65259,24 @@ const RaceControl = (() => {
     out.k = i > last ? 2 : 1;
     const k = Math.min(i, last), v = i > last ? 1 : u, q = P[k], m = q[5], f = sum > 0 ? done / sum : 1;
     if (J.k === KJ.push) { out.s = q[1] + T.deltaS(q[1], q[3]) * v; out.d = q[2] + (q[4] - q[2]) * v; out.h = J.h0 + wrapA(J.hf - J.h0) * Math.min(1, f * 1.4); return out; }
-    if (J.k === KJ.lift) { out.s = J.cs + T.deltaS(J.cs, J.fs) * v; out.d = J.cd + (J.fd - J.cd) * v; out.h = J.h0 + wrapA(J.hf - J.h0) * v; out.lift = 4.5 * Math.sin(Math.PI * v) + (i > last ? 0 : 0.3 * v); return out; }
-    // tow: on the arm 3.6 m ahead of the tractor (HOOK: from where it stood onto the arm), lifted 0.5 m; set down after
+    if (J.k === KJ.lift) {   // (under the crane's hook from the hoist on (craneRig; before: where it stopped), set down where the hook leaves it)
+      const S = craneStance(T, J);
+      if (i < S.iL) { out.s = J.cs; out.d = J.cd; out.h = J.h0; return out; }   // (being strapped: held where it stopped, as before)
+      craneRig(T, J, Math.min(i, S.iL), i > S.iL ? 1 : u, _crg);
+      let x = _crg.x, z = _crg.z;
+      if (i === S.iL && u < 0.3) { const c0 = T.toWorld(J.cs, J.cd), w = 1 - sm01(u / 0.3); x += (c0.x - S.C.tx) * w; z += (c0.z - S.C.tz) * w; }   // (out of the hook's reach: drawn in to it as it rises)
+      const pq = T.project(x, z, T.idxAt(J.cs));
+      out.s = pq.s; out.d = pq.d; out.h = J.h0 + wrapA(J.hf - J.h0) * _crg.on; out.lift = i > S.iL ? 0 : _crg.lift; return out;
+    }
+    // tow: under the straps at the boom's tip (towRig: HOOK - where it stood until the straps take it, then lifted and turned square
+    // to the arm), carried TOW_LIFT m up, set down after (the set-down phase: lowered with the boom)
+    const iR = i > last ? Math.min(i, last + 1) : i, uR = i > last + 1 ? 1 : u;
+    towRig(J, iR, uR, _rig);
+    if (m === M.HOOK && i <= last && !_rig.lift && _rig.on <= 0) { out.s = J.cs; out.d = J.cd; out.h = J.h0; return out; }   // (not on the straps yet: held where it stopped)
     leadAt(T, J, k, v, _ld);
-    const a = T.toWorld(_ld.s, _ld.d), x = a.x + Math.cos(J.vh) * 3.6, z = a.z + Math.sin(J.vh) * 3.6, pq = T.project(x, z, T.idxAt(_ld.s));
-    if (m === M.HOOK) { const w = Math.min(1, v * 1.5); out.s = J.cs + T.deltaS(J.cs, pq.s) * w; out.d = J.cd + (pq.d - J.cd) * w; out.h = J.h0 + wrapA(J.vh - J.h0) * w; out.lift = 0.5 * w; return out; }
-    out.s = pq.s; out.d = pq.d; out.h = J.vh; out.lift = 0.5;
-    if (i > last) { const w = i === last + 1 ? u : 1; out.lift = 0.5 * (1 - w); }
+    const R = armX(_rig.e || TOW_E, _rig.a), a = T.toWorld(_ld.s, _ld.d), x = a.x + Math.cos(J.vh) * R, z = a.z + Math.sin(J.vh) * R, pq = T.project(x, z, T.idxAt(_ld.s));
+    out.s = pq.s; out.d = pq.d; out.h = J.h0 + wrapA(J.vh - J.h0) * (m === M.HOOK && i <= last ? _rig.on : 1); out.lift = _rig.lift;
+    if (i > last + 1) out.lift = 0;
     return out;
   }
   function placeCar(T, c, p) {
@@ -65270,7 +65398,7 @@ const RaceControl = (() => {
   const _act = [];
   function actor(out, k, x, z, h, a, s, d, dep, post, on) {
     const o = _act[out.length] || (_act[out.length] = { k: 0, x: 0, z: 0, h: 0, a: 0, y: 0, s: 0, d: 0, dep: -1, post: -1, on: 0, t0: 0 });
-    o.k = k; o.x = x; o.z = z; o.h = h; o.a = a; o.y = 0; o.s = s; o.d = d; o.dep = dep; o.post = post; o.on = on; o.t0 = _jt0; o.dr = 0; out.push(o); return o;
+    o.k = k; o.x = x; o.z = z; o.h = h; o.a = a; o.y = 0; o.s = s; o.d = d; o.dep = dep; o.post = post; o.on = on; o.t0 = _jt0; o.dr = 0; o.arm = null; o.ext = 0; o.slew = null; o.boom = 0.5; o.cable = CR_STOW; out.push(o); return o;
   }
   let _jt0 = 0;   // (the job being drawn: its start, the actors' t0)
   const VK = { tractor: 1, crane: 2, sweeper: 3, truck: 4 };
@@ -65294,10 +65422,12 @@ const RaceControl = (() => {
       if (J.dep >= 0) {
         used[J.dep] = 1;
         let a = 0;
-        if (J.k === KJ.tow) a = m === M.HOOK ? Math.min(1, _ph.u * 1.5) : m === M.TOW ? 1 : (m === M.WORK && _ph.i > J.ci) ? 1 - _ph.u : 0;
+        if (J.k === KJ.tow) towRig(J, _ph.i, _ph.u, _rig);
         else if (J.k === KJ.lift) a = m === M.WORK ? (_ph.i > J.ci ? 1 - _ph.u : _ph.u * 0.6) : m === M.HOOK ? 0.6 : m === M.LIFT ? 0.6 + 0.4 * Math.sin(Math.PI * _ph.u) : 0;
         else if (J.k === KJ.sweep) a = m === M.GO ? 1 : 0;
         const o = actor(out, VK[Lo.dep[J.dep].kind] || 1, w.x, w.z, h, a, _ld.s, _ld.d, J.dep, -1, 1);
+        if (J.k === KJ.tow) { o.arm = _rig.a; o.ext = _rig.e; }   // (the telehandler: its boom angle (rad) and telescope (m), towRig)
+        if (J.k === KJ.lift) { craneRig(T, J, _ph.i, _ph.u, _crg); o.slew = _crg.slew; o.boom = _crg.b; o.ext = _crg.e; o.cable = _crg.L; }   // (the crane: craneRig)
         if (J.k === KJ.lift && car) o.y = car.rcLift || 0;
       }
       // marshals: their own job (push / pick) or two helping a vehicle while it hooks / lifts the car
@@ -77977,7 +78107,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 18:32';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-26 17:08';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -86033,8 +86163,10 @@ diffuseColor.rgb *= vDb.x > 0.5 ? mix(uStone, uGrey, vDb.y) * (1.0 - 0.4 * uWet)
 //   and per kind:
 //     lamps (safetycar, medicalcar, tractor, crane, sweeper): setLights(on) -> emissive on (steady until tick(t) is called
 //       every frame: strobes ~3 Hz, the medical car's two halves in turn), off = dark lens;
-//     tractor: arm (pivot Group, rotation.z = lift angle, + = tip up), setArm(rad);   crane: boom (pivot), setBoom(rad)
-//       (rest 0.5 = the boom level on its rest); both carry a 'hook' Group at the tip (straps / hook block) kept plumb by the setter;
+//     tractor: arm (pivot Group, rotation.z = lift angle, + = tip up), setArm(rad), setTele(m: the telescope out);   crane: boom
+//       (pivot), setBoom(rad) (rest 0.5 = the boom level on its rest), setBoomTele(m), setCable(m: the hook block's cable), slew
+//       (Group: superstructure + boom), setSlew(rad); both carry a 'hook' Group at the tip (straps / hook block) kept plumb by the setter
+//       (racecontrol towRig / craneRig pose them so the straps' feet sit on the car: 0.9 / 1.3 m under the hook's origin);
 //     sweeper: brush (Mesh, spin about its z axis), setBrush(rad);
 //     marshal: inst = { geometry, material } for an InstancedMesh (the Group holds one Mesh with the same pair); the geometry has
 //       a `limb` attribute (0 torso / head, 1 left leg, 2 right leg, 3 left arm, 4 right arm; left = -z) and limbs = LIMBS
@@ -86791,7 +86923,7 @@ const RCModels = (() => {
 
   // ------------------------------------------------------------------ recovery telehandler: cab on the left, telescopic boom (pivot at the rear), jib + lifting straps
   function defTractor() {
-    const body = G(), glass = G(), trim = G(), rim = G(), lamps = G(), arm = G(), hang = G();
+    const body = G(), glass = G(), trim = G(), rim = G(), lamps = G(), arm = G(), tele = G(), hang = G();
     const O = C(ORG), GR = C('#3a3e44'), K = C(DARK), STL = C(STEEL), Y = C('#f2b01c'), ST = C('#f08a12');
     // chassis, axles, counterweight
     box(trim, GR, -.2, .82, 0, 4.3, .42, .8); box(trim, K, -.2, .58, 0, 3.6, .12, .6);
@@ -86812,11 +86944,13 @@ const RCModels = (() => {
     // boom (pivot x -1.75, y 2.15, z .1): outer box, telescopic inner, head, lift ram, jib with a hook; straps hang (counter-rotated)
     const Z = 0;
     loftX(arm, O, [[-.25, -.24, .24, .2, 9, 9], [3.2, -.22, .2, .19, 9, 9]], 12, { xf: p => [p[0], p[1], p[2] + Z] });
-    loftX(arm, C('#f2f2f0'), [[3.1, -.17, .15, .145, 9, 9], [4.55, -.16, .14, .14, 9, 9]], 12, { xf: p => [p[0], p[1], p[2] + Z] });
+    // (tele: the inner section, head and jib slide out along the boom by setTele(e) (racecontrol towRig: ~2 m over a car); it runs
+    // back to x 0.8 inside the outer box so no gap shows when it is out)
+    loftX(tele, C('#f2f2f0'), [[.8, -.17, .15, .145, 9, 9], [4.55, -.16, .14, .14, 9, 9]], 12, { xf: p => [p[0], p[1], p[2] + Z] });
     cyl(arm, STL, 'z', [0, 0, Z], .14, .14, .52, 12);
-    box(arm, K, 4.62, -.05, Z, .2, .4, .36); for (const sd of [1, -1]) box(arm, GR, 4.75, -.15, Z + sd * .2, .4, .3, .04);
+    box(tele, K, 4.62, -.05, Z, .2, .4, .36); for (const sd of [1, -1]) box(tele, GR, 4.75, -.15, Z + sd * .2, .4, .3, .04);
     ram(arm, [.9, -.6, Z], [1.9, -.22, Z], .08);
-    beam(arm, Y, [4.75, -.1, Z], [5.3, -.2, Z], .14, .14); beam(arm, Y, [5.3, -.2, Z], [5.3, -.32, Z], .1, .1);   // jib
+    beam(tele, Y, [4.75, -.1, Z], [5.3, -.2, Z], .14, .14); beam(tele, Y, [5.3, -.2, Z], [5.3, -.32, Z], .1, .1);   // jib
     const tip = [5.3, -.36, Z];
     // the hanging rig (in its own frame at the jib tip): shackle, hook, two straps to a spreader, four legs
     tube(hang, STL, [[0, 0, 0], [0, -.12, 0]], [.025, .025], 6); box(hang, K, 0, -.2, 0, .12, .12, .06);
@@ -86824,7 +86958,7 @@ const RCModels = (() => {
     for (const sd of [1, -1]) beam(hang, ST, [0, -.33, 0], [sd * .36, -.64, 0], .05, .012);
     beam(hang, K, [-.4, -.66, 0], [.4, -.66, 0], .06, .06);
     for (const sx of [1, -1]) for (const sz of [1, -1]) beam(hang, ST, [sx * .38, -.67, 0], [sx * .44, -.9, sz * .3], .05, .012);
-    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['lamp', lamps, null]], arm: [arm, [-1.75, 2.15, .1], null, hang, tip] };
+    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['lamp', lamps, null]], arm: [arm, [-1.75, 2.15, .1], null, hang, tip], tele: [tele] };
   }
 
   // a truck cab: rounded box x0..x1, roof y, glass on the flat faces (windscreen, side windows), mirrors, step, bumper, grille
@@ -86846,8 +86980,8 @@ const RCModels = (() => {
 
   // ------------------------------------------------------------------ all-terrain mobile crane: 3-axle carrier, front-left cab, turret, oval telescopic boom
   function defCrane() {
-    const body = G(), glass = G(), trim = G(), rim = G(), lamps = G(), boom = G(), hang = G();
-    const O = C(ORG), GR = C('#3a3e44'), K = C(DARK), STL = C(STEEL), Y = C('#f2b01c'), W = C('#e9ebee');
+    const body = G(), glass = G(), trim = G(), rim = G(), lamps = G(), boom = G(), hang = G(), cable = G(), t1 = G(), t2 = G(), sBody = G(), sGlass = G(), sTrim = G();
+    const O = C(ORG), GR = C('#3a3e44'), K = C(DARK), STL = C(STEEL), Y = C('#f2b01c'), W = C('#e9ebee'), ST = C('#f08a12');
     // carrier: frame, side boxes, deck, front cab (left), boom rest (right), outriggers
     box(trim, GR, -.1, 1.0, 0, 8.6, .4, 1.4); box(body, O, -.2, 1.45, 0, 7.4, .18, 2.5);
     for (const sd of [1, -1]) { box(body, O, .43, 1.12, sd * 1.05, 2.55, .38, .4); for (let k = 0; k < 3; k++) box(trim, K, -.4 + k * .85, 1.12, sd * 1.252, .02, .3, .01); }
@@ -86861,27 +86995,35 @@ const RCModels = (() => {
       for (const sd of [1, -1]) { cyl(trim, STL, 'y', [x, .55, sd * 1.15], .09, .09, .5, 10); cyl(trim, K, 'y', [x, .27, sd * 1.15], .22, .22, .05, 14); hazard(trim, x + .23, .7, .94, sd > 0 ? .3 : -1.25, sd > 0 ? 1.25 : -.3, 4, 1); }
     }
     for (const x of [2.85, -1.55, -3.05]) for (const sg of [1, -1]) { wheel(trim, rim, x, .62, .5, sg * 1.24, sg, '#d0d4da', 8); fender(body, GR, x, .62, .72, .25, PI - .25, sg * .7, sg * 1.26, .08); }
-    // superstructure: slewing ring, turret, operator cab (left), counterweight with hazard bars, engine deck
+    // superstructure (slews about the ring's axis x -1.9, z 0: setSlew): slewing ring, turret, operator cab (left), counterweight with
+    // hazard bars, engine deck
     cyl(trim, K, 'y', [-1.9, 1.6, 0], 1.0, 1.0, .12, 18);
-    loftX(body, O, [[-.6, 1.66, 2.5, .8, 8, 8], [-.75, 1.66, 2.65, .85, 8, 8], [-3.6, 1.66, 2.68, .88, 8, 8], [-3.75, 1.66, 2.55, .82, 8, 8]], 16, { xf: p => [p[0], p[1], p[2] + .2] });
-    glassCab(body, glass, trim, -1.95, -.55, -1.25, -.45, 1.7, 2.95, O, { rake: .2 });
-    box(trim, GR, -4.05, 2.15, 0, .55, .9, 2.3); hazard(trim, -4.33, 1.75, 2.55, -1.1, 1.1, 10, -1);
-    for (let k = 0; k < 4; k++) box(trim, K, -3.4 + k * .3, 2.69, .65, .12, .04, .6);
+    loftX(sBody, O, [[-.6, 1.66, 2.5, .8, 8, 8], [-.75, 1.66, 2.65, .85, 8, 8], [-3.6, 1.66, 2.68, .88, 8, 8], [-3.75, 1.66, 2.55, .82, 8, 8]], 16, { xf: p => [p[0], p[1], p[2] + .2] });
+    glassCab(sBody, sGlass, sTrim, -1.95, -.55, -1.25, -.45, 1.7, 2.95, O, { rake: .2 });
+    box(sTrim, GR, -4.05, 2.15, 0, .55, .9, 2.3); hazard(sTrim, -4.33, 1.75, 2.55, -1.1, 1.1, 10, -1);
+    for (let k = 0; k < 4; k++) box(sTrim, K, -3.4 + k * .3, 2.69, .65, .12, .04, .6);
     cyl(lamps, C('#8c5610'), 'y', [3.6, 3.17, -.75], .08, .08, .16, 12); cyl(trim, K, 'y', [3.6, 3.07, -.75], .11, .11, .04, 12);
     cyl(lamps, C('#8c5610'), 'y', [-1.2, 3.12, -.85], .08, .08, .16, 12);
-    // boom (pivot x -3.3, y 3.0, z .3; built along +x, then turned by -0.5 rad: the rest pose (0.5) is level on its rest)
-    const sec = (x0, x1, h0, h1, w0, w1, col) => loftX(boom, col, [[x0, -h0 * .55, h0 * .45, w0, 8, 2.2], [x1, -h1 * .55, h1 * .45, w1, 8, 2.2]], 14);
-    sec(-.3, 4.1, .78, .7, .3, .27, O); sec(3.9, 6.1, .62, .58, .23, .22, O); sec(5.9, 7.35, .5, .46, .18, .17, W);
-    box(boom, K, 7.5, -.05, 0, .35, .52, .4); cyl(boom, STL, 'z', [7.62, -.08, 0], .2, .2, .3, 14); cyl(boom, STL, 'z', [0, 0, 0], .24, .24, .66, 14);
+    // boom (pivot x -3.3, y 3.0, z .3; built along +x, then turned by -0.5 rad: the rest pose (0.5) is level on its rest). Three
+    // sections: the base (fixed), the middle (t1: out e / 2) and the fly + head (t2: out e) - setBoomTele(e); the inner ones run
+    // back to x 1.5 inside the others so no gap shows when they are out (racecontrol craneRig: up to 5 m)
+    const sec = (A, x0, x1, h0, h1, w0, w1, col) => loftX(A, col, [[x0, -h0 * .55, h0 * .45, w0, 8, 2.2], [x1, -h1 * .55, h1 * .45, w1, 8, 2.2]], 14);
+    sec(boom, -.3, 4.1, .78, .7, .3, .27, O); sec(t1, 1.5, 6.1, .62, .58, .23, .22, O); sec(t2, 1.5, 7.35, .5, .46, .18, .17, W);
+    box(t2, K, 7.5, -.05, 0, .35, .52, .4); cyl(t2, STL, 'z', [7.62, -.08, 0], .2, .2, .3, 14); cyl(boom, STL, 'z', [0, 0, 0], .24, .24, .66, 14);
     for (const sd of [1, -1]) box(boom, K, -.05, -.25, sd * .33, .5, .55, .04);
     ram(boom, [2.0, -.42, 0], [1.1, -1.2, 0], .14);
-    rotZ(boom, -0.5);
+    rotZ(boom, -0.5); rotZ(t1, -0.5); rotZ(t2, -0.5);
     const c5 = Math.cos(-.5), s5 = Math.sin(-.5), tip = [7.62 * c5 + .28 * s5, 7.62 * s5 - .28 * c5, 0];
-    // hook block (hangs plumb from the head sheave): cables, sheave block, hook
-    cyl(hang, K, 'y', [-.06, -.45, 0], .012, .012, .9, 5); cyl(hang, K, 'y', [.06, -.45, 0], .012, .012, .9, 5);
-    box(hang, Y, 0, -1.05, 0, .36, .42, .26); cyl(hang, K, 'z', [0, -.95, 0], .15, .15, .28, 12); box(hang, K, 0, -1.3, 0, .1, .1, .1);
-    tube(hang, STL, [[0, -1.35, 0], [0, -1.48, 0], [.06, -1.56, 0], [.12, -1.5, 0]], [.035, .035, .03, .025], 7);
-    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['lamp', lamps, null]], boom: [boom, [-3.3, 3.0, .3], null, hang, tip] };
+    // the hoist cables (unit length down from the sheave: setCable(L) stretches them) and, at their end, the hook block, the hook,
+    // two slings to a spreader bar and four lifting straps whose feet are 1.3 m under the cables' end (they go round the car)
+    cyl(cable, K, 'y', [-.06, -.5, 0], .012, .012, 1, 5); cyl(cable, K, 'y', [.06, -.5, 0], .012, .012, 1, 5);
+    box(hang, Y, 0, -.15, 0, .36, .42, .26); cyl(hang, K, 'z', [0, -.05, 0], .15, .15, .28, 12); box(hang, K, 0, -.4, 0, .1, .1, .1);
+    tube(hang, STL, [[0, -.45, 0], [0, -.58, 0], [.06, -.66, 0], [.12, -.6, 0]], [.035, .035, .03, .025], 7);
+    for (const sd of [1, -1]) beam(hang, ST, [0, -.6, 0], [sd * .5, -.95, 0], .05, .012);
+    beam(hang, K, [-.56, -.97, 0], [.56, -.97, 0], .06, .06);
+    for (const sx of [1, -1]) for (const sz of [1, -1]) beam(hang, ST, [sx * .52, -.98, 0], [sx * .6, -1.3, sz * .34], .05, .012);
+    return { parts: [['body', body, 'work'], ['glass', glass, 'glass'], ['trim', trim, 'trim'], ['rim', rim, 'chrome'], ['lamp', lamps, null]], boom: [boom, [-3.3, 3.0, .3], null, hang, tip],
+      btele: [t1, t2], bdir: [c5, s5], cable: [cable], slew: { c: [-1.9, 0, 0], parts: [['sbody', sBody, 'work'], ['sglass', sGlass, 'glass'], ['strim', sTrim, 'trim']] } };
   }
 
   // ------------------------------------------------------------------ sweeper truck
@@ -86938,6 +87080,10 @@ const RCModels = (() => {
     d.geo = {};
     for (const [key, A] of d.parts) { d.geo[key] = toGeo(A); list.push(d.geo[key]); }
     for (const k of ['arm', 'boom', 'brush']) if (d[k]) { d[k][2] = toGeo(d[k][0]); list.push(d[k][2]); if (d[k][3]) { d[k][5] = toGeo(d[k][3]); list.push(d[k][5]); } }
+    if (d.tele) { d.tele[1] = toGeo(d.tele[0]); list.push(d.tele[1]); }
+    if (d.btele) { d.bteleG = d.btele.map(A => { const q = toGeo(A); list.push(q); return q; }); }
+    if (d.cable) { d.cable[1] = toGeo(d.cable[0]); list.push(d.cable[1]); }
+    if (d.slew) for (const P of d.slew.parts) { P[3] = toGeo(P[1]); list.push(P[3]); }
     GEOS[kind] = list; DEFS[kind] = d;
     return d;
   }
@@ -86977,7 +87123,25 @@ const RCModels = (() => {
       u[k] = pv;
       const set = a => { pv.rotation.z = a; if (hg) hg.rotation.z = -a; };
       u[k === 'arm' ? 'setArm' : 'setBoom'] = set;
+      if (k === 'arm' && d.tele) {   // (the telescope: the inner section + head + jib and the straps at its tip slide out along the boom)
+        const tm = new THREE.Mesh(d.tele[1], mat('work')); tm.castShadow = true; tm.receiveShadow = true; tm.name = 'tele'; pv.add(tm);
+        const tip0 = d[k][4];
+        u.setTele = e => { tm.position.x = e; if (hg) hg.position.set(tip0[0] + e, tip0[1], tip0[2]); };
+      }
+      if (k === 'boom' && d.btele) {   // (the crane: the middle / fly sections slide out along the boom, the hook block with them; the cables stretch)
+        const tms = d.bteleG.map((q, j) => { const tm = new THREE.Mesh(q, mat('work')); tm.castShadow = true; tm.receiveShadow = true; tm.name = 'boomTele' + j; pv.add(tm); return tm; });
+        const tip0 = d[k][4], dc = d.bdir[0], dsn = d.bdir[1];
+        u.setBoomTele = e => { tms[0].position.set(dc * e / 2, dsn * e / 2, 0); tms[1].position.set(dc * e, dsn * e, 0); if (hg) hg.position.set(tip0[0] + dc * e, tip0[1] + dsn * e, tip0[2]); };
+        if (d.cable && hg) { const cm = new THREE.Mesh(d.cable[1], mat('work')); cm.name = 'cable'; hg.add(cm); const hm = hg.children[0];
+          u.setCable = L => { L = Math.max(0.05, L); cm.scale.y = L; hm.position.y = -L; }; u.setCable(0.4); }
+      }
       set(k === 'arm' ? -0.16 : 0.5);
+    }
+    if (d.slew) {   // (the crane's superstructure: turret, operator cab, counterweight and the boom turn on the slewing ring: setSlew(rad))
+      const c = d.slew.c, sg = new THREE.Group(); sg.name = 'slew'; sg.position.set(c[0], c[1], c[2]); g.add(sg);
+      for (const [key, , mname, q] of d.slew.parts) { const mesh = new THREE.Mesh(q, mat(mname)); mesh.castShadow = shadow; mesh.receiveShadow = true; mesh.name = key; mesh.position.set(-c[0], -c[1], -c[2]); sg.add(mesh); }
+      if (u.boom) { u.boom.position.sub(sg.position); sg.add(u.boom); }
+      u.slew = sg; u.setSlew = r => { sg.rotation.y = r; };
     }
     if (kind === 'marshal') { u.inst = { geometry: d.geo.body, material: mat('cloth') }; u.limbs = LIMBS; }
     if (kind === 'panel') {
@@ -94640,9 +94804,9 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     if (crowd.length) buildCrowd(crowd, STAND_PAL.map(h => natural(h, 0.85)));
   }
 
-  let STAND_Y = null, STANDS_DBG = [];   // (the level stand being built: its base height; every stand's base, for the dev check _stands())
+  let STAND_Y = null, STANDS_DBG = [], STANDS_DROP = [];   // (the level stand being built: its base height; every stand's base, for the dev check _stands())
   function buildStands(ctx) {
-    const rnd = U.rng(99 + T.N); STANDS_DBG = [];
+    const rnd = U.rng(99 + T.N); STANDS_DBG = []; STANDS_DROP = [];
     let stN = 0;
     const one = st => {
       const side = st.side, rows = st.rows || 12;
@@ -94650,13 +94814,13 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       let e0 = 0;
       let inBay = false;
       for (let k = 0; k <= n; k++) { const i = idxOf(st.s - st.len / 2 + k * st.len / n); e0 = Math.max(e0, Math.min(wallAt(i, side), 60)); if (bayAt(i, side)) inBay = true; }
-      if (inBay && !st.bay) return;   // (beside an open bay: no barrier line to stand behind - unless data bay: behind the bay's own barrier)
+      if (inBay && !st.bay) { STANDS_DROP.push({ s: st.s, side, why: 'bay' }); return; }   // (beside an open bay: no barrier line to stand behind - unless data bay: behind the bay's own barrier)
       if (T.pit && side === T.pit.side && garageRange && garageRange.frontE && inRange(T.wrapS(st.s), garageRange[0] - 60, garageRange[1] + 60)) e0 = Math.max(e0, garageRange.frontE(st.s) + garageRange.depth + 30);
       e0 += (TH.street ? 3.0 : 4.5) + (st.dist || 0);   // (dist: m further back beyond the barrier)
       const s0 = st.s - st.len / 2, backE = standDepth(rows);
       const Wp = (u, e, y) => { const p = T.toWorld(s0 + u, side * (e0 + e)); return [p.x, y, p.z]; };
       let ok = true;
-      for (let k = 0; k <= n && ok; k++) for (let e = 0; e <= backE + 1; e += 3) { const p = Wp(k * st.len / n, e, 0); if (waterAt(p[0], p[2]) > -3 || !clearOf(p[0], p[2], 0, 0.5, 0.5, 2)) { ok = false; break; } }
+      for (let k = 0; k <= n && ok; k++) for (let e = 0; e <= backE + 1; e += 3) { const p = Wp(k * st.len / n, e, 0); if (waterAt(p[0], p[2]) > -3 || !clearOf(p[0], p[2], 0, 0.5, 0.5, 2)) { ok = false; STANDS_DROP.push({ s: st.s, side, why: waterAt(p[0], p[2]) > -3 ? 'water' : 'clear', u: k * st.len / n, e, x: p[0], z: p[2] }); break; } }
       if (!ok) return;
       // (user 2026-11-23: a stand sits LEVEL - one flat base at the highest ground under its footprint, the rows level, a concrete
       // plinth down into the lower ground; before, every vertex followed the ground and a stand on a slope looked wonky)
@@ -100904,8 +101068,12 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
       if (!vis) continue;
       g.position.set(x, rcGnd(x, z, a ? a.s : V.D.s, a ? a.d : V.D.d), z); g.rotation.set(0, -h, 0);
       const w = a ? a.a : 0, lit = !!(a && a.on);
-      if (u.setArm) u.setArm(-0.16 + 0.62 * w);
-      if (u.setBoom) u.setBoom(0.5 + 0.6 * w);
+      if (u.setArm) u.setArm(a && a.arm != null ? a.arm : -0.16 + 0.62 * w);   // (a tow job: the boom angle from racecontrol towRig, the car hangs from its straps)
+      if (u.setTele) u.setTele(a && a.arm != null ? a.ext || 0 : 0);
+      if (u.setBoom) u.setBoom(a && a.slew != null ? a.boom : 0.5 + 0.6 * w);   // (a lift job: racecontrol craneRig - the hook over the car)
+      if (u.setSlew) u.setSlew(a && a.slew != null ? a.slew : 0);
+      if (u.setBoomTele) u.setBoomTele(a && a.slew != null ? a.ext || 0 : 0);
+      if (u.setCable) u.setCable(a && a.slew != null ? a.cable : 0.4);
       if (u.setBrush && w > 0) u.setBrush(t * 14);
       if (lit !== V.lit && u.setLights) { V.lit = lit; u.setLights(lit); }
       if (lit && u.tick) u.tick(t);
@@ -101667,7 +101835,7 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     init, loadTrack, setCars, render, setActive, resize,
     // optional extras
     rewound,   // (rewind agent: after a rewind, see above)
-    debugCam, stats, _lvx: () => LVX, _coast: () => COAST, _riv: () => RIV, _hzn: () => HZN, _cr: () => { const f = E => ({ track: E.T2.id, parts: E.parts, decks: E.XC ? E.XC.list.length : 0, dup: E.dup.map(a => a.reduce((x, y) => x + y, 0)), masked: E.mask.reduce((x, y) => x + y, 0) }); return CRS.length > 1 ? CRS.map(f) : CR && f(CR); }, _stands: () => STANDS_DBG, _scen: () => SCNFP, _fam: () => FAM && FAM.M.map(t => t.id), _camLog: (on, old) => { if (on) { CAMLOG = []; CAMOLD = !!old; } return CAMLOG; }, _gh: (x, z) => [GH(x, z), terrH(x, z)],
+    debugCam, stats, _lvx: () => LVX, _coast: () => COAST, _riv: () => RIV, _hzn: () => HZN, _cr: () => { const f = E => ({ track: E.T2.id, parts: E.parts, decks: E.XC ? E.XC.list.length : 0, dup: E.dup.map(a => a.reduce((x, y) => x + y, 0)), masked: E.mask.reduce((x, y) => x + y, 0) }); return CRS.length > 1 ? CRS.map(f) : CR && f(CR); }, _stands: () => STANDS_DBG, _standsDrop: () => STANDS_DROP, _scen: () => SCNFP, _fam: () => FAM && FAM.M.map(t => t.id), _camLog: (on, old) => { if (on) { CAMLOG = []; CAMOLD = !!old; } return CAMLOG; }, _gh: (x, z) => [GH(x, z), terrH(x, z)],
     // (_geoMB: tests / memory work: the scene's geometry bytes (attributes + index; instanced counted once) by mesh kind / material)
     _geoMB: () => { const o = {}, seen = new Set(); if (!scene) return o; scene.traverse(m => { const g = m.geometry; if (!g || seen.has(g)) return; seen.add(g); let b = 0;
       const sz = a => a ? a.count * a.itemSize * (a.array ? a.array.BYTES_PER_ELEMENT : 4) : 0; for (const k in g.attributes) b += sz(g.attributes[k]); b += sz(g.index); if (m.instanceMatrix) b += sz(m.instanceMatrix);
@@ -101681,7 +101849,8 @@ if (agpPm > 0.002 && uRefOn > 0.5 && vRu.w > 0.05) {
     _rcd: () => {   // (tests: what race control draws now - the SC / MC, the vehicles in view, the marshals' instance positions)
       const P = (g) => (g && g.userData.out ? [g.position.x, g.position.z, -g.rotation.y] : null), m = [], a = RCA.mar && RCA.mar.instanceMatrix.array;
       if (a) for (let i = 0; i < RCA.mar.count; i++) m.push([a[i * 16 + 12], a[i * 16 + 14]]);
-      return { sc: RCP ? P(RCP.sc) : null, mc: RCP ? P(RCP.mc) : null, veh: RCA.veh.map(V => (V.vis ? [V.g.position.x, V.g.position.z, -V.g.rotation.y] : null)), mar: m };
+      const hk = g => { const h = g.getObjectByName('hook'), b = h && h.children[0]; if (!b) return null; g.updateMatrixWorld(true); const v = new THREE.Vector3(); b.getWorldPosition(v); return [v.x, v.y, v.z, g.userData.rc]; };   // (the straps (tractor) / hook block (crane) origin: the feet 0.9 / 1.3 m under it)
+      return { sc: RCP ? P(RCP.sc) : null, mc: RCP ? P(RCP.mc) : null, veh: RCA.veh.map(V => (V.vis ? [V.g.position.x, V.g.position.z, -V.g.rotation.y] : null)), hook: RCA.veh.map(V => (V.vis ? hk(V.g) : null)), mar: m };
     },
     _rc: () => ({ panels: PNL.cell ? PNL.cell.array.length : 0, lit: PNL.cell ? PNL.cell.array.filter(v => v > 0).length : 0, cells: PNL.cell ? Array.from(PNL.cell.array) : [] }),   // (race control light panels: tests)
     rcPark: () => RCP,   // (race control vehicles parked in the pit limiter zone: { spot, sc, mc, warm }, null without a pit lane)
@@ -115789,6 +115958,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-25 18:32 -->
+<!-- Apex GP build 2026-11-26 17:08 -->
 </body>
 </html>
