@@ -528,8 +528,7 @@ CFG.setup = {
   rear: { df: 0.05, dfSat: 0.025, drag: 0.12, dragSat: 0.035 },
   bal: 0.02, zoneKeep: 1,
   presets: [
-    { id: 'low', name: 'Low downforce', fw: 5, rw: 3 },
-    { id: 'mid', name: 'Balanced', fw: 6, rw: 6 },
+    { id: 'low', name: 'Low downforce', fw: 5, rw: 3 },   // (the setup list, menu.js setupList: ENGINEER, BASELINE def / def, these, the player's saved ones)
     { id: 'high', name: 'High downforce', fw: 9, rw: 9 },
   ],
   // one wing value: whole number clamped to 1..11 (missing / invalid = default)

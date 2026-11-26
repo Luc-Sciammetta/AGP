@@ -2116,6 +2116,18 @@ html.agp-touch .agp-stp-cards { grid-template-columns: repeat(auto-fill, minmax(
 .agp-dnfw.is-watch .agp-dnfw-t { display: none; }
 .agp-dnfw.is-watch .agp-dnfw-keep { display: none; }
 
+/* car setup: SAVE AS… popup (menu.js openSaveDlg) */
+.agp-sdlg { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .62); }
+.agp-sdlg-box { display: flex; flex-direction: column; align-items: center; gap: .7em; min-width: 20em; padding: 1.4em 1.8em; background: #15171b; border: .1em solid rgba(255, 255, 255, .14); border-left: .25em solid var(--agp-red); border-radius: .3em; }
+.agp-sdlg-box b { font-size: 1.15em; letter-spacing: .16em; }
+.agp-sdlg-box small { color: var(--agp-dim); letter-spacing: .12em; font-size: .78em; }
+.agp-sdlg-box input { width: 14em; height: 1.9em; padding: 0 .6em; box-sizing: border-box; border: .1em solid var(--agp-red); border-radius: .2em; background: rgba(0, 0, 0, .4);
+  color: inherit; font: 700 1.05em/1 var(--agp-fd); letter-spacing: .08em; text-align: center; text-transform: uppercase; outline: none; user-select: text; -webkit-user-select: text; }
+.agp-sdlg-box em { min-height: 1em; color: #ff6a5c; font-style: normal; font-size: .78em; letter-spacing: .1em; }
+.agp-sdlg-btns { display: flex; gap: .8em; }
+.agp-sdlg-btns .agp-row-btn { cursor: pointer; }
+.agp-sdlg-btns [data-a="save"] { color: #fff; background: var(--agp-red); border-color: var(--agp-red); }
+
 </style>
 </head>
 <body>
@@ -55712,8 +55724,7 @@ CFG.setup = {
   rear: { df: 0.05, dfSat: 0.025, drag: 0.12, dragSat: 0.035 },
   bal: 0.02, zoneKeep: 1,
   presets: [
-    { id: 'low', name: 'Low downforce', fw: 5, rw: 3 },
-    { id: 'mid', name: 'Balanced', fw: 6, rw: 6 },
+    { id: 'low', name: 'Low downforce', fw: 5, rw: 3 },   // (the setup list, menu.js setupList: ENGINEER, BASELINE def / def, these, the player's saved ones)
     { id: 'high', name: 'High downforce', fw: 9, rw: 9 },
   ],
   // one wing value: whole number clamped to 1..11 (missing / invalid = default)
@@ -77966,7 +77977,7 @@ const Ghost = (() => {
 // at the line (the run-up / out-of-box part is dropped). Retention per track: the last KEEP_LAST laps + the best
 // KEEP_BEST clean laps (all at full resolution).
 const Telemetry = (() => {
-  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 18:20';
+  const FORMAT = 'apexgp-telemetry', VERSION = 1, BUILD = '2026-11-25 18:32';
   const STEP_M = 2, MAX_DT = 0.1, KEEP_LAST = 40, KEEP_BEST = 5, NEAR_BEHIND = 6;
   const W = G => (G && G.weather) || null;
   // [key, scale, unit, meaning, getter(car, G, ctx)] \u2014 stored value = round(v / scale), delta-encoded per lap
@@ -105607,7 +105618,9 @@ const Menu = (() => {
     music: true, musicVolume: 0.7,   // menu / pause / results music (Music; scaled by the master volume)
     engineMenus: false,   // the car's sounds on the pre-race entry list / grid + time-trial garage (results: always silent)
     touchSteer: 'tilt', touchCtl: 'auto', tiltSens: 0.5, tiltDead: 0.3, touchSize: 0.5,   // touch devices (mobile.js)
-    setups: {},   // car setup per circuit: { trackId: { fw, rw } } (wings 1..11; missing = baseline 6 / 6)
+    setups: {},   // car setup per circuit: { trackId: { fw, rw } } (wings 1..11; missing = the engineer's, engDef)
+    savedSetups: {},   // the player's named setups per circuit: { trackId: [{ n, fw, rw }] } (SAVE AS\u2026, at most SAVED_MAX)
+    setupPick: {},   // the setup list entry last picked per circuit ({ trackId: 'eng' | 'base' | 'low' | 'high' | 's:<name>' }): its name shown while the wings still match
   };
   // the line under the Damage row (contact damage, damage.js): what each level does
   const DMG_HELP = {
@@ -105827,6 +105840,8 @@ const Menu = (() => {
     if (!s.engVolUp) { if (s.engVoiceVol === 0.9) s.engVoiceVol = 1; s.engVolUp = 1; }   // (once: the old default 90% -> full volume)
     s.engVoiceName = String(s.engVoiceName || '').slice(0, 120);
     s.setups = cleanSetups(s.setups);
+    s.savedSetups = cleanSaved(s.savedSetups);
+    { const o = {}; if (s.setupPick && typeof s.setupPick === 'object') for (const k of Object.keys(s.setupPick).slice(0, 200)) if (typeof s.setupPick[k] === 'string') o[k] = s.setupPick[k].slice(0, 20); s.setupPick = o; }
     delete s.champWx;   // (old per-round calendar picks: championship rounds are always dynamic now, CHAMP_WX)
     return s;
   }
@@ -105898,6 +105913,20 @@ const Menu = (() => {
     }
     return out;
   }
+  // the player's saved setups: known circuits, up to SAVED_MAX each, names cleaned (setupName) and unique per circuit
+  function cleanSaved(o) {
+    const out = {}, su = typeof CFG !== 'undefined' && CFG.setup, ids = trackIds().flatMap(id => U.layoutsOf(id));
+    if (!o || typeof o !== 'object' || !su) return out;
+    for (const id of Object.keys(o)) {
+      if ((ids.length && !ids.includes(id)) || !Array.isArray(o[id])) continue;
+      const L = [];
+      for (const x of o[id]) { const n = x && setupName(x.n); if (n && !L.some(y => y.n === n) && L.length < SAVED_MAX) L.push({ n, fw: su.wing(x.fw), rw: su.wing(x.rw) }); }
+      if (L.length) out[id] = L;
+    }
+    return out;
+  }
+  const SAVED_MAX = 8;
+  function setupName(n) { return String(n == null ? '' : n).replace(/[<>&"]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16).toUpperCase(); }
   function cleanName(n) { n = String(n == null ? '' : n).replace(/[<>&"]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16); return n || 'Player'; }
   const getK = k => (k.indexOf('.') > 0 ? k.split('.').reduce((o, p) => (o ? o[p] : undefined), S) : S[k]);
   function setK(k, v) { if (k.indexOf('.') > 0) { const [a, b] = k.split('.'); S[a] = Object.assign({}, S[a], { [b]: v }); } else S[k] = v; }
@@ -106102,9 +106131,13 @@ const Menu = (() => {
       opts: () => setupCircuits().map(id => [id, trackInfo(id).name.toUpperCase()]), get: () => setupTrackId(), set: v => { setupSel = v; } },
     { k: 'setupFw', label: 'Front wing', type: 'wing', side: 'fw', tab: 'setup', set: v => { if (setWing(setupTrackId(), 'fw', v)) commit(); } },
     { k: 'setupRw', label: 'Rear wing', type: 'wing', side: 'rw', tab: 'setup', set: v => { if (setWing(setupTrackId(), 'rw', v)) commit(); } },
-    { k: 'setupPreset', label: 'Preset', type: 'preset', tab: 'setup', opts: () => PRESET_OPTS() },
-    { k: 'setupReset', label: 'Reset setup', type: 'button', text: () => { const e = engDef(setupTrackId()); return `ENGINEER ${e.fw} · ${e.rw}`; }, tab: 'setup',
-      act: () => { const id = setupTrackId(), st = getSetup(id), e = engDef(id); if (S.setups && S.setups[id] || st.fw !== e.fw || st.rw !== e.rw) { putSetup(id, e); commit(); } else sfx('move'); } },
+    // the SETUP list (setupList: ENGINEER, BASELINE, LOW / HIGH DOWNFORCE, the player's saved ones) + SAVE AS\u2026 / DELETE
+    { k: 'setupPreset', label: 'Setup', type: 'preset', tab: 'setup' },
+    { k: 'setupSave', label: 'Save setup', type: 'button', text: 'SAVE AS\u2026', tab: 'setup', act: () => openSaveDlg(setupTrackId()) },
+    { k: 'setupDel', label: 'Delete setup', type: 'button', tab: 'setup', showIf: () => { const c = setupCur(setupTrackId()); return !!(c && c.saved); },
+      text: () => { const c = setupCur(setupTrackId()); return delArmed() ? 'PRESS AGAIN TO DELETE' : 'DELETE ' + (c ? c.name : ''); },
+      act: () => { if (!delArmed()) { delArmT = performance.now(); sfx('change'); refreshList('main'); setTimeout(() => refreshList('main'), 3050); return; }
+        delArmT = 0; if (deleteSaved(setupTrackId())) { sfx('select'); commit(); const L = lists.main, j = L ? L.items.findIndex(x => x.k === 'setupPreset') : -1; if (j >= 0) setFocus('main', j, false); } } },   // (focus back on the SETUP row: this one hides)
     { k: 'telemetry', label: 'Record telemetry', type: 'toggle', tab: 'data' },
     { k: 'telExportAll', label: 'Export telemetry', type: 'button', text: 'ALL CIRCUITS', tab: 'data', act: () => telExport(true, rowBtn('telExportAll'), 'ALL CIRCUITS') },
     { k: 'telClear', label: 'Clear telemetry', type: 'button', text: 'CLEAR', tab: 'data', act: () => telClearPress() },
@@ -106140,6 +106173,32 @@ const Menu = (() => {
     const tid = all ? null : (g && g.track && g.track.id) || S.trackId;
     set('EXPORTING\u2026'); sfx('select');
     T.download(tid).then(r => { set((r && r.note) || 'EXPORT FAILED'); setTimeout(() => set(idle), 6000); }, () => set('EXPORT FAILED'));
+  }
+  let delArmT = 0;   // DELETE (a saved setup): first press arms, a second within 3 s deletes it
+  const delArmed = () => performance.now() - delArmT < 3000;
+  // SAVE AS\u2026 popup: a name for the current wings on circuit id (Enter saves, Esc / CANCEL / a click outside closes)
+  let saveDlg = null;
+  function openSaveDlg(id) {
+    if (!root || saveDlg || !id) return;
+    const st = getSetup(id), d = document.createElement('div');
+    d.className = 'agp-sdlg';
+    d.innerHTML = `<div class="agp-sdlg-box"><b>SAVE SETUP</b><small>${esc(trackInfo(id).name.toUpperCase())} · FRONT ${st.fw} · REAR ${st.rw}</small>` +
+      `<input type="text" maxlength="16" spellcheck="false" autocomplete="off"><em></em>` +
+      `<div class="agp-sdlg-btns"><span class="agp-row-btn" data-a="save">SAVE</span><span class="agp-row-btn" data-a="cancel">CANCEL</span></div></div>`;
+    root.appendChild(d);
+    const inp = d.querySelector('input');
+    inp.value = nextSetupName(id);
+    saveDlg = { el: d, id, inp };
+    d.addEventListener('click', e => { const a = e.target.closest('[data-a]'); if (a) { if (a.dataset.a === 'save') saveDlgGo(); else closeSaveDlg(); } else if (e.target === d) closeSaveDlg(); });
+    setTimeout(() => { inp.focus(); inp.select(); }, 0);
+    sfx('select');
+  }
+  function closeSaveDlg() { if (!saveDlg) return; saveDlg.el.remove(); saveDlg = null; sfx('back'); }
+  function saveDlgGo() {
+    if (!saveDlg) return;
+    const err = saveSetupAs(saveDlg.id, saveDlg.inp.value);
+    if (err) { saveDlg.el.querySelector('em').textContent = err; sfx('move'); return; }
+    saveDlg.el.remove(); saveDlg = null; sfx('select'); commit();
   }
   let telArmT = -1e9;   // CLEAR: first press arms, a second press within 3 s deletes every recorded lap
   // "Clear time-trial bests" > ALL CIRCUITS: first press arms, a second within 3 s forgets every saved best lap (ghost +
@@ -106828,24 +106887,53 @@ const Menu = (() => {
     st[side] = v; putSetup(id, st);
     return true;
   }
-  const presetOf = st => { const su = SU(), p = su && su.presets.find(q => q.fw === st.fw && q.rw === st.rw); return p ? p.id : 'custom'; };
-  // presets LOW -> BALANCED -> HIGH (clamped); from a custom setup: the next preset up / down in downforce
-  function stepPreset(id, d) {
+  // (user 2026-11-25) the SETUP list for a circuit: ENGINEER (its suggestion, engDef), BASELINE (def / def), LOW / HIGH
+  // DOWNFORCE (CFG.setup.presets), then the player's saved ones (S.savedSetups[id], SAVE AS\u2026). \u2190/\u2192 cycles it (wraps).
+  function setupList(id) {
     const su = SU();
-    if (!su) return false;
-    const P = su.presets, st = getSetup(id), cur = P.findIndex(p => p.fw === st.fw && p.rw === st.rw);
-    let j = cur + d;
-    if (cur < 0) {
-      const k = su.aero(st).clK, lv = P.map(p => su.aero(p).clK);
-      j = d > 0 ? lv.findIndex(v => v > k + 1e-9) : lv.reduce((m, v, i) => (v < k - 1e-9 ? i : m), -1);
-      if (j < 0) j = d > 0 ? P.length - 1 : 0;
-    }
-    j = Math.max(0, Math.min(P.length - 1, j));
-    if (j === cur) return false;
-    putSetup(id, P[j]);
+    if (!su) return [];
+    const e = engDef(id), L = [{ k: 'eng', name: 'ENGINEER', fw: e.fw, rw: e.rw }, { k: 'base', name: 'BASELINE', fw: su.def, rw: su.def }];
+    for (const p of su.presets) L.push({ k: p.id, name: p.name.toUpperCase(), fw: p.fw, rw: p.rw });
+    for (const x of (S.savedSetups && S.savedSetups[id]) || []) L.push({ k: 's:' + x.n, name: x.n, fw: x.fw, rw: x.rw, saved: true });
+    return L;
+  }
+  // the entry the wings are on now: the one last picked if it still matches, else the first that matches; null = custom
+  function setupCur(id) {
+    const st = getSetup(id), L = setupList(id), eq = x => x.fw === st.fw && x.rw === st.rw, pk = S.setupPick && S.setupPick[id];
+    return L.find(x => x.k === pk && eq(x)) || L.find(eq) || null;
+  }
+  const setupLabel = id => { const c = setupCur(id), st = getSetup(id); return `${c ? c.name : 'CUSTOM'} ${st.fw} · ${st.rw}`; };
+  function pickSetup(id, x) { putSetup(id, x); S.setupPick = Object.assign({}, S.setupPick, { [id]: x.k }); }
+  function stepSetupList(id, d) {
+    const L = setupList(id);
+    if (!L.length) return false;
+    const c = setupCur(id), i = c ? L.findIndex(x => x.k === c.k) : -1, j = i < 0 ? (d > 0 ? 0 : L.length - 1) : (i + (d > 0 ? 1 : -1) + L.length) % L.length;
+    if (j === i) return false;
+    pickSetup(id, L[j]);
     return true;
   }
-  const PRESET_OPTS = () => (SU() ? SU().presets.map(p => [p.id, p.name.toUpperCase()]) : []);
+  // a pre-race box row: side 'list' = the setup list, else a wing
+  const stepSide = (id, side, d) => (side === 'list' ? stepSetupList(id, d) : stepWing(id, side, d));
+  // SAVE AS\u2026: the current wings under a name for this circuit (same name = replaced; at most SAVED_MAX)
+  function saveSetupAs(id, name) {
+    const n = setupName(name), st = getSetup(id);
+    if (!n) return 'NAME IT FIRST';
+    const L = ((S.savedSetups && S.savedSetups[id]) || []).slice(), i = L.findIndex(x => x.n === n);
+    if (i < 0 && L.length >= SAVED_MAX) return SAVED_MAX + ' SAVED: DELETE ONE FIRST';
+    if (i >= 0) L[i] = { n, fw: st.fw, rw: st.rw }; else L.push({ n, fw: st.fw, rw: st.rw });
+    S.savedSetups = Object.assign({}, S.savedSetups, { [id]: L });
+    S.setupPick = Object.assign({}, S.setupPick, { [id]: 's:' + n });
+    return null;
+  }
+  function deleteSaved(id) {
+    const c = setupCur(id);
+    if (!c || !c.saved) return false;
+    const L = ((S.savedSetups && S.savedSetups[id]) || []).filter(x => 's:' + x.n !== c.k), o = Object.assign({}, S.savedSetups);
+    if (L.length) o[id] = L; else delete o[id];
+    S.savedSetups = o;
+    return true;
+  }
+  const nextSetupName = id => { const L = (S.savedSetups && S.savedSetups[id]) || []; let k = L.length + 1; while (L.some(x => x.n === 'SETUP ' + k)) k++; return 'SETUP ' + k; };
 
   // readouts, all from the physics helpers: axle grip = CFG.perf.mu(load) × load with the setup's downforce / balance
   const lapBase = typeof WeakMap === 'function' ? new WeakMap() : null, bestRw = new Map();
@@ -107206,12 +107294,14 @@ const Menu = (() => {
     if (!SU()) return '';
     const row = (side, lbl) => `<div class="agp-row agp-row-cyc agp-setup-row" data-side="${side}"><span class="agp-row-lbl">${lbl}</span><span class="agp-row-val">${CH('l')}<span class="agp-row-v">${pipsHTML()}<b></b></span>${CH('r')}</span></div>`;
     return `<div class="agp-setup-pre"><div class="agp-setup-pre-head"><b>CAR SETUP</b><span>${hint != null ? hint : '<kbd>\u2191</kbd><kbd>\u2193</kbd> SELECT <kbd>\u2190</kbd><kbd>\u2192</kbd> ADJUST'}</span></div>` +
-      row('fw', 'Front wing') + row('rw', 'Rear wing') + '<div class="agp-setup-pre-stats"></div><div class="agp-setup-pre-feel"></div><div class="agp-setup-pre-eng"></div></div>';
+      row('fw', 'Front wing') + row('rw', 'Rear wing') +
+      `<div class="agp-row agp-row-cyc agp-setup-row agp-setup-list" data-side="list"><span class="agp-row-lbl">Setup</span><span class="agp-row-val">${CH('l')}<span class="agp-row-v"><b></b></span>${CH('r')}</span></div>` +
+      '<div class="agp-setup-pre-stats"></div><div class="agp-setup-pre-feel"></div><div class="agp-setup-pre-eng"></div></div>';
   }
   function paintPreSetup(box, tid, tr, grip, wx) {   // wx: { wet 0..1, dynamic } for the engineer (default: today's weather)
     if (!box) return;
     const st = getSetup(tid), x = setupStats(st, tr, grip);
-    box.querySelectorAll('.agp-setup-row').forEach(r => paintWing(r, st[r.dataset.side], tid));
+    box.querySelectorAll('.agp-setup-row').forEach(r => { if (r.dataset.side === 'list') { const b = r.querySelector('.agp-row-v b'); if (b) b.textContent = setupLabel(tid); } else paintWing(r, st[r.dataset.side], tid); });
     if (!x) return;
     const fx = effects(x), wd = i => fx[i][2].toUpperCase();
     box.querySelector('.agp-setup-pre-stats').innerHTML = `<span>FAST CORNERS <b>${wd(0)}</b></span><span>TURN-IN <b>${wd(3)}</b></span>` +
@@ -107224,11 +107314,11 @@ const Menu = (() => {
   // (S.setups -> main's G.settings via onSettings). step / set return true when the setup changed.
   const setupBox = {
     html: hint => preSetupHTML(hint),
-    sync() { const g = gState(); if (g && g.settings && g.settings.setups) S.setups = cleanSetups(g.settings.setups); },
+    sync() { const g = gState(); if (g && g.settings && g.settings.setups) S.setups = cleanSetups(g.settings.setups); if (g && g.settings && g.settings.savedSetups) S.savedSetups = cleanSaved(g.settings.savedSetups); if (g && g.settings && g.settings.setupPick) S.setupPick = clone(g.settings.setupPick); },
     get(tid) { setupBox.sync(); return getSetup(tid); },
     all() { setupBox.sync(); return clone(S.setups || {}); },
-    save() { if (H.onSettings) { try { H.onSettings({ setups: clone(S.setups) }); } catch (e) { console.error(e); } } else store(); },
-    step(tid, side, d) { setupBox.sync(); const ok = stepWing(tid, side, d); if (ok) setupBox.save(); return ok; },
+    save() { if (H.onSettings) { try { H.onSettings({ setups: clone(S.setups), setupPick: clone(S.setupPick || {}) }); } catch (e) { console.error(e); } } else store(); },
+    step(tid, side, d) { setupBox.sync(); const ok = stepSide(tid, side, d); if (ok) setupBox.save(); return ok; },
     set(tid, side, v) { setupBox.sync(); const ok = setWing(tid, side, v); if (ok) setupBox.save(); return ok; },
     paint(box, tid, wx) { setupBox.sync(); const ti = trackInfo(tid); paintPreSetup(box, tid, ti.track && ti.track.N ? ti.track : null, null, wx); },
   };
@@ -107258,10 +107348,10 @@ const Menu = (() => {
         el.classList.toggle('is-fixed', opts.length < 2 || lk);   // (one choice, e.g. a season's team / field: no \u2039 \u203a)
         el.classList.toggle('is-season', lk);
         if (it.ring) { const r = el.querySelector('.agp-ring'); r.textContent = v; r.style.setProperty('--tc', compColor(v)); }
-      } else if (it.type === 'wing') paintWing(el, getSetup(setupTrackId())[it.side], setupTrackId());
+      } else if (it.type === 'wing' && it.side === 'list') { const b = el.querySelector('.agp-row-v b'); if (b && /^pre-|^gar-/.test(it.k)) { /* (pre-race / garage box: paintPreSetup) */ } else if (b) b.textContent = setupLabel(setupTrackId()); }
+      else if (it.type === 'wing') paintWing(el, getSetup(setupTrackId())[it.side], setupTrackId());
       else if (it.type === 'preset') {
-        const id = presetOf(getSetup(setupTrackId())), o = optsOf(it).find(x => x[0] === id);
-        el.querySelector('.agp-row-v b').textContent = o ? o[1] : 'CUSTOM';
+        el.querySelector('.agp-row-v b').textContent = setupLabel(setupTrackId());
       } else if (it.type === 'toggle') {
         const on = !!getK(it.k);
         el.classList.toggle('is-on', on);
@@ -107430,7 +107520,7 @@ const Menu = (() => {
     else if (it.type === 'button' && it.pair) { const j = lists[screen] ? lists[screen].items.findIndex(x => x.k === it.pair) : -1; if (j >= 0) { setFocus(screen, j, false); sfx('move'); } }   // (pre-race BACK \u21c4 CONTINUE)
     // car setup: \u2190 less wing, \u2192 more wing; clamped at 1 / 11 (and at the LOW / HIGH presets), never wraps
     else if (it.type === 'wing') { if (it.step) it.step(dir < 0 ? -1 : 1); else if (stepWing(setupTrackId(), it.side, dir < 0 ? -1 : 1)) commit(); }
-    else if (it.type === 'preset') { if (stepPreset(setupTrackId(), dir < 0 ? -1 : 1)) commit(); }
+    else if (it.type === 'preset') { if (stepSetupList(setupTrackId(), dir < 0 ? -1 : 1)) commit(); }
     else if (it.type === 'next') { if (dir > 0) it.act(); }
     else if (it.type === 'bind') { const s = dir < 0 ? 0 : 1; if (it.slot !== s) { it.slot = s; paintBind(it); sfx('move'); } }   // key 1 / key 2
   }
@@ -107544,6 +107634,13 @@ const Menu = (() => {
     const scr = screen, code = e.code;
     // Settings > Controls waiting for a key: this key is the new binding (nothing else sees it; Esc cancels)
     if (bindCap) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) endCapture(code); return; }
+    if (saveDlg) {   // the SAVE AS\u2026 popup: typing goes to its name box; Enter saves, Esc closes
+      e.stopPropagation();
+      if (code === 'Enter' || code === 'NumpadEnter') { e.preventDefault(); if (!e.repeat) saveDlgGo(); }
+      else if (code === 'Escape') { e.preventDefault(); closeSaveDlg(); }
+      else if (e.target !== saveDlg.inp) saveDlg.inp.focus();
+      return;
+    }
     if (helpOpen) {
       if (code === 'Escape' || code === 'Enter' || code === 'NumpadEnter' || code === 'Space' || code === 'Backspace') { if (!e.repeat) closeHelp(); e.preventDefault(); e.stopPropagation(); }
       return;
@@ -108251,7 +108348,7 @@ const Menu = (() => {
         paintPreSetup(sb, tid, tr && tr.N ? tr : null, carGrip()); sfx('change');
       };
       sb.querySelectorAll('.agp-setup-row').forEach(r => items.push({ k: 'pre-' + r.dataset.side, type: 'wing', side: r.dataset.side, el: r, act,
-        step: d => { if (stepWing(tid, r.dataset.side, d)) applied(); }, set: v => { if (setWing(tid, r.dataset.side, v)) applied(); } }));
+        step: d => { if (stepSide(tid, r.dataset.side, d)) applied(); }, set: v => { if (r.dataset.side !== 'list' && setWing(tid, r.dataset.side, v)) applied(); } }));
       paintPreSetup(sb, tid, tr && tr.N ? tr : null, carGrip());
     }
     items.push({ k: 'continue', type: 'button', el: E.rsBtns.querySelector('.agp-btn[data-k="continue"]'), act });
@@ -108380,7 +108477,7 @@ const Menu = (() => {
         paintPreSetup(sb, tid, tr && tr.N ? tr : null, grip()); paint(); sfx('change');
       };
       sb.querySelectorAll('.agp-setup-row').forEach(r => items.push({ k: 'gar-' + r.dataset.side, type: 'wing', side: r.dataset.side, el: r, act: go,
-        step: d => { if (stepWing(tid, r.dataset.side, d)) applied(); }, set: v => { if (setWing(tid, r.dataset.side, v)) applied(); } }));
+        step: d => { if (stepSide(tid, r.dataset.side, d)) applied(); }, set: v => { if (r.dataset.side !== 'list' && setWing(tid, r.dataset.side, v)) applied(); } }));
       paintPreSetup(sb, tid, tr && tr.N ? tr : null, grip());
     }
     if (telB) items.push({ k: 'telExport', type: 'button', el: telB, act: () => telExport(false, telB.querySelector('span'), 'THIS CIRCUIT') });
@@ -115692,6 +115789,6 @@ window.G = G; window.Game = Game;   // debugging / headless tests
 Game.boot();
 
 </script>
-<!-- Apex GP build 2026-11-25 18:20 -->
+<!-- Apex GP build 2026-11-25 18:32 -->
 </body>
 </html>
