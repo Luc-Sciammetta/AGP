@@ -941,7 +941,7 @@ class RaceSim {
       const fx = fd ? (V.x - p.x) / dt : 0, fz = fd ? (V.z - p.z) / dt : 0, ok = fd && fx * fx + fz * fz < 120 * 120;
       v.vx = ok ? fx : V.v * Math.cos(V.h); v.vz = ok ? fz : V.v * Math.sin(V.h); v.r = ok ? U.clamp(U.wrapAngle(V.h - p.h) / dt, -2, 2) : 0;
       p.h = V.h; p.x = V.x; p.z = V.z; p.t = tv;
-      v.x = V.x + v.vx * dqv; v.z = V.z + v.vz * dqv; v.h = V.h + v.r * dqv; v.boosting = !!V.li; v.throttle = v.brake = v.steer = 0; v.gear = 1; v.rpm = 0;
+      v.x = V.x + v.vx * dqv; v.z = V.z + v.vz * dqv; v.h = V.h + v.r * dqv; v.boosting = !!V.li; v.throttle = v.steer = 0; v.brake = V.bl ? 1 : 0; v.gear = 1; v.rpm = 0;
       N.writeSnapCar(rdv, o, N.VEH_ID + k, 0, 2 | 4, T - tvq, v, false); nv++;
     }
     const sb = this._sb, sdv = this._sbDv;

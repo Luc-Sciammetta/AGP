@@ -388,7 +388,7 @@ const CFG = {
     get pitSpeedLimit() { return this.pitLimTrack > 0 ? this.pitLimTrack : this.pitSpeedLimitDef; },
     set pitSpeedLimit(v) { this.pitSpeedLimitDef = +v; },
     pitServiceMin: 1.8, pitServiceMax: 3.2,   // random tyre-change time (s)
-    overtakeGap: 2.0,     // s: within this at the detection point -> Overtake Mode next lap
+    overtakeGap: 2.0,     // s: within this of any car on the track (lapped too) at the detection point -> Overtake Mode next lap
     gapCheckpoint: 25,    // m between timing checkpoints (gap computation)
     cooldownLaps: 0,
   },
@@ -10545,27 +10545,81 @@ const RaceControl = (() => {
   const KB_D = 500, KB_W = 250, KB_C = 25;
   const GRIP_DROP = 0.03, RS_K = 1.35, RS_T = 20, SC_HIT = 10, VB = [[2.35, 0.98], [2.45, 0.95]], CB = [2.8, 1.0];
   const newVeh = k => ({ k, st: 0, s: 0, d: 0, v: 0, a: 0, x: 0, z: 0, h: 0, li: 0, run: 0, hs: 0, inL: 0,
-    w: 0, ph: 0, tg: -1, ps: 0, pd: 0, sT: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0 });   // (the MC: see mcStep)
-  // speed profile (m/s per track sample): k 0 the SC, 1 the medical car; x vq (the race's pace); braking-feasible
+    w: 0, ph: 0, tg: -1, ps: 0, pd: 0, sT: 0, le: 0, d1: 0, att: [], cl: 0, tp: 0, dO: -1, dB: -1, dw: 0, aS: 0, aD: 0, bS: 0, bD: 0, cx: 0, cz: 0,
+    kf: 1, ol: 0, af: 0, bl: 0, blT: 0 });   // (the MC: see mcStep; kf / ol: the SC's eased pace share / lateral rate (vehMove); af / bl / blT: the brake lights)
+  // The SC drives like an SC driver (user 2026-11-26: "SC also follows the racing line exactly which is unrealistic and causes it
+  // to have sudden acceleration and braking"): before, it went bang-bang at the profile (+4.5 / -9 m/s2, a step from one to the
+  // other: jerk 540-1080 m/s3, brake-then-throttle stabs at every apex) on the AI's racing line (kinked at every sample). Now:
+  // its own line (scLine: SC_LC of the AI's line's offset, Gaussian-smoothed over SC_LS m, SC_LM m off the asphalt edge,
+  // Catmull-Rom between samples), its own drive profile (vprof k 3 / 4: SC_DA / SC_DB accel / braking, v2 blurred over
+  // +-SC_ET s of travel - its acceleration has no steps; the straights' cap raised so that its lap = the plain profile's,
+  // SC_CX at most), tracked with feed-forward + a jerk limit SC_J (m/s3; peak braking SC_BM, SC_BRK / 3 x SC_J only for a stop /
+  // an obstacle / a car ahead: 'hard'); its offset off the line (hazards, a passer, the pit entry) eased at SC_LA m/s2
+  const SC_LC = 0.6, SC_LS = 22, SC_LM = 2.2, SC_DA = 3.5, SC_DB = 6, SC_FB = 7.5, SC_ET = 0.55, SC_CX = 1.3, SC_J = 8, SC_BM = 7.5, SC_KV = 1.5, SC_LA = 1.6;
+  // brake lights (user 2026-11-26): on below -BL_ON m/s2 of the vehicle's longitudinal acceleration (BL_TAU s low-pass), off above
+  // -BL_OFF after BL_HOLD s at least (and on again only BL_GAP s after going off); on at a standstill on the track (its foot on the
+  // brake); multiplayer: the snapshot's brake byte
+  const BL_ON = 1.0, BL_OFF = 0.4, BL_TAU = 0.08, BL_HOLD = 0.35, BL_GAP = 0.25;
+  // speed profile (m/s per track sample): k 0 the SC, 1 the medical car, 2 the SC at full pace (lights out), 3 / 4 what the SC
+  // drives for 0 / 2 (scDrive); x vq (the race's pace); braking-feasible
   const profC = new WeakMap();
+  function profPass(v, st, A, B) {
+    const N = v.length;
+    for (let r = 0; r < 2; r++) for (let i = N - 1; i >= 0; i--) { const j = (i + 1) % N; v[i] = Math.min(v[i], Math.sqrt(v[j] * v[j] + 2 * B * st)); }
+    for (let r = 0; r < 2; r++) for (let i = 0; i < N; i++) { const j = (i + 1) % N; v[j] = Math.min(v[j], Math.sqrt(v[i] * v[i] + 2 * A * st)); }
+    return v;
+  }
+  // the SC's own pace cap on the straights (k 0): its lap SC_K x the reference lap
+  function scCap(T, m) {
+    if (m.cap0 != null) return m.cap0;
+    const N = T.N, st = T.step || T.length / N, tr = refLap(T, Infinity), lap = c => { let a = 0; for (let i = 0; i < N; i++) a += st / Math.min(Math.max(8, T.raceSpeed[i] || 30) * SC_CK, c); return a; };
+    let lo = 8, hi = 120;
+    for (let j = 0; j < 40; j++) { const md = (lo + hi) / 2; if (lap(md) > SC_K * tr) lo = md; else hi = md; }
+    return (m.cap0 = (lo + hi) / 2);
+  }
   function vprof(T, k, vq) {
     let m = profC.get(T);
     if (!m) profC.set(T, m = {});
     const key = k + ':' + (+vq || 1).toFixed(3);
     if (m[key]) return m[key];
+    if (k >= 3) return (m[key] = scProf(T, k, vq));
     const N = T.N, st = T.step || T.length / N, v = new Float32Array(N), ck = k === 1 ? MC_CK : k === 2 ? SC_FK : SC_CK, A = k === 1 ? MC_ACC : SC_ACC, B = k === 1 ? MC_BRK : SC_BRK;
-    let cap = k === 2 ? SC_FV : Infinity;   // (k 2: the SC at full pace, after its lights go out)
-    if (!k) {
-      const tr = refLap(T, Infinity), lap = c => { let a = 0; for (let i = 0; i < N; i++) a += st / Math.min(Math.max(8, T.raceSpeed[i] || 30) * ck, c); return a; };
-      let lo = 8, hi = 120;
-      for (let j = 0; j < 40; j++) { const md = (lo + hi) / 2; if (lap(md) > SC_K * tr) lo = md; else hi = md; }
-      cap = (lo + hi) / 2;
-    }
+    const cap = k === 2 ? SC_FV : k === 1 ? Infinity : scCap(T, m);   // (k 2: the SC at full pace, after its lights go out)
     for (let i = 0; i < N; i++) v[i] = Math.min(Math.min(Math.max(8, T.raceSpeed[i] || 30) * ck, cap) * (+vq || 1), k === 1 ? MC_VMAX : Infinity);
-    for (let r = 0; r < 2; r++) for (let i = N - 1; i >= 0; i--) { const j = (i + 1) % N; v[i] = Math.min(v[i], Math.sqrt(v[j] * v[j] + 2 * B * st)); }
-    for (let r = 0; r < 2; r++) for (let i = 0; i < N; i++) { const j = (i + 1) % N; v[j] = Math.min(v[j], Math.sqrt(v[i] * v[i] + 2 * A * st)); }
-    return (m[key] = v);
+    return (m[key] = profPass(v, st, A, B));
   }
+  // v2 blurred with a Gaussian of SC_ET s of travel (three boxes of +-w samples, w from the speed there): the acceleration (dv2/ds / 2)
+  // eases from one value to the next instead of stepping; the peaks come down, an apex goes up a little (the SC's corner pace is its
+  // own choice, SC_CK of the race's)
+  function scEase(v, st) {
+    const N = v.length, w = new Int32Array(N), E = new Float64Array(3 * N + 1);
+    let u = Float64Array.from(v, x => x * x);
+    for (let i = 0; i < N; i++) w[i] = Math.min(N >> 2, Math.max(1, Math.round(v[i] * SC_ET / st)));
+    for (let p = 0; p < 3; p++) {
+      for (let i = 0; i < 3 * N; i++) E[i + 1] = E[i] + u[i % N];
+      const o = new Float64Array(N);
+      for (let i = 0; i < N; i++) o[i] = (E[N + i + w[i] + 1] - E[N + i - w[i]]) / (2 * w[i] + 1);
+      u = o;
+    }
+    const out = new Float32Array(N);
+    for (let i = 0; i < N; i++) out[i] = Math.sqrt(Math.max(1, u[i]));
+    return out;
+  }
+  // the SC's drive profile (k 3: its pace, k 4: full pace): the plain one's corners, softer accel / braking, eased, its cap raised
+  // (<= SC_CX x) until its lap is the plain profile's. + .a: its acceleration per sample (dv2/ds / 2 over i..i+1: the feed-forward)
+  function scProf(T, k, vq) {
+    const m = profC.get(T), N = T.N, st = T.step || T.length / N, q = +vq || 1, lapOf = v => { let a = 0; for (let i = 0; i < N; i++) a += st / v[i]; return a; };
+    const tgt = lapOf(vprof(T, k === 3 ? 0 : 2, vq)), ck = k === 3 ? SC_CK : SC_FK, c0 = k === 3 ? scCap(T, m) : SC_FV, A = k === 3 ? SC_DA : SC_ACC, B = k === 3 ? SC_DB : SC_FB;
+    const mk = c => { const v = new Float32Array(N); for (let i = 0; i < N; i++) v[i] = Math.min(Math.max(8, T.raceSpeed[i] || 30) * ck, c) * q; return scEase(profPass(v, st, A, B), st); };
+    let lo = c0, hi = c0 * SC_CX, best = mk(hi);
+    if (lapOf(best) <= tgt) for (let j = 0; j < 14; j++) { const md = (lo + hi) / 2, v = mk(md); if (lapOf(v) > tgt) lo = md; else { hi = md; best = v; } }
+    const a = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const j = (i + 1) % N; a[i] = (best[j] * best[j] - best[i] * best[i]) / (2 * st); }
+    best.a = a;
+    return best;
+  }
+  // a profile at s (linear between samples)
+  function profAt(T, prof, s) { const N = prof.length, f = T.wrapS(s) / (T.step || T.length / N), i = Math.floor(f) % N; return prof[i] + (prof[(i + 1) % N] - prof[i]) * (f - Math.floor(f)); }
   // the park spot in the pit lane (layout: parkSpot, render3d draws the same), else just before the limiter end
   function parkOf(T, Lo, k) {
     const P = T.pit;
@@ -10581,8 +10635,9 @@ const RaceControl = (() => {
     if (V.hs && dx * dx + dz * dz > 0.0025) V.h = Math.atan2(dz, dx); else if (!V.hs) V.h = trackH(T, V.s);
     V.x = p.x; V.z = p.z; V.hs = 1;
   }
-  function vehPark(T, Lo, V, done) { const p = parkOf(T, Lo, V.k); V.st = done ? 4 : 0; V.v = V.a = 0; V.li = 0; V.inL = 0; V.w = 0; V.ph = 0; V.tg = -1; V.dO = V.dB = -1; if (p) { V.s = p.s; V.d = p.d; } V.hs = 0; vehPose(T, V); if (p && p.h != null) V.h = p.h; }
-  function vehOut(T, Lo, V) { const p = parkOf(T, Lo, V.k); V.st = 1; V.s = p.s; V.d = p.d; V.v = V.a = 0; V.li = 1; V.run = 0; V.inL = 0; V.hs = 0; vehPose(T, V); if (p.h != null) V.h = p.h; }
+  const vehRst = V => { V.kf = 1; V.ol = 0; V.af = 0; V.bl = 0; V.blT = 0; };   // (the SC's eased pace share / lateral rate, the brake lights)
+  function vehPark(T, Lo, V, done) { const p = parkOf(T, Lo, V.k); V.st = done ? 4 : 0; V.v = V.a = 0; V.li = 0; vehRst(V); V.inL = 0; V.w = 0; V.ph = 0; V.tg = -1; V.dO = V.dB = -1; if (p) { V.s = p.s; V.d = p.d; } V.hs = 0; vehPose(T, V); if (p && p.h != null) V.h = p.h; }
+  function vehOut(T, Lo, V) { const p = parkOf(T, Lo, V.k); V.st = 1; V.s = p.s; V.d = p.d; V.v = V.a = 0; V.li = 1; vehRst(V); V.run = 0; V.inL = 0; V.hs = 0; vehPose(T, V); if (p.h != null) V.h = p.h; }
   // (pit roads: d is in road coordinates (|d| > roadD / 2: side * roadD + e, e from the road's centre) on a road, in the track's
   // elsewhere; toWorld reads a road d off every road as the lane's path + e. A target in the other frame (a road's end crossed):
   // the vehicle's d is taken over into it where it stands (e kept from the path's lane), before it moved sideways across the two
@@ -10597,25 +10652,81 @@ const RaceControl = (() => {
     return rd ? pd + (d - P.side * RD) : P.side * RD + (d - pd);
   }
   // bf (the SC on the track): d = its line bf(s) + an offset that moves at the lateral rate (aside for a hazard / a car
-  // passing, the pit entry) - on the line it follows it exactly through the corners (user 2026-10-19); else d moves at that rate
-  function vehMove(T, V, vT, dT, A, B, dt, bf) {
+  // passing, the pit entry) - on the line it follows it through the corners (user 2026-10-19); else d moves at that rate.
+  // The SC (ctl: { p: its profile's share when that is what it follows (else 0), h: hard (a stop / obstacle / car ahead), pr: the
+  // profile }): scDrive's speed, its offset eased (SC_LA m/s2, its lateral rate at most); the medical car: at its accel / braking
+  function vehMove(T, V, vT, dT, A, B, dt, bf, ctl) {
     const v0 = V.v, oT = bf ? dT - bf(V.s) : 0;
-    V.v = Math.max(0, v0 + clamp(vT - v0, -B * dt, A * dt)); V.a = (V.v - v0) / dt;
+    if (!V.k && ctl) scDrive(T, V, vT, A, B, dt, ctl);
+    else { V.v = Math.max(0, v0 + clamp(vT - v0, -B * dt, A * dt)); V.a = (V.v - v0) / dt; }
     V.s = T.wrapS(V.s + V.v * dt); if (V.st === 2) V.run += V.v * dt;
-    const lat = (bf ? Math.min(1.2 + 0.03 * V.v, 0.3 * V.v + 0.05) : 1.2 + 0.03 * V.v) * dt;   // (on the track: sideways only as it rolls - rc5, the SC waiting aside)
-    if (bf) { const b1 = bf(V.s); if (V.o == null) V.o = frameD(T, V.s, V.d, b1) - b1; V.o += clamp(oT - V.o, -lat, lat); V.d = b1 + V.o; }
-    else { V.o = null; V.d = frameD(T, V.s, V.d, dT); V.d += clamp(dT - V.d, -lat, lat); }
+    const lv = bf ? Math.min(1.2 + 0.03 * V.v, 0.3 * V.v + 0.05) : 1.2 + 0.03 * V.v, lat = lv * dt;   // (on the track: sideways only as it rolls - rc5, the SC waiting aside)
+    if (bf) {
+      const b1 = bf(V.s);
+      if (V.o == null) { V.o = frameD(T, V.s, V.d, b1) - b1; V.ol = 0; }
+      if (V.k || V.ap) { V.o += clamp(oT - V.o, -lat, lat); V.ol = 0; }   // (the medical car; the SC lining up for the pit entry (vehIn: V.ap) - at its lateral rate, into the fast lane by the limiter line, rc_test RC4)
+      else {   // (the SC: its sideways speed eased in and out - the fastest that still stops at the target, SC_LA)
+        const e = oT - V.o, ae = Math.abs(e), vd = Math.sign(e) * Math.min(lv, 1.2 * ae, Math.sqrt(SC_LA * ae));
+        V.ol = (V.ol || 0) + clamp(vd - (V.ol || 0), -SC_LA * dt, SC_LA * dt);
+        V.o += Math.abs(V.ol * dt) > ae && Math.sign(V.ol) === Math.sign(e) ? e : V.ol * dt;
+      }
+      V.d = b1 + V.o;
+    } else { V.o = null; V.ol = 0; V.d = frameD(T, V.s, V.d, dT); V.d += clamp(dT - V.d, -lat, lat); }
+    blStep(V, vT, dt);
     vehPose(T, V);
+  }
+  // the SC's speed: feed-forward from its drive profile (where that is the target) + a feedback on the speed error (linear, then
+  // a square root: it can ease out before it reaches the target), its acceleration changed at SC_J m/s3 at most; braking up to
+  // SC_BM, only a hard target (ctl.h) gets B and 3 x SC_J. -> V.v, V.a
+  function scDrive(T, V, vT, A, B, dt, c) {
+    const v0 = V.v, e = vT - v0, ae = Math.abs(e), P = c.p > 0 && c.pr && c.pr.a ? c.pr : null, st = T.step || T.length / T.N;
+    const ff = P ? c.p * c.p * profAt(T, P.a, V.s + 0.12 * v0 - 0.5 * st) : 0, fb = Math.sign(e) * Math.min(SC_KV * ae, Math.sqrt(SC_J * ae));
+    const J = (c.h ? 3 : 1) * SC_J, aD = clamp(ff + fb, -(c.h ? B : Math.min(B, SC_BM)), A);
+    let a = (V.a || 0) + clamp(aD - (V.a || 0), -J * dt, J * dt), v = v0 + a * dt;
+    if (v <= 0) { v = 0; a = (v - v0) / dt; }
+    V.v = v; V.a = a;
+  }
+  // the brake lights: on below -BL_ON m/s2 (low-passed), off above -BL_OFF after BL_HOLD s (on again BL_GAP s after); held on at a
+  // standstill on the track
+  function blStep(V, vT, dt) {
+    V.af = (V.af || 0) + ((V.a || 0) - (V.af || 0)) * Math.min(1, dt / BL_TAU);
+    const held = V.st === 2 && V.v < 0.3 && vT < 0.3;
+    V.blT = (V.blT || 0) + dt;
+    if (!V.bl) { if ((V.af < -BL_ON && V.blT >= BL_GAP) || held) { V.bl = 1; V.blT = 0; } }
+    else if (V.blT >= BL_HOLD && V.af > -BL_OFF && !held) { V.bl = 0; V.blT = 0; }
   }
   // on the track: the racing line, round obstacles (marshals / vehicles / a job's car, stopped or crawling cars) on the side
   // with room, slowly past them; behind a moving car on its line ahead (follow: m behind it). -> _vo { d, v }
-  const _vo = { d: 0, v: 0 };
-  // the SC's line: the AI's racing line (ai.js prep: A.line, the path the AI drives), else the track's raceLine
-  function scLine(T, s) { const A = typeof AI !== 'undefined' && AI._prep && AI._lineAt ? AI._prep(T) : null; return A ? AI._lineAt(A, s, 0) : T.raceLine[T.idxAt(s)]; }
+  const _vo = { d: 0, v: 0, p: 0, h: 0, pr: null };   // (+ p / h / pr: scDrive's ctl)
+  // the SC's line (user 2026-11-26: not the racing line exactly): SC_LC of the AI's racing line's offset (ai.js prep: the path the
+  // AI drives; else the track's raceLine), Gaussian-smoothed over SC_LS m, SC_LM m off the asphalt's edge at most; per sample,
+  // rebuilt when the AI's line changes. scLine: Catmull-Rom between the samples (no kink)
+  function scLineA(T) {
+    const A = typeof AI !== 'undefined' && AI._prep && AI._lineAt ? AI._prep(T) : null, c = T._scLA;
+    if (c && c.A === A && c.N === T.N) return c.d;
+    const N = T.N, st = T.step || T.length / N, raw = new Float64Array(N), d = new Float32Array(N), r = Math.ceil(3 * SC_LS / st), K = new Float64Array(2 * r + 1);
+    for (let i = 0; i < N; i++) raw[i] = SC_LC * (A ? AI._lineAt(A, i * st, 0) : T.raceLine[i]);
+    let ks = 0;
+    for (let k = -r; k <= r; k++) ks += (K[k + r] = Math.exp(-0.5 * (k * st / SC_LS) * (k * st / SC_LS)));
+    for (let i = 0; i < N; i++) {
+      let a = 0;
+      for (let k = -r; k <= r; k++) a += K[k + r] * raw[((i + k) % N + N) % N];
+      const m = Math.max(0, T.halfW[i] - SC_LM);
+      d[i] = clamp(a / ks, -m, m);
+    }
+    T._scLA = { A, N, d };
+    return d;
+  }
+  function scLine(T, s) {
+    const d = scLineA(T), N = d.length, f = T.wrapS(s) / (T.step || T.length / N), i = Math.floor(f) % N, u = f - Math.floor(f);
+    const p0 = d[(i + N - 1) % N], p1 = d[i], p2 = d[(i + 1) % N], p3 = d[(i + 2) % N];
+    return p1 + 0.5 * u * (p2 - p0 + u * (2 * p0 - 5 * p1 + 4 * p2 - p3 + u * (3 * (p1 - p2) + p3 - p0)));
+  }
   const scLineF = T => (T._scLF || (T._scLF = s => scLine(T, s)));
   function vehTrack(G, V, prof, B, follow, slow) {
     const T = G.track, i = T.idxAt(V.s), hw = T.halfW[i], look = 30 + V.v * V.v / (2 * B) + 20;
-    let dT = V.k ? T.raceLine[i] : scLine(T, V.s), vT = prof[i] * (slow || 1);
+    let dT = V.k ? T.raceLine[i] : scLine(T, V.s), vT = (V.k ? prof[i] : profAt(T, prof, V.s)) * (slow || 1);
+    const vP = vT;
     const avoid = (s, d, w, l, vp) => {
       const ds = T.deltaS(V.s, s);
       if (ds < -l - 4 || ds > look + l) return;
@@ -10636,10 +10747,13 @@ const RaceControl = (() => {
       const ci = c.idx >= 0 ? c.idx : T.idxAt(c.s);
       if (Math.abs(c.d || 0) > T.halfW[ci] + (V.k ? 6 : 1.5)) continue;
       if (((c.speed || 0) < 8 || c.dnf) && !(V.k && !c.dnf && !(G.race.rc.cs[c.id] && G.race.rc.cs[c.id].stop > 12))) avoid(c.s, c.d || 0, CB[1], CB[0], 16);   // (the medical car waits behind a car that spun / stopped a moment: it rejoins ahead of it)
-      else if (ds > 0 && ds < fd && (V.k || Math.abs((c.d || 0) - dT) < 3)) { fd = ds; fc = c; }   // (the medical car never passes a moving car: it follows the nearest)
+      else if (ds > 0 && ds < fd && (V.k || Math.abs((c.d || 0) - dT) < 4)) { fd = ds; fc = c; }   // (the medical car never passes a moving car: it follows the nearest; the SC one in its way - 4 m: its own line is off the racing line, 2026-11-26)
     }
-    if (fc) vT = Math.min(vT, Math.max(0, fc.speed + 0.45 * (fd - follow)), V.k ? Math.sqrt(fc.speed * fc.speed + 2 * B * Math.max(0, fd - 15)) : Infinity);
-    _vo.d = dT; _vo.v = vT;
+    if (fc) vT = Math.min(vT, Math.max(0, fc.speed + 0.45 * (fd - follow)), Math.sqrt(fc.speed * fc.speed + 2 * B * Math.max(0, fd - (V.k ? 15 : follow))));   // (the SC too: easing off early, at its drive braking - 2026-11-26)
+    // (the SC: its profile followed (p: feed-forward), or held back by an obstacle / a car; hard (full braking, quicker) only when
+    // its eased braking has fallen behind that)
+    const held = vT < vP - 0.05;
+    _vo.d = dT; _vo.v = vT; _vo.pr = prof; _vo.p = held ? 0 : slow || 1; _vo.h = held && V.v > vT + 1.5 ? 1 : 0;
     return _vo;
   }
   // the pit lane (user 2026-10-20): the FAST lane (Race.fastLaneD: the cars' own line beside the dashed one, pit roads
@@ -10682,21 +10796,26 @@ const RaceControl = (() => {
       vT = laneVT(T, V.s, true, cap);
       A = Math.max(A, LANE_A);
     } else {
-      const pk = parkOf(T, Lo, V.k), to = T.deltaS(V.s, pk.s);
+      const pk = parkOf(T, Lo, V.k), to = T.deltaS(V.s, pk.s), vL = laneVT(T, V.s, false), vS = Math.sqrt(2 * LANE_P * Math.max(0, to));
       if (to < 30) dT += (frameD(T, V.s, pk.d, dT) - dT) * clamp(1 - to / 30, 0, 1);
-      vT = Math.min(laneVT(T, V.s, false), Math.sqrt(2 * LANE_P * Math.max(0, to)));   // (the limit, then braking into its spot)
+      vT = Math.min(vL, vS);   // (the limit, then braking into its spot)
+      _ln.h = vS < vL && V.v > vS + 1 ? 1 : 0;
       B = Math.min(B, LANE_B * 1.5);
       if (to <= 0.6 && V.v < 1.5) return true;
     }
-    vehMove(T, V, vT, dT, A, B, dt);
+    if (V.st === 1) _ln.h = 0;
+    // (the pit lane: its own ramps (LANE_A / LANE_B) and the limiter, held exactly - the eased drive (scDrive) is for the track: in
+    // the lane it trailed the braking ramp by ~3 m/s past the limiter line and crept up on the limit, rc_test RC4)
+    vehMove(T, V, vT, dT, A, B, dt, null, null);
     return false;
   }
+  const _ln = { p: 0, h: 0, pr: null };   // (vehLane: scDrive's ctl - no profile in the pit lane)
   // on the track, the lap's end: lights off (rc.inL 2 / the MC's lap done) -> into the pit lane at its entry (the fast lane,
   // braking to the lane's entry speed: laneVT)
   function vehIn(G, V, vT, dT, B) {
     const T = G.track, P = T.pit, to = T.deltaS(V.s, P.entryS);
     if (to < 0 && to > -60 && V.ap) { V.st = 3; V.ap = 0; return null; }
-    if (to >= 0 && to < 260) { V.ap = 1; const ld = frameD(T, P.entryS + 0.5, laneDAt(G, P.entryS + 0.5), dT); if (ld != null) dT += (ld - dT) * clamp(1 - (to - 25) / 200, 0, 1); const ve = laneVT(T, P.entryS, false); vT = Math.min(vT, Math.sqrt(ve * ve + 2 * B * Math.max(0, to - 10))); }
+    if (to >= 0 && to < 260) { V.ap = 1; const ld = frameD(T, P.entryS + 0.5, laneDAt(G, P.entryS + 0.5), dT); if (ld != null) dT += (ld - dT) * clamp(1 - (to - 25) / 200, 0, 1); const ve = laneVT(T, P.entryS, false), vb = Math.sqrt(ve * ve + 2 * B * Math.max(0, to - 10)); if (vb < vT - 0.05) { _vo.p = 0; _vo.h = V.v > vb + 1.5 ? 1 : 0; } vT = Math.min(vT, vb); }
     _vo.d = dT; _vo.v = vT;
     return _vo;
   }
@@ -11159,15 +11278,17 @@ const RaceControl = (() => {
     if (V && V.st > 0 && V.st < 4) {
       if (V.st === 2) {
         const Z = rc.zi || rc.zf, yy = (Z[zoneAt(Lo, V.s)] | Z[zoneAt(Lo, V.s + V.v * V.v / (2 * SC_BRK) + 15)]) & YY;   // (slower past a double yellow / the incident under the SC: the queue too)
-        let r = vehTrack(G, V, rc.inL === 2 && rc.sp === 2 ? vprof(T, 2, 1) : vprof(T, 0, rc.vq || 1), SC_BRK, 25, yy ? 0.85 : 1);   // (lights out: full pace to the pit entry)
-        if (rc.sp === 1 && rc.pick && rc.lg > 7 * CL) r.v *= 0.85;   // (the car behind falling back: the SC eases off)
-        else if (rc.sp === 1 && !rc.pick) scWait(G, race, rc, Lo, V, r, dt);   // (before the pick-up: never away from the leader - slow, aside if need be: rc5)
+        const lg = rc.sp === 1 && rc.pick && rc.lg > 7 * CL;   // (the car behind falling back: the SC eases off)
+        V.kf = (V.kf || 1) + clamp((yy ? 0.85 : 1) * (lg ? 0.85 : 1) - (V.kf || 1), -0.08 * dt, 0.08 * dt);   // (its pace share eased: 2026-11-26, a 15 % step was a brake stab)
+        let r = vehTrack(G, V, rc.inL === 2 && rc.sp === 2 ? vprof(T, 4, 1) : vprof(T, 3, rc.vq || 1), SC_DB, 25, V.kf);   // (lights out: full pace to the pit entry; its drive profiles, scProf)
+        if (lg) {}
+        else if (rc.sp === 1 && !rc.pick) { const v0 = r.v; scWait(G, race, rc, Lo, V, r, dt); if (r.v < v0 - 0.05) r.p = 0; }   // (before the pick-up: never away from the leader - slow, aside if need be: rc5)
         else V.wS = 0;
         const pn = rc.sp === 1 ? passerNear(G, V) : null;
         if (pn) { const i = T.idxAt(V.s), ln = scLine(T, V.s); if (!V.pS) V.pS = V.wS || ((pn.car.d || 0) > V.d ? -1 : 1); r.d = V.pS * Math.max(V.pS * ln, T.halfW[i] - 2); }   // (a car going past: the SC keeps to its side - the one it chose, not switching with the line: 2026-10-19; waiting aside: that side)   // (2026-10-31: away from the passer's side - a lapped car clipped it on the line's side)
         else V.pS = 0;
-        if (rc.inL === 2) { r = vehIn(G, V, r.v, r.d, SC_BRK); if (!r && rc.sp === 1) restart(G, race, rc, H); }
-        if (r) { vehMove(T, V, r.v, r.d, SC_ACC, SC_BRK, dt, scLineF(T)); solid(G, race, rc, Lo, H, V); }
+        if (rc.inL === 2) { r = vehIn(G, V, r.v, r.d, SC_DB); if (!r && rc.sp === 1) restart(G, race, rc, H); }
+        if (r) { vehMove(T, V, r.v, r.d, SC_ACC, SC_BRK, dt, scLineF(T), r); solid(G, race, rc, Lo, H, V); }
       } else if (vehLane(G, Lo, V, dt, SC_ACC, SC_BRK, V.st === 1 ? vprof(T, 0, rc.vq || 1)[T.idxAt(V.s)] : 0)) { vehPark(T, Lo, V, false); rc.rev++; rc.log.push([+race.t.toFixed(2), 'scParked', -1, 0]); }
     }
     if (rc.mc && rc.mc.st > 0 && rc.mc.st < 4) mcStep(G, race, rc, Lo, H, dt, rc.mc);
@@ -11339,7 +11460,7 @@ const RaceControl = (() => {
   // parked by the car: the doctor's walk (its door on the car's side -> 1.6 m from the car, towards it)
   function mcPark(G, race, rc, V) {
     const T = G.track, t = race.t, c = carById(G, V.tg);
-    V.ph = 2; V.v = V.a = 0; V.tp = t; V.dO = V.dB = -1;
+    V.ph = 2; V.v = V.a = 0; V.tp = t; V.dO = V.dB = -1; V.bl = 0; V.af = 0;   // (parked: no brake lights)
     if (c) {
       const sd = (c.d || 0) >= V.d ? 1 : -1, cs = c.s, cd = c.d || 0;
       V.aS = T.wrapS(V.s + 0.4); V.aD = V.d + sd * 1.3;
@@ -11501,9 +11622,9 @@ const RaceControl = (() => {
     _si.dl = q ? q.dl : 0; _si.dz = q ? q.dz : 0; _si.kb = q && rc.sp === 2 && q.m === 4 && _si.out && q.gap > 0 && q.gap < KB_D ? q.gap : 0;
     return _si;
   }
-  // the renderers / minimaps: [{ k 0 SC | 1 MC, on (out of its park spot), st, x, z, h, s, d, v, li }] (a client extrapolates
+  // the renderers / minimaps: [{ k 0 SC | 1 MC, on (out of its park spot), st, x, z, h, s, d, v, li, bl (brake lights) }] (a client extrapolates
   // the server's along the track)
-  const _veh = [{ k: 0, on: false, st: 0, x: 0, z: 0, h: 0, s: 0, d: 0, v: 0, li: 0 }, { k: 1, on: false, st: 0, x: 0, z: 0, h: 0, s: 0, d: 0, v: 0, li: 0 }];
+  const _veh = [{ k: 0, on: false, st: 0, x: 0, z: 0, h: 0, s: 0, d: 0, v: 0, li: 0, bl: 0 }, { k: 1, on: false, st: 0, x: 0, z: 0, h: 0, s: 0, d: 0, v: 0, li: 0, bl: 0 }];
   function vehicles(G) {
     const rc = G && G.race && G.race.rc;
     _veh[0].on = _veh[1].on = false;
@@ -11512,8 +11633,8 @@ const RaceControl = (() => {
     for (const V of [rc.sc, rc.mc]) {
       if (!V || !V.st || V.st >= 4) continue;
       const o = _veh[V.k];
-      o.on = true; o.st = V.st; o.li = V.li; o.v = V.v;
-      if (rc.cl && V.np && V.np.ok) { const q = V.np; o.x = q.x; o.z = q.z; o.h = q.h; o.s = q.s; o.d = q.d; o.v = q.v; }   // (a multiplayer client: the 30 Hz snapshot pose, netcore)
+      o.on = true; o.st = V.st; o.li = V.li; o.v = V.v; o.bl = rc.cl ? 0 : V.bl ? 1 : 0;   // (bl: the brake lights - a client: the snapshot's, netcore np.bl)
+      if (rc.cl && V.np && V.np.ok) { const q = V.np; o.x = q.x; o.z = q.z; o.h = q.h; o.s = q.s; o.d = q.d; o.v = q.v; o.bl = q.bl ? 1 : 0; }   // (a multiplayer client: the 30 Hz snapshot pose, netcore)
       else if (rc.cl) {
         const T = G.track, e = clamp((G.race.t || 0) - (rc.vt || 0), 0, 2), s = T.wrapS(V.s + V.v * e), p = T.toWorld(s, V.d);
         o.x = p.x; o.z = p.z; o.h = trackH(T, s); o.s = s; o.d = V.d;
@@ -12569,7 +12690,7 @@ const RaceControl = (() => {
   return { create, step, preRain, preRed, PRE_T, force, endNow, devYellow, layout, zoneAt, turnAt, clean, effLevel, aiFlag, passOK, ahead, panelState, pack, unpack,
     actors, stopInput, jobInfo, obstacles, bluePanels, aiVsc, vscV, delta, deltaView, ownStep, F: { Y, YY, SLIP, WHITE, GREEN }, LV, BUILT, DEF, WHY, AI_SLOW, KJ, GAP_W,
     VSC_K, VSC_PIT, OB_V, OB_LAT, OB_T0, DY_V,
-    aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
+    aiSc, scOb, inQueue, passerNear, scInfo, vehicles, doctor, mcGrid, mcOut, MC_VMAX, solidLocal, gripLocal, setPark, parkSpot: T => (T && T.pit ? layout(T).spot : null), postClear, contactK, restartPh, vprof, scLine, CL, Q_MAX, PASS_K, PASS_K3, SC_K, SC_PIT, GRIP_DROP, RS_K,
     aiRed, redInfo, resume, chooseTyre, chooseWings, qStep, qRedInfo, QR_GO, RF_K, RF_WAIT, RF_MIN0, RF_MIN1, TOD_RACE_MIN, summary, hzPlan, hzLam, FULL, TGT, ESC, barFar, evPlan, evLeft, evKeep, EV_K0, EV_MIN, EV_N, EV_P, EV_O, EV_MIX, EV_MD,
     bars, barW, barWL, barSoft, barSet, barHit, BK, BP, BAR_TAU, BAR_RED, isStreet, scHeld, neutral, VSC_L0, VSC_L1, SC_L0, SC_L1, pxAt, spotFor, _stopMin: stopMin, _redOrder: redOrder };
 })();
@@ -13524,7 +13645,7 @@ const AI = (() => {
       nA: diff.allOut ? 0 : Math.max(0.3, diff.lineNoise), nK1: periodic(TAU / (260 + rnd() * 240), G.track), nP1: rnd() * TAU, nK2: periodic(TAU / (200 + rnd() * 120), G.track), nP2: rnd() * TAU,
       nzW: 1, nzH: 0, dNow: 0,   // line-noise hold (cars close): live weight, held offset; lateral position (racecraft)
       atkGap: 0.35 + diff.aggression * 0.8, defGap: 0.25 + diff.aggression * 0.45,
-      w: 0, wT: 0, wRate: 1, absSide: 0, absM: 2, absD: 0, absDT: 0, absRate: 2, free: false,
+      w: 0, wT: 0, wRate: 1, absSide: 0, absM: 2, absD: 0, absDT: 0, absRate: 2, free: false, bfId: -1, bfT: 0, bfMv: false, bfSide: 0, bfBack: false,
       off: 0, offT: 0, offRate: 1.5, cons, nCons: 0,
       pitIn: false, pitOut: false, pitOutS: 0, poM: Infinity, poLen: 1, poD: 0, poFix: false,   // pit exit: merge start (m past the limiter end) / length, held d
       atk: null, atkSide: 0, atkPh: 0, atkCool: 0, atkEnd: 0, atkPull: 0, towM: 0, defC: -1, defOn: false, yieldOn: false, qHurry: 0, qSide: 0, qFid: -1, qyT: 0, qMv: false,
@@ -14199,7 +14320,9 @@ const AI = (() => {
         && o !== b.ulTgt && !(o === b.ulDone && myRD - b.ulDoneD < L * 0.5)) { lapper = o; lapDs = ds; }
       // blue flags: a car ahead a lap or more up on me (not on its cool-down lap, not in the pit lane) is not raced (the attack
       // below) and is followed (clr below); one stopped / spinning (lapStop) is just a car to get round
-      const lapsMe = ds > 0 && !finished && !qm && o.raceDist != null && o.raceDist > myRD + L * 0.5 && !o.finished && !inLane && !o.inPitLane;
+      // (user 2026-11-26: under the SC a lapped car waved past (b.rcSm 3) goes round the queue - the cars that lapped it too: "I give
+      // them space on the track and they don't want to take it" - before, it followed them as blue flags (clr 0) unless they crawled 3 s)
+      const lapsMe = ds > 0 && !finished && !qm && b.rcSm !== 3 && o.raceDist != null && o.raceDist > myRD + L * 0.5 && !o.finished && !inLane && !o.inPitLane;
       if (lapsMe && ds < lapAhDs) { lapAh = o; lapAhDs = ds; }
       // collision avoidance: car ahead in my path
       // (the car I'm passing, once I'm out beside its line: judged on where it is, not on its predicted drift - the racing
@@ -14377,17 +14500,7 @@ const AI = (() => {
       Q.side = ah.qLane; Q.d = ah.d; Q.x0 = v * tC - LEN; Q.x1 = v * (ahDs + LEN + 4) / cl;
     }
     if (qm && qYield(b, car, cars, A, L, v, idx, toBrk, dt)) { wT = 1; car.qLane = b.qSide; }   // (car.qLane: the flying car rounds it, qPass)
-    else if (lapper && !qm && (!finished || !lapper.finished) && (-lapDs - LEN) / Math.max(v, 10) < (finished ? 2 : 1.2) && !b.pitIn && !b.pitOut) {   // (qualifying: qYield alone - this side-by-the-line rule flipped sides in corners)
-      b.yieldOn = true;
-      if (onStr) {
-        const ln = lineAt(A, car.s, b.kw);
-        b.absSide = ln > 0 ? -1 : 1; b.absM = 1.6; wT = 1; b.wRate = 1.2;
-        if (lapDs > -35 && v * 0.985 < b.vLim) { b.vLim = b.easeV = v * 0.985; b.easeA = EASE.blue; }   // (a lift, eased)
-        if (b.rcSm === 2 && lapDs > -70 && lapper.speed > v - 2) b.vLim = Math.min(b.vLim, v * 0.96);   // (the SC queue: a lapped car going through, a clear lift)
-      }
-      // (into the braking zone with it beside me: a little slower than it, it takes the corner ahead of me)
-      if (!finished && toBrk < 60 && lapDs > -LEN && Math.abs(lapper.d - car.d) > 1.8 && !lapStop(A, lapper)) b.vLim = Math.min(b.vLim, Math.max(8, lapper.speed - 1.5));
-    }
+    else if (!qm && !b.pitIn && !b.pitOut && bfYield(b, car, cars, A, L, lapper, lapDs, v, idx, toBrk, onStr, finished, dt)) wT = 1;   // (race blue flags: one side, held - bfYield)
     // giving a place back (Race: car.giveBack, a place gained off the track): no attacking, lift to let that car by (move off
     // the line on a straight, as for a blue flag; a corner: just slower on the line), then race again once it is past.
     // Time to give back: a little slower on the straights until Race has seen it lost.
@@ -14423,7 +14536,7 @@ const AI = (() => {
       // car's width beside it, pulled out only when it can be a car length clear `cut` m before the braking point, else no
       // pass this straight; not clear by then: back in behind it (b.ulBack). A car I lap that just unlapped itself (it went
       // by me in the last half lap): not attacked (it is quicker; no fighting back)
-      const lapsMe = !qm && ah.raceDist != null && ah.raceDist > myRD + L * 0.5 && !ah.finished && !lapStop(A, ah) && !owed;
+      const lapsMe = !qm && b.rcSm !== 3 && ah.raceDist != null && ah.raceDist > myRD + L * 0.5 && !ah.finished && !lapStop(A, ah) && !owed;   // (waved past under the SC: not a blue flag, above)
       const unlap = lapsMe && ((b.ulOK && b.ulCar === ah) || (b.ulFast && b.uf.car === ah));
       const lineOK = !car.offTrack && b.offTrackT <= 0 && !ah.offTrack && Math.abs(ah.d) < hw - 0.5 && Math.abs(oRel) < 3
         && Math.abs(ah.speed * Math.sin(wrapA(ah.h - A.th[ah.idx >= 0 ? ah.idx : 0]))) < 1.5;
@@ -14634,6 +14747,7 @@ const AI = (() => {
     }
     b.offT = offT; b.wT = wT;
     if (b.w > b.wT && b.wRate < 0.8) b.wRate = 0.8;
+    if (b.bfBack) { if (b.w > 0.02 && !wT && !b.absSide) b.wRate = clamp(BF.back / Math.max(1, Math.abs(b.absD - lineAt(A, car.s, b.kw))), 0.15, 0.8); else b.bfBack = false; }   // (blue flags released: back to the line at BF.back m/s)
 
     // squeezed between cars / wall: drop back
     if (b.nCons > 0) {
@@ -14910,6 +15024,54 @@ const AI = (() => {
   // from the blue flag made the yielding car a mobile chicane wherever that lane was the racing line (apexes, turn-ins):
   // a flying car caught it into a braking zone or a corner sequence and lost ~1-2.5 s behind it (Extreme: 1.7 such cars
   // per push lap, ~1 s each)
+  // race blue flags (user 2026-11-26: "lapped cars are terrible at getting out of the way. They try to get off the racing line, and
+  // in a technical section with lots of back to back corners they go left to right ... too violent ... In F1 they find the best
+  // location to get out of the way without losing too much time (but quickly(ish)) ... should not hit the wall / go off track").
+  // Before: every frame on a straight the side away from the racing line there (it flips through esses), moved over in < 1 s
+  // (b.wRate 1.2 of the whole way), dropped at once off the straight (the lane jumped back to a stale absD: a lurch).
+  // Now, as qYield: committed to the car lapping me (b.bfId, from BF.t s behind) and to one side - the one furthest from the
+  // racing line over the stretch where it catches me (sideFor) - held, straights and corners alike, until it is BF.pass m by.
+  // The move over waits on the line at my own pace (no crawling: it costs it nothing) for a straight where it gets by before
+  // the braking point, for it to be right behind (BF.near m) or BF.wait s committed (then any stretch toBrk > BF.anyB); the move
+  // runs at BF.rate m/s across, BF.m m inside the edge (the path's own wall / edge clamps too); once over, a lift on straights;
+  // released, back to the line from where it is at BF.back m/s (no lane jump). SC queue: the same, with its clear lift.
+  const BF = { t: 1.2, tFin: 2, pass: 4, near: 25, wait: 5, anyB: 50, rate: 2.4, back: 1.6, m: 2.0, k: 1 / 250, mv: 0.3, lift: 0.985, see: 3.5, scSee: 90 };   // (scSee: the SC queue - a car waved through, much faster, within this many m: over now)
+  function bfYield(b, car, cars, A, L, lapper, lapDs, v, idx, toBrk, onStr, finished, dt) {
+    const rel = o => { let ds = o.s - car.s; if (ds > L / 2) ds -= L; else if (ds < -L / 2) ds += L; return ds; };
+    let F = null, fDs = 0;
+    if (b.bfId >= 0) {   // committed: that car until it is by or gone
+      for (let n = 0; n < cars.length; n++) if (cars[n].id === b.bfId) { F = cars[n]; break; }
+      if (F) fDs = rel(F);
+      if (!F || F.dnf || F.kinematic || F.inPitLane || (finished && F.finished) || fDs > LEN + BF.pass || (-fDs - LEN) / Math.max(F.speed, 10) > BF.see) F = null;
+    }
+    const scQ = b.rcSm === 2;   // (the SC queue: the car coming through is far quicker - seen from BF.scSee m, over at once, no waiting for a straight)
+    if (!F && lapper && (!finished || !lapper.finished) && ((-lapDs - LEN) / Math.max(v, 10) < (finished ? BF.tFin : BF.t) || (scQ && -lapDs < BF.scSee))) {
+      F = lapper; fDs = lapDs; b.bfId = F.id; b.bfT = 0; b.bfMv = false;
+      b.bfSide = sideFor(b, car, A, clamp(Math.max(v, 10) * Math.max(LEN, -fDs) / Math.max(4, F.speed - 0.85 * v), 60, 400));
+    }
+    if (!F) {   // released: back to the line gently from the lane it held (abs stays put while w blends out)
+      if (b.bfId >= 0) { b.bfId = -1; if (b.bfMv) { const hwN = A.hw[idx]; b.absD = b.absDT = b.bfSide * (hwN - BF.m); b.bfBack = true; } b.bfMv = false; }
+      return false;
+    }
+    b.yieldOn = true; b.bfT += dt;
+    const str = toBrk > 0 && Math.abs(A.lk[idx]) < BF.k, ln = lineAt(A, car.s, b.kw), lane = b.bfSide * (A.hw[idx] - BF.m);
+    if (!b.bfMv) {
+      const tLift = (-fDs + LEN + 6) / Math.max(0.5, F.speed - BF.lift * v), tB = toBrk / Math.max(v, 10);
+      if (scQ || (str && tLift < tB - BF.mv) || fDs > -BF.near || (b.bfT > BF.wait && toBrk > BF.anyB)) {
+        b.bfMv = true;
+        if (str) b.bfSide = sideFor(b, car, A, clamp(Math.max(v, 10) * tLift + 30, 60, Math.max(60, toBrk)));   // (re-picked for the stretch it passes me on)
+        if (fDs > -2 * BF.near && Math.abs(F.d - car.d) > 1) b.bfSide = F.d > car.d ? -1 : 1;   // (it is already to one side, close: the other - never across its nose)
+      } else { b.qHurry = 1; return false; }   // (on the line at my own pace until then)
+    }
+    b.absSide = b.bfSide; b.absM = BF.m; b.bfBack = false;
+    b.wRate = BF.rate / Math.max(1, Math.abs(b.bfSide * (A.hw[idx] - BF.m) - ln));   // (BF.rate m/s across, the whole way)
+    const off = Math.abs(car.d - ln) > 1.5 && Math.sign(car.d - ln) === b.bfSide;
+    if (str && off && fDs > -45 && v * BF.lift < b.vLim) { b.vLim = b.easeV = v * BF.lift; b.easeA = EASE.blue; }   // (a lift, eased)
+    if (b.rcSm === 2 && fDs > -70 && F.speed > v - 2) b.vLim = Math.min(b.vLim, v * 0.96);   // (the SC queue: a lapped car going through, a clear lift)
+    // (into the braking zone with it beside me: a little slower than it, it takes the corner ahead of me)
+    if (!finished && toBrk < 60 && fDs > -LEN && Math.abs(F.d - car.d) > 1.8 && !lapStop(A, F)) b.vLim = Math.min(b.vLim, Math.max(8, F.speed - 1.5));
+    return true;
+  }
   const QY = { t: 4.5, tH: 2, lift: 0.985, see: 600, off: 2.4, tuck: 1, k: 1 / 250, pass: 4, tOff: 12, vRel: 45, maxT: 25, floor: 0.6, m: 1.6, tC: 3.5, mv: 0.3, near: 30, nearB: 0 };
   const qFlying = o => !!(o && o.qPush && o.qFly !== false && !o.kinematic && !o.inPitLane && !o.dnf);
   // the side lane (QY.m m inside the edge) furthest from the racing line over the next x m (its closest approach there);
@@ -19423,7 +19585,7 @@ const Race = (() => {
         else { sectorDone(G, race, car, 1, tc); rc.nextBi = 2; rc.nextB = rc.lineDist + L; }
       }
       if (car.finished) return;
-      if (m1 >= rc.nextDetect) { rc.nextDetect = nextPoint(m1, track.overtakeDetectS || 0, L); if (car.lap >= 1) rc.detectPending = true; }
+      if (m1 >= rc.nextDetect) { rc.detT = crossT(rc.nextDetect); rc.detPit = !!car.inPitLane; rc.nextDetect = nextPoint(m1, track.overtakeDetectS || 0, L); if (car.lap >= 1) rc.detectPending = true; }   // (detT: when it crossed the detection point - Overtake Mode's on-track gap)
       if (m1 >= rc.nextEntry) rc.nextEntry = nextPoint(m1, track.pit.entryS, L);
     }
     if (rc.cp) {   // standstills (pit box, stuck car) keep the gap interpolation exact around them
@@ -19889,10 +20051,23 @@ const Race = (() => {
   function carAhead(race, car) { const o = race.order || []; for (let k = (car.pos | 0) - 2; k >= 0; k--) if (o[k] && o[k] !== car && !isOut(o[k])) return o[k]; return null; }
 
   // ---------- Overtake Mode ----------
+  // (user 2026-11-26: within overtakeGap s of ANY car on the track at the detection point - lapped cars too, so the leader as well:
+  // a car (not out, not in the pit lane) that crossed the detection point less than overtakeGap s before this one is physically
+  // that close ahead of it. Before: the gap to the car ahead in the race order, never the leader, never a lapped car.)
+  function nearAtDetect(G, car) {
+    const t = car._race && car._race.detT;
+    if (t == null) return false;
+    for (const o of G.cars) {
+      if (o === car || isOut(o) || o.finished) continue;
+      const q = o._race; if (!q || q.detT == null || q.detPit) continue;
+      const dt = t - q.detT; if (dt > 0 && dt < R.overtakeGap) return true;
+    }
+    return false;
+  }
   function armOvertake(G, race, car) {
-    if (car.finished || car.dnf || car.kinematic || car.pos <= 1) return;
+    if (car.finished || car.dnf || car.kinematic) return;
     if (race.laps && car.lap >= race.laps) return;   // final lap: nothing left to arm for
-    if (!(car.gapAhead < R.overtakeGap) || car.overtakeNext) return;
+    if (car.overtakeNext || !nearAtDetect(G, car)) return;
     car.overtakeNext = true;
     emit(G, { type: 'overtakeArmed', car });
   }
@@ -23755,11 +23930,11 @@ const NetCore = (() => {
       if (rc) for (let k = 0; k < 2; k++) {
         const V = k ? rc.mc : rc.sc, B = S.vbufs[k];
         if (!V) continue;
-        const np = V.np || (V.np = { ok: false, x: 0, z: 0, h: 0, s: 0, d: 0, v: 0 });
+        const np = V.np || (V.np = { ok: false, x: 0, z: 0, h: 0, s: 0, d: 0, v: 0, bl: 0 });
         np.ok = false;
         if (!B.n || T0 - B.lastT > 1000) continue;
         const c = S.vcar[k];
-        if (place(c, B, T0 - delayFor(c, B), false)) { np.ok = true; np.x = c.x; np.z = c.z; np.h = c.h; np.s = c.s; np.d = c.d; np.v = c.speed; np.vx = c.vx; np.vz = c.vz; }
+        if (place(c, B, T0 - delayFor(c, B), false)) { np.ok = true; np.x = c.x; np.z = c.z; np.h = c.h; np.s = c.s; np.d = c.d; np.v = c.speed; np.vx = c.vx; np.vz = c.vz; np.bl = c.brake > 0.5 ? 1 : 0; }   // (bl: its brake lights - the snapshot's brake byte, server.mjs)
       }
       if (me && S.follow) {
         const B = S.bufs[me.id];
